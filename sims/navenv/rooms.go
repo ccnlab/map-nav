@@ -5,20 +5,37 @@
 package navenv
 
 import (
-	"github.com/emer/epe/epe"
+	"github.com/emer/eve/eve"
 	"github.com/goki/gi/mat32"
 )
 
+// RoomParams
+type RoomParams struct {
+	Width  float32 `desc:"width of room"`
+	Depth  float32 `desc:"depth of room"`
+	Height float32 `desc:"height of room"`
+	Thick  float32 `desc:"thickness of walls of room"`
+}
+
+func (rp *RoomParams) Defaults() {
+	rp.Width = 10
+	rp.Depth = 15
+	rp.Height = 2
+	rp.Thick = 0.2
+}
+
 // MakeRoom constructs a new room in given parent group with given params
-func MakeRoom(par *epe.Group, name string, width, depth, height, thick float32) *epe.Group {
-	rm := epe.AddNewGroup(par, name)
-	bwall := epe.AddNewBox(rm, "back-wall", mat32.Vec3{0, height / 2, -depth / 2}, mat32.Vec3{width, height, thick})
-	bwall.Mat.Color = "tan"
-	lwall := epe.AddNewBox(rm, "left-wall", mat32.Vec3{-width / 2, height / 2, 0}, mat32.Vec3{thick, height, depth})
+func (rp *RoomParams) MakeRoom(par *eve.Group, name string) *eve.Group {
+	rm := eve.AddNewGroup(par, name)
+	floor := eve.AddNewBox(rm, "floor", mat32.Vec3{0, -rp.Thick / 2, 0}, mat32.Vec3{rp.Width, rp.Thick, rp.Depth})
+	floor.Mat.Color = "grey"
+	bwall := eve.AddNewBox(rm, "back-wall", mat32.Vec3{0, rp.Height / 2, -rp.Depth / 2}, mat32.Vec3{rp.Width, rp.Height, rp.Thick})
+	bwall.Mat.Color = "blue"
+	lwall := eve.AddNewBox(rm, "left-wall", mat32.Vec3{-rp.Width / 2, rp.Height / 2, 0}, mat32.Vec3{rp.Thick, rp.Height, rp.Depth})
 	lwall.Mat.Color = "red"
-	rwall := epe.AddNewBox(rm, "right-wall", mat32.Vec3{width / 2, height / 2, 0}, mat32.Vec3{thick, height, depth})
+	rwall := eve.AddNewBox(rm, "right-wall", mat32.Vec3{rp.Width / 2, rp.Height / 2, 0}, mat32.Vec3{rp.Thick, rp.Height, rp.Depth})
 	rwall.Mat.Color = "green"
-	fwall := epe.AddNewBox(rm, "front-wall", mat32.Vec3{0, height / 2, depth / 2}, mat32.Vec3{width, height, thick})
-	bwall.Mat.Color = "yellow"
+	fwall := eve.AddNewBox(rm, "front-wall", mat32.Vec3{0, rp.Height / 2, rp.Depth / 2}, mat32.Vec3{rp.Width, rp.Height, rp.Thick})
+	fwall.Mat.Color = "yellow"
 	return rm
 }

@@ -5,21 +5,29 @@
 package navenv
 
 import (
-	"github.com/emer/epe/epe"
+	"github.com/emer/eve/eve"
 	"github.com/goki/gi/mat32"
 )
 
 // MakeEmer constructs a new Emer virtual robot of given height (e.g., 1)
-func MakeEmer(par *epe.Group, height float32) *epe.Group {
-	emr := epe.AddNewGroup(par, "emer")
-	width := height * .2
-	body := epe.AddNewBox(emr, "body", mat32.Vec3{0, height / 2, 0}, mat32.Vec3{width, height, width})
-	body.Mat.Color = "tan"
-	headsz := width * .5
-	head := epe.AddNewBox(emr, "head", mat32.Vec3{0, height/2 + headsz/2, 0}, mat32.Vec3{headsz, headz, headsz})
+func MakeEmer(par *eve.Group, height float32) *eve.Group {
+	emr := eve.AddNewGroup(par, "emer")
+	width := height * .4
+	depth := height * .15
+	body := eve.AddNewBox(emr, "body", mat32.Vec3{0, height / 2, 0}, mat32.Vec3{width, height, depth})
+	body.Mat.Color = "purple"
+
+	headsz := depth * 1.5
+	hhsz := .5 * headsz
+	hgp := eve.AddNewGroup(emr, "head")
+	hgp.Initial.Pos = mat32.Vec3{0, height + hhsz, 0}
+
+	head := eve.AddNewBox(hgp, "head", mat32.Vec3{0, 0, 0}, mat32.Vec3{headsz, headsz, headsz})
 	head.Mat.Color = "tan"
-	eyesz := headz * .1
-	eyel := epe.AddNewBox(emr, "eye-l", mat32.Vec3{0, height/2 + headsz*.8, 0}, mat32.Vec3{headsz, headz, headsz})
-	head.Mat.Color = "tan"
-	return rm
+	eyesz := headsz * .2
+	eyel := eve.AddNewBox(hgp, "eye-l", mat32.Vec3{-hhsz * .6, headsz * .1, -(hhsz + eyesz*.3)}, mat32.Vec3{eyesz, eyesz * .5, eyesz * .2})
+	eyel.Mat.Color = "green"
+	eyer := eve.AddNewBox(hgp, "eye-r", mat32.Vec3{hhsz * .6, headsz * .1, -(hhsz + eyesz*.3)}, mat32.Vec3{eyesz, eyesz * .5, eyesz * .2})
+	eyer.Mat.Color = "green"
+	return emr
 }

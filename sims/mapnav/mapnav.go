@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ccngit/map-nav/sims/navenv"
+	"github.com/ccnlab/map-nav/sims/navenv"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/netview"
@@ -221,7 +221,7 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
-	ss.LayStatNms = []string{"InputP", "Hidden"}
+	ss.LayStatNms = []string{"DepthIn", "ParMap"}
 	if InputNameMap == nil {
 		InputNameMap = make(map[string]int, len(InputNames))
 		for i, nm := range InputNames {
@@ -267,7 +267,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	in, inp := net.AddInputPulv4D("DepthIn", 16, 8, 1, 8)
 	hid, hidd, _ := net.AddSuperDeep2D("ParMap", 20, 20, false, false) // no pulv, attn
 
-	hidd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Hidden", YAlign: relpos.Front, Space: 2})
+	hidd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMap", YAlign: relpos.Front, Space: 2})
 
 	in.SetClass("DepthIn")
 	inp.SetClass("DepthIn")
@@ -319,11 +319,11 @@ func (ss *Sim) NewRndSeed() {
 // use tabs to achieve a reasonable formatting overall
 // and add a few tabs at the end to allow for expansion..
 func (ss *Sim) Counters(train bool) string {
-	if train {
-		return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tTrial:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Trial.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
-	} else {
-		return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tTrial:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Trial.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
-	}
+	// if train {
+	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	// } else {
+	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	// }
 }
 
 func (ss *Sim) UpdateView(train bool) {
@@ -432,7 +432,7 @@ func (ss *Sim) TrainTrial() {
 	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
 	if chg {
 		ss.LogTrnEpc(ss.TrnEpcLog)
-		ss.TrainEnv.Trial.Cur = 0
+		ss.TrainEnv.Event.Cur = 0
 		if ss.ViewOn && ss.TrainUpdt > leabra.AlphaCycle {
 			ss.UpdateView(true)
 		}
@@ -472,7 +472,7 @@ func (ss *Sim) RunEnd() {
 func (ss *Sim) NewRun() {
 	run := ss.TrainEnv.Run.Cur
 	ss.TrainEnv.Init(run)
-	ss.TestEnv.Init(run)
+	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
 	ss.Net.InitWts()
 	ss.InitStats()
@@ -506,14 +506,9 @@ func (ss *Sim) InitStats() {
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
-	inp := ss.Net.LayerByName("InputP").(*deep.Layer)
+	inp := ss.Net.LayerByName("DepthIn").(*deep.Layer)
 	ss.TrlCosDiff = float64(inp.CosDiff.Cos)
 	ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
-	if !gotOne {
-		sse += 1
-	}
-	ss.TrlSSE = sse
-	ss.TrlAvgSSE = sse // not really meaningful
 	if accum {
 		ss.SumSSE += ss.TrlSSE
 		ss.SumAvgSSE += ss.TrlAvgSSE
@@ -593,35 +588,35 @@ func (ss *Sim) SaveWeights(filename gi.FileName) {
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
 func (ss *Sim) TestTrial(returnOnChg bool) {
-	ss.TestEnv.Step()
-
-	// Query counters FIRST
-	_, _, chg := ss.TestEnv.Counter(env.Epoch)
-	if chg {
-		if ss.ViewOn && ss.TestUpdt > leabra.AlphaCycle {
-			ss.UpdateView(false)
-		}
-		ss.LogTstEpc(ss.TstEpcLog)
-		if returnOnChg {
-			return
-		}
-	}
-
-	ss.ApplyInputs(&ss.TestEnv)
-	ss.AlphaCyc(false)   // !train
-	ss.TrialStats(false) // !accumulate
-	ss.LogTstTrl(ss.TstTrlLog)
+	// ss.TestEnv.Step()
+	//
+	// // Query counters FIRST
+	// _, _, chg := ss.TestEnv.Counter(env.Epoch)
+	// if chg {
+	// 	if ss.ViewOn && ss.TestUpdt > leabra.AlphaCycle {
+	// 		ss.UpdateView(false)
+	// 	}
+	// 	ss.LogTstEpc(ss.TstEpcLog)
+	// 	if returnOnChg {
+	// 		return
+	// 	}
+	// }
+	//
+	// ss.ApplyInputs(&ss.TestEnv)
+	// ss.AlphaCyc(false)   // !train
+	// ss.TrialStats(false) // !accumulate
+	// ss.LogTstTrl(ss.TstTrlLog)
 }
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() {
-	ss.TestEnv.Init(ss.TrainEnv.Run.Cur)
+	// ss.TestEnv.Init(ss.TrainEnv.Run.Cur)
 	for {
 		ss.TestTrial(true) // return on change -- don't wrap
-		_, _, chg := ss.TestEnv.Counter(env.Epoch)
-		if chg || ss.StopNow {
-			break
-		}
+		// _, _, chg := ss.TestEnv.Counter(env.Epoch)
+		// if chg || ss.StopNow {
+		// 	break
+		// }
 	}
 }
 
@@ -725,7 +720,7 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	dt.SetNumRows(row + 1)
 
 	epc := ss.TrainEnv.Epoch.Prv // this is triggered by increment so use previous value
-	nt := float64(ss.TrainEnv.Trial.Prv)
+	nt := float64(ss.TrainEnv.Event.Prv)
 
 	ss.EpcSSE = ss.SumSSE / nt
 	ss.SumSSE = 0
@@ -790,7 +785,7 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "DeepFSA Epoch Plot"
+	plt.Params.Title = "MapNav Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -815,9 +810,9 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 // log always contains number of testing items
 func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	epc := ss.TrainEnv.Epoch.Prv // this is triggered by increment so use previous value
-	inp := ss.Net.LayerByName("InputP").(*deep.Layer)
+	// inp := ss.Net.LayerByName("InputP").(*deep.Layer)
 
-	trl := ss.TestEnv.Trial.Cur
+	trl := ss.TrainEnv.Event.Cur
 	row := trl
 
 	if dt.Rows <= row {
@@ -827,7 +822,7 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
 	dt.SetCellFloat("Trial", row, float64(trl))
-	dt.SetCellString("TrialName", row, ss.TestEnv.String())
+	// dt.SetCellString("TrialName", row, ss.TestEnv.String())
 	dt.SetCellFloat("SSE", row, ss.TrlSSE)
 	dt.SetCellFloat("AvgSSE", row, ss.TrlAvgSSE)
 	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
@@ -852,14 +847,14 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) {
-	inp := ss.Net.LayerByName("InputP").(*deep.Layer)
+	// inp := ss.Net.LayerByName("InputP").(*deep.Layer)
 
 	dt.SetMetaData("name", "TstTrlLog")
 	dt.SetMetaData("desc", "Record of testing per input pattern")
 	dt.SetMetaData("read-only", "true")
 	dt.SetMetaData("precision", strconv.Itoa(LogPrec))
 
-	nt := ss.TestEnv.Trial.Prv
+	nt := ss.TrainEnv.Event.Prv
 	sch := etable.Schema{
 		{"Run", etensor.INT64, nil, nil},
 		{"Epoch", etensor.INT64, nil, nil},
@@ -881,7 +876,7 @@ func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "DeepFSA Test Trial Plot"
+	plt.Params.Title = "MapNav Test Trial Plot"
 	plt.Params.XAxisCol = "Trial"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -965,7 +960,7 @@ func (ss *Sim) ConfigTstEpcLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTstEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "DeepFSA Testing Epoch Plot"
+	plt.Params.Title = "MapNav Testing Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -1020,7 +1015,7 @@ func (ss *Sim) ConfigTstCycLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTstCycPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "DeepFSA Test Cycle Plot"
+	plt.Params.Title = "MapNav Test Cycle Plot"
 	plt.Params.XAxisCol = "Cycle"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -1096,7 +1091,7 @@ func (ss *Sim) ConfigRunLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "DeepFSA Run Plot"
+	plt.Params.Title = "MapNav Run Plot"
 	plt.Params.XAxisCol = "Run"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -1123,10 +1118,10 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	width := 1600
 	height := 1200
 
-	gi.SetAppName("DeepFSA")
-	gi.SetAppAbout(`This demonstrates a basic DeepLeabra model on the Finite State Automaton problem (e.g., the Reber grammar). See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`)
+	gi.SetAppName("MapNav")
+	gi.SetAppAbout(`This learns 2D map (grid cells) by moving around a map. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`)
 
-	win := gi.NewWindow2D("DeepFSA", "DeepLeabra Finite State Automaton", width, height, true)
+	win := gi.NewWindow2D("MapNav", "Map Navigation Predictive Learning", width, height, true)
 	ss.Win = win
 
 	vp := win.WinViewport2D()
@@ -1421,6 +1416,8 @@ func mainrun() {
 		// gi.Update2DTrace = true
 		TheSim.Init()
 		win := TheSim.ConfigGui()
+		ewin := TheSim.TrainEnv.OpenWindow()
+		ewin.GoStartEventLoop()
 		win.StartEventLoop()
 	}
 }

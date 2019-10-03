@@ -277,9 +277,11 @@ func (ev *Env) TakeAction(act Actions) {
 // UpdateWorld updates world after action
 func (ev *Env) UpdateWorld() {
 	ev.World.UpdateWorld()
-	ev.View.UpdatePose()
-	ev.UpdateState()
-	ev.UpdateView()
+	if ev.View != nil {
+		ev.View.UpdatePose()
+		ev.UpdateState()
+		ev.UpdateView()
+	}
 }
 
 // UpdateState updates the current state representations (depth, action)

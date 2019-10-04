@@ -19,6 +19,7 @@ import (
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/params"
+	"github.com/emer/emergent/popcode"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
 	"github.com/emer/etable/agg"
@@ -26,6 +27,7 @@ import (
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor"
 	_ "github.com/emer/etable/etview" // include to get gui views
+	"github.com/emer/etable/norm"
 	"github.com/emer/etable/split"
 	"github.com/emer/leabra/deep"
 	"github.com/emer/leabra/leabra"
@@ -60,8 +62,8 @@ var ParamSets = params.Sets{
 			{Sel: "Layer", Desc: "using default 1.8 inhib for hidden layers",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi":  "1.8",
-					"Layer.Learn.AvgL.Gain": "1.5", // key to lower relative to 2.5
-					"Layer.Act.Gbar.L":      "0.1", // lower leak = better
+					"Layer.Learn.AvgL.Gain": "2.5",
+					"Layer.Act.Gbar.L":      "0.2",
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
@@ -69,7 +71,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
 				Params: params.Params{
-					"Prjn.WtInit.Mean": "0.8", // using .8 for localist layer
+					"Prjn.WtInit.Mean": "0.3",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.Learn.Learn": "false",
 				}},
@@ -79,11 +81,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".Input", Desc: "input layers need more inhibition",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "2.2",
-				}},
-			{Sel: "#InputPToHiddenD", Desc: "critical to make this small so deep context dominates",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.05",
+					"Layer.Inhib.Layer.Gi": "1.8",
 				}},
 		},
 		"Sim": &params.Sheet{ // sim params apply to sim object
@@ -154,6 +152,9 @@ type Sim struct {
 	MaxEpcs      int               `desc:"maximum number of epochs to run per model run"`
 	NZeroStop    int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
 	TrainEnv     navenv.Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	NDepthCode   int               `desc:"Number of units to use for population-coding depth values"`
+	PopCode      popcode.OneD      `desc:"Parameters for depth population code"`
+	PopVals      []float32         `desc:"tmp pop code values"`
 	Time         leabra.Time       `desc:"leabra timing parameters and state"`
 	ViewOn       bool              `desc:"whether to update the network view while running"`
 	TrainUpdt    leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
@@ -190,6 +191,7 @@ type Sim struct {
 	RunFile       *os.File         `view:"-" desc:"log file"`
 	InputValsTsr  *etensor.Float32 `view:"-" desc:"for holding layer values"`
 	OutputValsTsr *etensor.Float32 `view:"-" desc:"for holding layer values"`
+	ActVals       []float32        `view:"-" desc:"for action vals"`
 	SaveWts       bool             `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
 	NoGui         bool             `view:"-" desc:"if true, runing in no GUI mode"`
 	LogSetParams  bool             `view:"-" desc:"if true, print message for all params that are set"`
@@ -209,6 +211,7 @@ var TheSim Sim
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
 	ss.Net = &deep.Network{}
+	ss.NDepthCode = 8
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
 	ss.TstTrlLog = &etable.Table{}
@@ -260,29 +263,46 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Run.Max = ss.MaxRuns
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
+
+	ss.PopCode.Defaults()
+	ss.PopCode.Min = -0.2
+	ss.PopCode.Max = 1.2
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "MapNav")
-	in, inp := net.AddInputPulv4D("DepthIn", 16, 8, 1, 8)
-	hid, hidd, _ := net.AddSuperDeep2D("ParMap", 20, 20, false, false) // no pulv, attn
+	in, inp := net.AddInputPulv4D("DepthIn", 8, 16, 1, ss.NDepthCode)
 
-	hidd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMap", YAlign: relpos.Front, Space: 2})
+	pmap, pmapd, _ := net.AddSuperDeep2D("ParMap", 20, 20, false, false) // no pulv, attn
+	pmap.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "DepthIn", XAlign: relpos.Left, YAlign: relpos.Front})
+	pmapd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMap", YAlign: relpos.Front, Space: 2})
+
+	sma, smad, _ := net.AddSuperDeep2D("SMA", 8, 8, false, false) // no pulv, attn
+	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMapD", YAlign: relpos.Front})
+	smad.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
+
+	act, actp := net.AddInputPulv2D("Action", 1, int(navenv.ActionsN))
+	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 2})
 
 	in.SetClass("DepthIn")
 	inp.SetClass("DepthIn")
 
-	net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(hidd, inp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(inp, hidd, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(inp, hid, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(in, pmap, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(pmapd, inp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(inp, pmapd, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(inp, pmap, prjn.NewFull(), emer.Back)
 
-	// for this small localist model with longer-term dependencies,
-	// these additional context projections turn out to be essential!
-	// larger models in general do not require them, though it might be
-	// good to check
-	// net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
-	// net.ConnectLayers(in, hidd, prjn.NewFull(), deep.BurstCtxt)
+	net.ConnectLayers(pmap, sma, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, inp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, pmapd, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(inp, smad, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(inp, sma, prjn.NewFull(), emer.Back)
+
+	net.ConnectLayers(sma, act, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, actp, prjn.NewFull(), emer.Forward)
+
+	net.ConnectLayers(actp, smad, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(actp, sma, prjn.NewFull(), emer.Back)
 
 	net.Defaults()
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
@@ -406,15 +426,48 @@ func (ss *Sim) AlphaCyc(train bool) {
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func (ss *Sim) ApplyInputs(en env.Env) {
-	ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
+func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
+	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	// ly := ss.Net.LayerByName(lnm).(*leabra.Layer)
-	// pats := en.State(ly.Nm)
-	// if pats != nil {
-	// 	ly.ApplyExt(pats)
-	// }
+	aly := net.LayerByName("Action").(*deep.Layer)
+	aly.UnitVals(&ss.ActVals, "ActM") // action generated last time
+
+	_, mi := norm.MaxIdx32(ss.ActVals)
+	netact := navenv.Actions(mi)
+
+	ss.TrainEnv.SetAction(netact)
+	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
+
+	dly := net.LayerByName("DepthIn").(*deep.Layer)
+	depth := en.State("Depth")
+	ny := depth.Dim(0)
+	nx := depth.Dim(1)
+	for y := 0; y < ny; y++ {
+		for x := 0; x < nx; x++ {
+			d := depth.FloatVal([]int{y, x}) // not flipped
+			dxf := (d - .2) / .8
+			if dxf > 1 {
+				dxf = 1
+			}
+			if dxf < 0 {
+				dxf = 0
+			}
+			ss.PopCode.Encode(&ss.PopVals, float32(d), ss.NDepthCode)
+			si := dly.Shp.Offset([]int{y, x, 0, 0})
+			for i := 0; i < ss.NDepthCode; i++ {
+				nrn := &dly.Neurons[si+i]
+				if nrn.IsOff() {
+					continue
+				}
+				nrn.Ext = ss.PopVals[i]
+			}
+		}
+	}
+	dly.UpdateExtFlags()
+
+	pats := en.State("Action")
+	aly.ApplyExt(pats)
 }
 
 // TrainTrial runs one trial of training using TrainEnv
@@ -422,10 +475,6 @@ func (ss *Sim) TrainTrial() {
 	if ss.NeedsNewRun {
 		ss.NewRun()
 	}
-
-	// todo: action policy etc
-	ss.TrainEnv.SetAction(navenv.StepForward)
-	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
@@ -452,7 +501,7 @@ func (ss *Sim) TrainTrial() {
 		}
 	}
 
-	ss.ApplyInputs(&ss.TrainEnv)
+	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
 	ss.AlphaCyc(true)   // train
 	ss.TrialStats(true) // accumulate
 }
@@ -892,9 +941,9 @@ func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 		plt.SetColParams(lnm+" ActM.Avg", false, true, 0, true, .5)
 	}
 
-	plt.SetColParams("InActP", false, true, 0, true, 1)
-	plt.SetColParams("InActM", false, true, 0, true, 1)
-	plt.SetColParams("Targs", false, true, 0, true, 1)
+	// plt.SetColParams("InActP", false, true, 0, true, 1)
+	// plt.SetColParams("InActM", false, true, 0, true, 1)
+	// plt.SetColParams("Targs", false, true, 0, true, 1)
 	return plt
 }
 
@@ -932,9 +981,9 @@ func (ss *Sim) LogTstEpc(dt *etable.Table) {
 	allsp := split.All(trlix)
 	split.Agg(allsp, "SSE", agg.AggSum)
 	split.Agg(allsp, "AvgSSE", agg.AggMean)
-	split.Agg(allsp, "InActM", agg.AggMean)
-	split.Agg(allsp, "InActP", agg.AggMean)
-	split.Agg(allsp, "Targs", agg.AggMean)
+	// split.Agg(allsp, "InActM", agg.AggMean)
+	// split.Agg(allsp, "InActP", agg.AggMean)
+	// split.Agg(allsp, "Targs", agg.AggMean)
 
 	ss.TstErrStats = allsp.AggsToTable(false)
 

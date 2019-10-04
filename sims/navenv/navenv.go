@@ -5,11 +5,13 @@
 package navenv
 
 import (
+	"fmt"
 	"image"
 	"log"
 
 	"github.com/emer/emergent/env"
 	"github.com/emer/etable/etensor"
+	"github.com/emer/etable/tsragg"
 	"github.com/emer/eve/eve"
 	"github.com/emer/eve/evev"
 	"github.com/goki/gi/gi"
@@ -39,6 +41,8 @@ const (
 	RotBodyRight
 	RotHeadLeft
 	RotHeadRight
+	RotBodyToHead
+	RotHeadToBody
 
 	ActionsN
 )
@@ -55,9 +59,11 @@ type Env struct {
 	RotStep   float32          `desc:"how far to rotate every step"`
 	Room      RoomParams       `desc:"parameters for room"`
 	Camera    evev.Camera      `desc:"offscreen render camera settings"`
+	Policy    Policy           `view:"inline" desc:"current policy for actions"`
 	DepthMap  giv.ColorMapName `desc:"color map to use for rendering depth map"`
 	CurImage  image.Image      `desc:"current first-person image"`
-	CurDepth  etensor.Float32  `desc:"current depth map X x Y same size as camera"`
+	RawDepth  etensor.Float32  `desc:"raw depth map X x Y same size as camera"`
+	CurDepth  etensor.Float32  `desc:"current normalized depth map X x Y same size as camera"`
 	CurAct    Actions          `desc:"current action selected"`
 	PrvAct    Actions          `desc:"previous action selected"`
 	CurActMap etensor.Float32  `desc:"action as a 1-hot map, returned as state"`
@@ -93,11 +99,22 @@ func (ev *Env) Init(run int) {
 	ev.Event.Init()
 	ev.Run.Cur = run
 	ev.Event.Cur = -1 // init state -- key so that first Step() = 0
+	ev.RawDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{1, int(ActionsN)}, nil, []string{"1", "Actions"})
 }
 
 func (ev *Env) Step() bool {
+	mind := float32(tsragg.Min(&ev.CurDepth))
+	avgd := float32(tsragg.Mean(&ev.CurDepth))
+	if mind == 1 && avgd == 1 { // actually
+		mind = 0
+		avgd = 0
+	} else if mind == 0 && avgd == 0 {
+		mind = 0.5
+		avgd = 0.5
+	}
+	ev.CurAct = ev.Policy.Act(mind, avgd, ev.CurAct)
 	if ev.CurAct != NoAction {
 		ev.TakeAction(ev.CurAct)
 	} else {
@@ -171,6 +188,7 @@ func (ev *Env) SetAction(act Actions) {
 
 func (ev *Env) Defaults() {
 	ev.Room.Defaults()
+	ev.Policy.Defaults()
 	ev.EmerHt = 1
 	ev.MoveStep = ev.EmerHt * .2
 	ev.RotStep = 15
@@ -179,6 +197,7 @@ func (ev *Env) Defaults() {
 	ev.Camera.Size.X = 16
 	ev.Camera.Size.Y = 8
 	ev.Camera.FOV = 90
+	ev.Camera.MaxD = 7
 }
 
 // MakeWorld constructs a new virtual physics world
@@ -221,7 +240,7 @@ func (ev *Env) MakeView(sc *gi3d.Scene) {
 // StepForward moves Emer forward in current facing direction one step, and updates
 func (ev *Env) StepForward() {
 	ev.Emer.Rel.MoveOnAxis(0, 0, 1, -ev.MoveStep)
-	ev.World.UpdateWorld()
+	ev.UpdateWorld()
 }
 
 // StepBackward moves Emer backward in current facing direction one step, and updates
@@ -242,17 +261,34 @@ func (ev *Env) RotBodyRight() {
 	ev.UpdateWorld()
 }
 
-// RotHeadLeft rotates emer left and updates
+// RotHeadLeft rotates head left and updates
 func (ev *Env) RotHeadLeft() {
 	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
 	hd.Rel.RotateOnAxis(0, 1, 0, ev.RotStep)
 	ev.UpdateWorld()
 }
 
-// RotHeadRight rotates emer right and updates
+// RotHeadRight rotates head right and updates
 func (ev *Env) RotHeadRight() {
 	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
 	hd.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep)
+	ev.UpdateWorld()
+}
+
+// RotHeadToBody rotates head straight
+func (ev *Env) RotHeadToBody() {
+	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
+	hd.Rel.SetAxisRotation(0, 1, 0, 0)
+	ev.UpdateWorld()
+}
+
+// RotBodyToHead rotates body to match current head rotation relative to body
+func (ev *Env) RotBodyToHead() {
+	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
+	aa := hd.Rel.Quat.ToAxisAngle()
+	fmt.Printf("aa %v\n", aa)
+	hd.Rel.SetAxisRotation(0, 1, 0, 0)
+	ev.Emer.Rel.RotateOnAxis(0, 1, 0, mat32.RadToDeg(aa.W)) // just get angle assuming rest is up
 	ev.UpdateWorld()
 }
 
@@ -271,6 +307,10 @@ func (ev *Env) TakeAction(act Actions) {
 		ev.RotHeadLeft()
 	case RotHeadRight:
 		ev.RotHeadRight()
+	case RotHeadToBody:
+		ev.RotHeadToBody()
+	case RotBodyToHead:
+		ev.RotBodyToHead()
 	}
 }
 
@@ -286,6 +326,7 @@ func (ev *Env) UpdateWorld() {
 
 // UpdateState updates the current state representations (depth, action)
 func (ev *Env) UpdateState() {
+	ev.View.Scene.ActivateWin()
 	err := ev.View.RenderOffNode(&ev.Frame, ev.EyeR, &ev.Camera)
 	if err != nil {
 		log.Println(err)
@@ -298,7 +339,8 @@ func (ev *Env) UpdateState() {
 		ev.CurImage = tex.GrabImage()
 		depth = ev.Frame.DepthAll()
 	})
-	copy(ev.CurDepth.Values, depth)
+	copy(ev.RawDepth.Values, depth)
+	evev.DepthNorm(&ev.CurDepth.Values, depth, &ev.Camera, false) // no flip!
 	ev.CurActMap.SetZeros()
 	ev.CurActMap.Values[ev.CurAct] = 1.0
 }
@@ -449,6 +491,12 @@ func (ev *Env) OpenWindow() *gi.Window {
 	})
 	tbar.AddAction(gi.ActOpts{Label: "Head Right", Icon: "wedge-right", Tooltip: "Rotate body right."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
 		ev.RotHeadRight()
+	})
+	tbar.AddAction(gi.ActOpts{Label: "Body To Head", Icon: "update", Tooltip: "Rotate body to match head orientation relative to body."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ev.RotBodyToHead()
+	})
+	tbar.AddAction(gi.ActOpts{Label: "Head To Body", Icon: "update", Tooltip: "Rotate head back to match body."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ev.RotHeadToBody()
 	})
 	// tbar.AddSeparator("rm-sep")
 	// tbar.AddAction(gi.ActOpts{Label: "README", Icon: "file-markdown", Tooltip: "Open browser on README."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {

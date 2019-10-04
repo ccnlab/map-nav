@@ -20,12 +20,14 @@ func _() {
 	_ = x[RotBodyRight-4]
 	_ = x[RotHeadLeft-5]
 	_ = x[RotHeadRight-6]
-	_ = x[ActionsN-7]
+	_ = x[RotBodyToHead-7]
+	_ = x[RotHeadToBody-8]
+	_ = x[ActionsN-9]
 }
 
-const _Actions_name = "NoActionStepForwardStepBackwardRotBodyLeftRotBodyRightRotHeadLeftRotHeadRightActionsN"
+const _Actions_name = "NoActionStepForwardStepBackwardRotBodyLeftRotBodyRightRotHeadLeftRotHeadRightRotBodyToHeadRotHeadToBodyActionsN"
 
-var _Actions_index = [...]uint8{0, 8, 19, 31, 42, 54, 65, 77, 85}
+var _Actions_index = [...]uint8{0, 8, 19, 31, 42, 54, 65, 77, 90, 103, 111}
 
 func (i Actions) String() string {
 	if i < 0 || i >= Actions(len(_Actions_index)-1) {

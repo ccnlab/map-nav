@@ -18,8 +18,8 @@ type RoomParams struct {
 }
 
 func (rp *RoomParams) Defaults() {
-	rp.Width = 10
-	rp.Depth = 15
+	rp.Width = 7
+	rp.Depth = 5
 	rp.Height = 2
 	rp.Thick = 0.2
 }

@@ -79,9 +79,11 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.WtBal.On": "false",
 				}},
-			{Sel: ".Input", Desc: "input layers need more inhibition",
+			{Sel: ".DepthIn", Desc: "depth input layers use pool inhibition",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.8",
+					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
+					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
 		},
 		"Sim": &params.Sheet{ // sim params apply to sim object
@@ -137,6 +139,7 @@ var InputNameMap map[string]int
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
 	Net          *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	FFTopoPrjn   *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
 	TrnEpcLog    *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog    *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog    *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
@@ -211,6 +214,7 @@ var TheSim Sim
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
 	ss.Net = &deep.Network{}
+	ss.FFTopoPrjn = prjn.NewPoolTile()
 	ss.NDepthCode = 8
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
@@ -221,7 +225,7 @@ func (ss *Sim) New() {
 	ss.Params = ParamSets
 	ss.RndSeed = 1
 	ss.ViewOn = true
-	ss.TrainUpdt = leabra.AlphaCycle
+	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
 	ss.LayStatNms = []string{"DepthIn", "ParMap"}
@@ -273,7 +277,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "MapNav")
 	in, inp := net.AddInputPulv4D("DepthIn", 8, 16, 1, ss.NDepthCode)
 
-	pmap, pmapd, _ := net.AddSuperDeep2D("ParMap", 20, 20, false, false) // no pulv, attn
+	pmap, pmapd, _ := net.AddSuperDeep4D("ParMap", 4, 8, 6, 6, false, false) // no pulv, attn
 	pmap.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "DepthIn", XAlign: relpos.Left, YAlign: relpos.Front})
 	pmapd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMap", YAlign: relpos.Front, Space: 2})
 
@@ -287,7 +291,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	in.SetClass("DepthIn")
 	inp.SetClass("DepthIn")
 
-	net.ConnectLayers(in, pmap, prjn.NewFull(), emer.Forward)
+	in2pmap := net.ConnectLayers(in, pmap, ss.FFTopoPrjn, emer.Forward).(*deep.Prjn)
 	net.ConnectLayers(pmapd, inp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(inp, pmapd, prjn.NewFull(), emer.Back)
 	net.ConnectLayers(inp, pmap, prjn.NewFull(), emer.Back)
@@ -311,6 +315,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		log.Println(err)
 		return
 	}
+	// set scales after building but before InitWts
+	scales := &etensor.Float32{}
+	ss.FFTopoPrjn.TopoWts(in.Shape(), pmap.Shape(), scales)
+	in2pmap.SetScalesRPool(scales)
+
 	net.InitWts()
 }
 

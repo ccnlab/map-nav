@@ -5,8 +5,6 @@
 package navenv
 
 import (
-	"fmt"
-
 	"github.com/emer/emergent/erand"
 	"github.com/goki/ki/kit"
 )
@@ -43,7 +41,7 @@ func (pl *Policy) Act(mind, avgd float32, inact Actions) Actions {
 	pl.CurAvgDist = avgd
 	act := pl.ActChoose(inact)
 	pl.PrvAct = act
-	fmt.Printf("chose action: %v  from  in act: %v  min, avg d: %g  %g\n", act, inact, mind, avgd)
+	// fmt.Printf("chose action: %v  from  in act: %v  min, avg d: %g  %g\n", act, inact, mind, avgd)
 	return act
 }
 

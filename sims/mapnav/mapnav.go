@@ -308,7 +308,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(actp, smad, prjn.NewFull(), emer.Back)
 	net.ConnectLayers(actp, sma, prjn.NewFull(), emer.Back)
 
-	net.Defaults()
+	// using 4 total threads -- todo: didn't work
+	// pmap.SetThread(1)
+	// pmapd.SetThread(2)
+	// sma.SetThread(3)
+	// smad.SetThread(3)
+
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
 	err := net.Build()
 	if err != nil {

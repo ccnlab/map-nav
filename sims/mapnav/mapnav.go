@@ -139,7 +139,6 @@ var InputNameMap map[string]int
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
 	Net          *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	FFTopoPrjn   *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
 	TrnEpcLog    *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog    *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog    *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
@@ -151,6 +150,8 @@ type Sim struct {
 	Params       params.Sets       `view:"no-inline" desc:"full collection of param sets"`
 	ParamSet     string            `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
 	Tag          string            `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Topo4Prjn    *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Topo3Prjn    *prjn.PoolTile    `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
 	MaxRuns      int               `desc:"maximum number of model runs to perform"`
 	MaxEpcs      int               `desc:"maximum number of epochs to run per model run"`
 	NZeroStop    int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
@@ -214,7 +215,6 @@ var TheSim Sim
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
 	ss.Net = &deep.Network{}
-	ss.FFTopoPrjn = prjn.NewPoolTile()
 	ss.NDepthCode = 8
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
@@ -223,6 +223,14 @@ func (ss *Sim) New() {
 	ss.RunLog = &etable.Table{}
 	ss.RunStats = &etable.Table{}
 	ss.Params = ParamSets
+	ss.Topo4Prjn = prjn.NewPoolTile()
+	ss.Topo4Prjn.Size.Set(4, 4)
+	ss.Topo4Prjn.Skip.Set(2, 2)
+	ss.Topo4Prjn.Start.Set(-1, -1)
+	ss.Topo3Prjn = prjn.NewPoolTile()
+	ss.Topo3Prjn.Size.Set(3, 3)
+	ss.Topo3Prjn.Skip.Set(1, 1)
+	ss.Topo3Prjn.Start.Set(-1, -1)
 	ss.RndSeed = 1
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
@@ -279,6 +287,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	v2, v2p := net.AddInputPulv4D("V2d", 8, 16, 1, ss.NDepthCode)
 
 	mt, mtd, _ := net.AddSuperDeep4D("MT", 4, 8, 6, 6, false, false) // no pulv, attn
+	mtctxt := mtd.RecvPrjns().SendName("MT")
+	mtctxt.SetPattern(ss.Topo3Prjn)
 	mt.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2d", XAlign: relpos.Left, YAlign: relpos.Front})
 	mtd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MT", YAlign: relpos.Front, Space: 2})
 
@@ -292,10 +302,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	v2.SetClass("V2d")
 	v2p.SetClass("V2d")
 
-	net.ConnectLayers(v2, mt, ss.FFTopoPrjn, emer.Forward)
+	net.ConnectLayers(v2, mt, ss.Topo4Prjn, emer.Forward)
 	net.ConnectLayers(mtd, v2p, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(v2p, mtd, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(v2p, mt, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(v2p, mtd, ss.Topo4Prjn, emer.Back)
+	net.ConnectLayers(v2p, mt, ss.Topo4Prjn, emer.Back)
 
 	net.ConnectLayers(mt, sma, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(smad, v2p, prjn.NewFull(), emer.Forward)
@@ -331,7 +341,7 @@ func (ss *Sim) InitWts(net *deep.Network) {
 	mt := net.LayerByName("MT")
 	v2mt := mt.RecvPrjns().SendName("V2d").(*deep.Prjn)
 	scales := &etensor.Float32{}
-	ss.FFTopoPrjn.TopoWts(v2.Shape(), mt.Shape(), scales)
+	ss.Topo4Prjn.TopoWts(v2.Shape(), mt.Shape(), scales)
 	v2mt.SetScalesRPool(scales)
 
 	net.InitWts()

@@ -5,7 +5,6 @@
 package navenv
 
 import (
-	"fmt"
 	"image"
 	"log"
 
@@ -286,7 +285,6 @@ func (ev *Env) RotHeadToBody() {
 func (ev *Env) RotBodyToHead() {
 	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
 	aa := hd.Rel.Quat.ToAxisAngle()
-	fmt.Printf("aa %v\n", aa)
 	hd.Rel.SetAxisRotation(0, 1, 0, 0)
 	ev.Emer.Rel.RotateOnAxis(0, 1, 0, mat32.RadToDeg(aa.W)) // just get angle assuming rest is up
 	ev.UpdateWorld()
@@ -432,16 +430,23 @@ func (ev *Env) OpenWindow() *gi.Window {
 
 	ev.MakeView(sc)
 
-	sc.Camera.Pose.Pos = mat32.Vec3{0, 40, 3.5}
-	sc.Camera.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
+	cam := &sc.Camera
+
+	cam.Pose.Pos = mat32.Vec3{0, 40, 3.5}
+	cam.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
 	sc.SaveCamera("3")
 
-	sc.Camera.Pose.Pos = mat32.Vec3{0, 20, 30}
-	sc.Camera.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
+	cam.Pose.Pos.Set(0, 13.256021, 8.77191)
+	cam.Pose.Quat.SetFromAxisAngle(mat32.Vec3{-0.9999999, 0, -0}, 0.98724663)
+	cam.Target.Set(0, 2.1378326, 1.4310836)
+	cam.UpDir.Set(0, 0.86602557, -0.50000006)
+
+	// cam.Pose.Pos = mat32.Vec3{0, 20, 30}
+	// cam.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
 	sc.SaveCamera("2")
 
-	sc.Camera.Pose.Pos = mat32.Vec3{-.86, .97, 2.7}
-	sc.Camera.LookAt(mat32.Vec3{0, .8, 0}, mat32.Vec3Y)
+	cam.Pose.Pos = mat32.Vec3{-.86, .97, 2.7}
+	cam.LookAt(mat32.Vec3{0, .8, 0}, mat32.Vec3Y)
 	sc.SaveCamera("1")
 	sc.SaveCamera("default")
 

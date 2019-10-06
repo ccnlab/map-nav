@@ -79,7 +79,7 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.WtBal.On": "false",
 				}},
-			{Sel: ".DepthIn", Desc: "depth input layers use pool inhibition",
+			{Sel: ".V2d", Desc: "depth input layers use pool inhibition",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
@@ -228,7 +228,7 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
-	ss.LayStatNms = []string{"DepthIn", "ParMap"}
+	ss.LayStatNms = []string{"V2d", "MT"}
 	if InputNameMap == nil {
 		InputNameMap = make(map[string]int, len(InputNames))
 		for i, nm := range InputNames {
@@ -263,6 +263,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Defaults()
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
+	ss.TrainEnv.Event.Max = 100
 	ss.TrainEnv.Epoch.Max = 100
 	ss.TrainEnv.Run.Max = ss.MaxRuns
 	ss.TrainEnv.Init(0)
@@ -275,32 +276,32 @@ func (ss *Sim) ConfigEnv() {
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "MapNav")
-	in, inp := net.AddInputPulv4D("DepthIn", 8, 16, 1, ss.NDepthCode)
+	v2, v2p := net.AddInputPulv4D("V2d", 8, 16, 1, ss.NDepthCode)
 
-	pmap, pmapd, _ := net.AddSuperDeep4D("ParMap", 4, 8, 6, 6, false, false) // no pulv, attn
-	pmap.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "DepthIn", XAlign: relpos.Left, YAlign: relpos.Front})
-	pmapd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMap", YAlign: relpos.Front, Space: 2})
+	mt, mtd, _ := net.AddSuperDeep4D("MT", 4, 8, 6, 6, false, false) // no pulv, attn
+	mt.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2d", XAlign: relpos.Left, YAlign: relpos.Front})
+	mtd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MT", YAlign: relpos.Front, Space: 2})
 
 	sma, smad, _ := net.AddSuperDeep2D("SMA", 8, 8, false, false) // no pulv, attn
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ParMapD", YAlign: relpos.Front})
+	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MTD", YAlign: relpos.Front})
 	smad.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
 
 	act, actp := net.AddInputPulv2D("Action", 1, int(navenv.ActionsN))
 	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 2})
 
-	in.SetClass("DepthIn")
-	inp.SetClass("DepthIn")
+	v2.SetClass("V2d")
+	v2p.SetClass("V2d")
 
-	in2pmap := net.ConnectLayers(in, pmap, ss.FFTopoPrjn, emer.Forward).(*deep.Prjn)
-	net.ConnectLayers(pmapd, inp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(inp, pmapd, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(inp, pmap, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(v2, mt, ss.FFTopoPrjn, emer.Forward)
+	net.ConnectLayers(mtd, v2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(v2p, mtd, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(v2p, mt, prjn.NewFull(), emer.Back)
 
-	net.ConnectLayers(pmap, sma, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, inp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, pmapd, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(inp, smad, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(inp, sma, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(mt, sma, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, v2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, mtd, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(v2p, smad, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(v2p, sma, prjn.NewFull(), emer.Back)
 
 	net.ConnectLayers(sma, act, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(smad, actp, prjn.NewFull(), emer.Forward)
@@ -309,21 +310,29 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(actp, sma, prjn.NewFull(), emer.Back)
 
 	// using 4 total threads -- todo: didn't work
-	// pmap.SetThread(1)
-	// pmapd.SetThread(2)
+	// mt.SetThread(1)
+	// mtd.SetThread(2)
 	// sma.SetThread(3)
 	// smad.SetThread(3)
 
+	net.Defaults()
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
 	err := net.Build()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	// set scales after building but before InitWts
+	ss.InitWts(net)
+}
+
+// Initialize network weights including scales
+func (ss *Sim) InitWts(net *deep.Network) {
+	v2 := net.LayerByName("V2d")
+	mt := net.LayerByName("MT")
+	v2mt := mt.RecvPrjns().SendName("V2d").(*deep.Prjn)
 	scales := &etensor.Float32{}
-	ss.FFTopoPrjn.TopoWts(in.Shape(), pmap.Shape(), scales)
-	in2pmap.SetScalesRPool(scales)
+	ss.FFTopoPrjn.TopoWts(v2.Shape(), mt.Shape(), scales)
+	v2mt.SetScalesRPool(scales)
 
 	net.InitWts()
 }
@@ -453,7 +462,7 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 	ss.TrainEnv.SetAction(netact)
 	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
-	dly := net.LayerByName("DepthIn").(*deep.Layer)
+	dly := net.LayerByName("V2d").(*deep.Layer)
 	depth := en.State("Depth")
 	ny := depth.Dim(0)
 	nx := depth.Dim(1)
@@ -537,7 +546,7 @@ func (ss *Sim) NewRun() {
 	ss.TrainEnv.Init(run)
 	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
-	ss.Net.InitWts()
+	ss.InitWts(ss.Net)
 	ss.InitStats()
 	ss.TrnEpcLog.SetNumRows(0)
 	ss.TstEpcLog.SetNumRows(0)
@@ -569,7 +578,7 @@ func (ss *Sim) InitStats() {
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
-	inp := ss.Net.LayerByName("DepthIn").(*deep.Layer)
+	inp := ss.Net.LayerByName("V2dP").(*deep.Layer)
 	ss.TrlCosDiff = float64(inp.CosDiff.Cos)
 	ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
 	if accum {

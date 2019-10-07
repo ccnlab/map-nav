@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ccnlab/map-nav/sims/navenv"
+	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/netview"
@@ -26,7 +27,7 @@ import (
 	"github.com/emer/etable/eplot"
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor"
-	_ "github.com/emer/etable/etview" // include to get gui views
+	"github.com/emer/etable/etview" // include to get gui views
 	"github.com/emer/etable/norm"
 	"github.com/emer/etable/split"
 	"github.com/emer/leabra/deep"
@@ -85,11 +86,17 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
+			{Sel: ".MT", Desc: "depth input layers use pool inhibition",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.8",
+					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.Pool.Gi":  "1.8",
+				}},
 		},
 		"Sim": &params.Sheet{ // sim params apply to sim object
 			{Sel: "Sim", Desc: "best params always finish in this time",
 				Params: params.Params{
-					"Sim.MaxEpcs": "50",
+					"Sim.MaxEpcs": "500",
 				}},
 		},
 	}},
@@ -126,12 +133,6 @@ var ParamSets = params.Sets{
 	}},
 }
 
-// InputNames are names of input letters
-var InputNames = []string{"B", "T", "S", "X", "V", "P", "E"}
-
-// InputNameMap has indexes of InputNames
-var InputNameMap map[string]int
-
 // Sim encapsulates the entire simulation model, and we define all the
 // functionality as methods on this struct.  This structure keeps all relevant
 // state information organized and available without having to pass everything around
@@ -139,6 +140,7 @@ var InputNameMap map[string]int
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
 	Net          *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	CurPosMap    *etensor.Float32  `view:"current pos map from env"`
 	TrnEpcLog    *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog    *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog    *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
@@ -158,51 +160,59 @@ type Sim struct {
 	TrainEnv     navenv.Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	NDepthCode   int               `desc:"Number of units to use for population-coding depth values"`
 	PopCode      popcode.OneD      `desc:"Parameters for depth population code"`
-	PopVals      []float32         `desc:"tmp pop code values"`
 	Time         leabra.Time       `desc:"leabra timing parameters and state"`
 	ViewOn       bool              `desc:"whether to update the network view while running"`
 	TrainUpdt    leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
 	TestUpdt     leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval int               `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	LayStatNms   []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	PosAFNms     []string          `desc:"names of layers to compute position activation fields on"`
 
 	// statistics: note use float64 as that is best for etable.Table
-	TrlSSE     float64 `inactive:"+" desc:"current trial's sum squared error"`
-	TrlAvgSSE  float64 `inactive:"+" desc:"current trial's average sum squared error"`
-	TrlCosDiff float64 `inactive:"+" desc:"current trial's cosine difference"`
-	EpcSSE     float64 `inactive:"+" desc:"last epoch's total sum squared error"`
-	EpcAvgSSE  float64 `inactive:"+" desc:"last epoch's average sum squared error (average over trials, and over units within layer)"`
-	EpcPctErr  float64 `inactive:"+" desc:"last epoch's percent of trials that had SSE > 0 (subject to .5 unit-wise tolerance)"`
-	EpcPctCor  float64 `inactive:"+" desc:"last epoch's percent of trials that had SSE == 0 (subject to .5 unit-wise tolerance)"`
-	EpcCosDiff float64 `inactive:"+" desc:"last epoch's average cosine difference for output layer (a normalized error measure, maximum of 1 when the minus phase exactly matches the plus)"`
-	FirstZero  int     `inactive:"+" desc:"epoch at when SSE first went to zero"`
-	NZero      int     `inactive:"+" desc:"number of epochs in a row with zero SSE"`
+	TrlSSE        float64   `inactive:"+" desc:"current trial's sum squared error"`
+	TrlAvgSSE     float64   `inactive:"+" desc:"current trial's average sum squared error"`
+	TrlCosDiff    float64   `inactive:"+" desc:"current trial's overall cosine difference"`
+	TRCLays       []string  `inactive:"+" desc:"TRC layer names"`
+	TrlCosDiffTRC []float64 `inactive:"+" desc:"current trial's cosine difference for pulvinar (TRC) layers"`
+	EpcSSE        float64   `inactive:"+" desc:"last epoch's total sum squared error"`
+	EpcAvgSSE     float64   `inactive:"+" desc:"last epoch's average sum squared error (average over trials, and over units within layer)"`
+	EpcPctErr     float64   `inactive:"+" desc:"last epoch's percent of trials that had SSE > 0 (subject to .5 unit-wise tolerance)"`
+	EpcPctCor     float64   `inactive:"+" desc:"last epoch's percent of trials that had SSE == 0 (subject to .5 unit-wise tolerance)"`
+	EpcCosDiff    float64   `inactive:"+" desc:"last epoch's average cosine difference for output layer (a normalized error measure, maximum of 1 when the minus phase exactly matches the plus)"`
+	EpcCosDiffTRC []float64 `inactive:"+" desc:"last epoch's average cosine difference for TRC layers (a normalized error measure, maximum of 1 when the minus phase exactly matches the plus)"`
+	FirstZero     int       `inactive:"+" desc:"epoch at when SSE first went to zero"`
+	NZero         int       `inactive:"+" desc:"number of epochs in a row with zero SSE"`
 
 	// internal state - view:"-"
-	SumSSE        float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	SumAvgSSE     float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	SumCosDiff    float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	CntErr        int              `view:"-" inactive:"+" desc:"sum of errs to increment as we go through epoch"`
-	Win           *gi.Window       `view:"-" desc:"main GUI window"`
-	NetView       *netview.NetView `view:"-" desc:"the network viewer"`
-	ToolBar       *gi.ToolBar      `view:"-" desc:"the master toolbar"`
-	TrnEpcPlot    *eplot.Plot2D    `view:"-" desc:"the training epoch plot"`
-	TstEpcPlot    *eplot.Plot2D    `view:"-" desc:"the testing epoch plot"`
-	TstTrlPlot    *eplot.Plot2D    `view:"-" desc:"the test-trial plot"`
-	TstCycPlot    *eplot.Plot2D    `view:"-" desc:"the test-cycle plot"`
-	RunPlot       *eplot.Plot2D    `view:"-" desc:"the run plot"`
-	TrnEpcFile    *os.File         `view:"-" desc:"log file"`
-	RunFile       *os.File         `view:"-" desc:"log file"`
-	InputValsTsr  *etensor.Float32 `view:"-" desc:"for holding layer values"`
-	OutputValsTsr *etensor.Float32 `view:"-" desc:"for holding layer values"`
-	ActVals       []float32        `view:"-" desc:"for action vals"`
-	SaveWts       bool             `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
-	NoGui         bool             `view:"-" desc:"if true, runing in no GUI mode"`
-	LogSetParams  bool             `view:"-" desc:"if true, print message for all params that are set"`
-	IsRunning     bool             `view:"-" desc:"true if sim is running"`
-	StopNow       bool             `view:"-" desc:"flag to stop running"`
-	NeedsNewRun   bool             `view:"-" desc:"flag to initialize NewRun if last one finished"`
-	RndSeed       int64            `view:"-" desc:"the current random seed"`
+	SumSSE        float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumAvgSSE     float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumCosDiff    float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumCosDiffTRC []float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch, per TRC"`
+	CntErr        int                `view:"-" inactive:"+" desc:"sum of errs to increment as we go through epoch"`
+	Win           *gi.Window         `view:"-" desc:"main GUI window"`
+	NetView       *netview.NetView   `view:"-" desc:"the network viewer"`
+	ToolBar       *gi.ToolBar        `view:"-" desc:"the master toolbar"`
+	TrnEpcPlot    *eplot.Plot2D      `view:"-" desc:"the training epoch plot"`
+	TstEpcPlot    *eplot.Plot2D      `view:"-" desc:"the testing epoch plot"`
+	TstTrlPlot    *eplot.Plot2D      `view:"-" desc:"the test-trial plot"`
+	TstCycPlot    *eplot.Plot2D      `view:"-" desc:"the test-cycle plot"`
+	RunPlot       *eplot.Plot2D      `view:"-" desc:"the run plot"`
+	TrnEpcFile    *os.File           `view:"-" desc:"log file"`
+	RunFile       *os.File           `view:"-" desc:"log file"`
+	InputValsTsr  *etensor.Float32   `view:"-" desc:"for holding layer values"`
+	OutputValsTsr *etensor.Float32   `view:"-" desc:"for holding layer values"`
+	PosAFs        []*etensor.Float32 `view:"-" desc:"position activation fields (running average)"`
+	PosAFsNorm    []*etensor.Float32 `view:"-" desc:"normalized position activation fields (running average)"`
+	PosAFTsr      *etensor.Float32   `view:"-" desc:"for holding layer values"`
+	ActVals       []float32          `view:"-" desc:"for action vals"`
+	PopVals       []float32          `view:"-" desc:"tmp pop code values"`
+	SaveWts       bool               `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
+	NoGui         bool               `view:"-" desc:"if true, runing in no GUI mode"`
+	LogSetParams  bool               `view:"-" desc:"if true, print message for all params that are set"`
+	IsRunning     bool               `view:"-" desc:"true if sim is running"`
+	StopNow       bool               `view:"-" desc:"flag to stop running"`
+	NeedsNewRun   bool               `view:"-" desc:"flag to initialize NewRun if last one finished"`
+	RndSeed       int64              `view:"-" desc:"the current random seed"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -236,13 +246,8 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
-	ss.LayStatNms = []string{"V2d", "MT"}
-	if InputNameMap == nil {
-		InputNameMap = make(map[string]int, len(InputNames))
-		for i, nm := range InputNames {
-			InputNameMap[nm] = i
-		}
-	}
+	ss.LayStatNms = []string{"MT", "MTD", "SMA", "SMAD"}
+	ss.PosAFNms = []string{"SMA", "SMAD"}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -261,18 +266,17 @@ func (ss *Sim) Config() {
 
 func (ss *Sim) ConfigEnv() {
 	if ss.MaxRuns == 0 { // allow user override
-		ss.MaxRuns = 10
+		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 50
-		ss.NZeroStop = 5
+		ss.MaxEpcs = 500
+		ss.NZeroStop = -1
 	}
 
 	ss.TrainEnv.Defaults()
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Event.Max = 100
-	ss.TrainEnv.Epoch.Max = 100
 	ss.TrainEnv.Run.Max = ss.MaxRuns
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
@@ -296,11 +300,17 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MTD", YAlign: relpos.Front})
 	smad.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
 
-	act, actp := net.AddInputPulv2D("Action", 1, int(navenv.ActionsN))
-	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 2})
+	m1, m1p := net.AddInputPulv2D("M1", 1, int(navenv.ActionsN))
+	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 4, YOffset: 2})
 
 	v2.SetClass("V2d")
 	v2p.SetClass("V2d")
+
+	mt.SetClass("MT")
+	mtd.SetClass("MT")
+
+	sma.SetClass("SMA")
+	smad.SetClass("SMA")
 
 	net.ConnectLayers(v2, mt, ss.Topo4Prjn, emer.Forward)
 	net.ConnectLayers(mtd, v2p, prjn.NewFull(), emer.Forward)
@@ -313,17 +323,28 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(v2p, smad, prjn.NewFull(), emer.Back)
 	net.ConnectLayers(v2p, sma, prjn.NewFull(), emer.Back)
 
-	net.ConnectLayers(sma, act, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, actp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(sma, m1, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, m1p, prjn.NewFull(), emer.Forward)
 
-	net.ConnectLayers(actp, smad, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(actp, sma, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(smad, mtd, prjn.NewFull(), emer.Back)
+
+	net.ConnectLayers(m1p, smad, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(m1p, sma, prjn.NewFull(), emer.Back)
+
+	ss.TRCLays = make([]string, 0, 10)
+	nl := ss.Net.NLayers()
+	for li := 0; li < nl; li++ {
+		ly := ss.Net.Layer(li)
+		if ly.Type() == deep.TRC {
+			ss.TRCLays = append(ss.TRCLays, ly.Name())
+		}
+	}
 
 	// using 4 total threads -- todo: didn't work
-	// mt.SetThread(1)
-	// mtd.SetThread(2)
-	// sma.SetThread(3)
-	// smad.SetThread(3)
+	mt.SetThread(1)
+	mtd.SetThread(2)
+	sma.SetThread(3)
+	smad.SetThread(3)
 
 	net.Defaults()
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
@@ -463,8 +484,8 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	aly := net.LayerByName("Action").(*deep.Layer)
-	aly.UnitVals(&ss.ActVals, "ActM") // action generated last time
+	m1 := net.LayerByName("M1").(*deep.Layer)
+	m1.UnitVals(&ss.ActVals, "ActM") // action generated last time
 
 	_, mi := norm.MaxIdx32(ss.ActVals)
 	netact := navenv.Actions(mi)
@@ -472,7 +493,7 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 	ss.TrainEnv.SetAction(netact)
 	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
-	dly := net.LayerByName("V2d").(*deep.Layer)
+	v2d := net.LayerByName("V2d").(*deep.Layer)
 	depth := en.State("Depth")
 	ny := depth.Dim(0)
 	nx := depth.Dim(1)
@@ -487,9 +508,9 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 				dxf = 0
 			}
 			ss.PopCode.Encode(&ss.PopVals, float32(d), ss.NDepthCode)
-			si := dly.Shp.Offset([]int{y, x, 0, 0})
+			si := v2d.Shp.Offset([]int{y, x, 0, 0})
 			for i := 0; i < ss.NDepthCode; i++ {
-				nrn := &dly.Neurons[si+i]
+				nrn := &v2d.Neurons[si+i]
 				if nrn.IsOff() {
 					continue
 				}
@@ -497,10 +518,12 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 			}
 		}
 	}
-	dly.UpdateExtFlags()
+	v2d.UpdateExtFlags()
 
-	pats := en.State("Action")
-	aly.ApplyExt(pats)
+	pats := en.State("ActMap")
+	m1.ApplyExt(pats)
+
+	ss.CurPosMap = en.State("PosMap").(*etensor.Float32)
 }
 
 // TrainTrial runs one trial of training using TrainEnv
@@ -582,23 +605,94 @@ func (ss *Sim) InitStats() {
 	ss.EpcCosDiff = 0
 }
 
+// TrialStatsTRC computes the trial-level statistics for TRC layers
+func (ss *Sim) TrialStatsTRC(accum bool) {
+	nt := len(ss.TRCLays)
+	if len(ss.TrlCosDiffTRC) != nt {
+		ss.TrlCosDiffTRC = make([]float64, nt)
+		ss.SumCosDiffTRC = make([]float64, nt)
+		ss.EpcCosDiffTRC = make([]float64, nt)
+	}
+	acd := 0.0
+	for i, ln := range ss.TRCLays {
+		ly := ss.Net.LayerByName(ln).(*deep.Layer)
+		cd := float64(ly.CosDiff.Cos)
+		acd += cd
+		ss.TrlCosDiffTRC[i] = cd
+		if accum {
+			ss.SumCosDiffTRC[i] += cd
+		}
+	}
+	ss.TrlCosDiff = acd / 3
+	if accum {
+		ss.SumCosDiff += ss.TrlCosDiff
+	}
+}
+
+// TrialStatsTRC computes the trial-level statistics for TRC layers
+func (ss *Sim) EpochStatsTRC(nt float64) {
+	acd := 0.0
+	for i := range ss.TRCLays {
+		ss.EpcCosDiffTRC[i] = ss.SumCosDiffTRC[i] / nt
+		ss.SumCosDiffTRC[i] = 0
+		acd += ss.EpcCosDiffTRC[i]
+	}
+	ss.EpcCosDiff = acd / 3
+}
+
+// UpdtPosAFs updates position activation rf's
+func (ss *Sim) UpdtPosAFs() {
+	if ss.PosAFTsr == nil {
+		ss.PosAFTsr = &etensor.Float32{}
+	}
+	naf := len(ss.PosAFNms)
+	if len(ss.PosAFs) != naf {
+		ss.PosAFs = make([]*etensor.Float32, naf)
+		ss.PosAFsNorm = make([]*etensor.Float32, naf)
+	}
+	for i, lnm := range ss.PosAFNms {
+		paf := ss.PosAFs[i]
+		pafn := ss.PosAFsNorm[i]
+		if paf == nil {
+			paf = &etensor.Float32{}
+			ss.PosAFs[i] = paf
+			pafn = &etensor.Float32{}
+			ss.PosAFsNorm[i] = pafn
+			pafn.SetMetaData("grid-fill", "1")
+			pafn.SetMetaData("dim-extra", ".2")
+			pafn.SetMetaData("min", "0")
+			pafn.SetMetaData("colormap", "JetMuted")
+		}
+		ly := ss.Net.LayerByName(lnm)
+		if ly == nil {
+			continue
+		}
+		ly.UnitValsTensor(ss.PosAFTsr, "ActM")
+		actrf.RunningAvg(paf, ss.PosAFTsr, ss.CurPosMap, 1000) // note: key param is time constant here!
+		pafn.CopyShapeFrom(paf)
+		pafn.CopyFrom(paf)
+		norm.TensorUnit32(pafn, 2) // 2 = norm within outer 2 dims = norm each sub-rf
+	}
+}
+
 // TrialStats computes the trial-level statistics and adds them to the epoch accumulators if
 // accum is true.  Note that we're accumulating stats here on the Sim side so the
 // core algorithm side remains as simple as possible, and doesn't need to worry about
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
-	inp := ss.Net.LayerByName("V2dP").(*deep.Layer)
-	ss.TrlCosDiff = float64(inp.CosDiff.Cos)
-	ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
+	// inp := ss.Net.LayerByName("V2dP").(*deep.Layer)
+	// ss.TrlCosDiff = float64(inp.CosDiff.Cos)
+	// ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
 	if accum {
-		ss.SumSSE += ss.TrlSSE
-		ss.SumAvgSSE += ss.TrlAvgSSE
-		ss.SumCosDiff += ss.TrlCosDiff
+		// ss.SumSSE += ss.TrlSSE
+		// ss.SumAvgSSE += ss.TrlAvgSSE
 		if ss.TrlSSE != 0 {
 			ss.CntErr++
 		}
 	}
+	ss.TrialStatsTRC(accum)
+	ss.UpdtPosAFs()
 	return
 }
 
@@ -811,8 +905,7 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	ss.EpcPctErr = float64(ss.CntErr) / nt
 	ss.CntErr = 0
 	ss.EpcPctCor = 1 - ss.EpcPctErr
-	ss.EpcCosDiff = ss.SumCosDiff / nt
-	ss.SumCosDiff = 0
+	ss.EpochStatsTRC(nt)
 	if ss.FirstZero < 0 && ss.EpcPctErr == 0 {
 		ss.FirstZero = epc
 	}
@@ -829,6 +922,10 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	dt.SetCellFloat("PctErr", row, ss.EpcPctErr)
 	dt.SetCellFloat("PctCor", row, ss.EpcPctCor)
 	dt.SetCellFloat("CosDiff", row, ss.EpcCosDiff)
+
+	for i, lnm := range ss.TRCLays {
+		dt.SetCellFloat(lnm+" CosDiff", row, float64(ss.EpcCosDiffTRC[i]))
+	}
 
 	for _, lnm := range ss.LayStatNms {
 		ly := ss.Net.LayerByName(lnm).(*deep.Layer)
@@ -860,6 +957,9 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 		{"PctCor", etensor.FLOAT64, nil, nil},
 		{"CosDiff", etensor.FLOAT64, nil, nil},
 	}
+	for _, lnm := range ss.TRCLays {
+		sch = append(sch, etable.Column{lnm + " CosDiff", etensor.FLOAT64, nil, nil})
+	}
 	for _, lnm := range ss.LayStatNms {
 		sch = append(sch, etable.Column{lnm + " ActAvg", etensor.FLOAT64, nil, nil})
 	}
@@ -873,15 +973,19 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	// order of params: on, fixMin, min, fixMax, max
 	plt.SetColParams("Run", false, true, 0, false, 0)
 	plt.SetColParams("Epoch", false, true, 0, false, 0)
-	plt.SetColParams("SSE", true, true, 0, false, 0)
+	plt.SetColParams("SSE", false, true, 0, false, 0)
 	plt.SetColParams("AvgSSE", false, true, 0, false, 0)
-	plt.SetColParams("PctErr", true, true, 0, true, 1)  // default plot
+	plt.SetColParams("PctErr", false, true, 0, true, 1) // default plot
 	plt.SetColParams("PctCor", false, true, 0, true, 1) // default plot
 	plt.SetColParams("CosDiff", false, true, 0, true, 1)
 
+	for _, lnm := range ss.TRCLays {
+		plt.SetColParams(lnm+" CosDiff", true, true, 0, true, 1)
+	}
 	for _, lnm := range ss.LayStatNms {
 		plt.SetColParams(lnm+" ActAvg", false, true, 0, true, .5)
 	}
+
 	return plt
 }
 
@@ -1308,6 +1412,14 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	})
 
 	tbar.AddSeparator("test")
+
+	tbar.AddAction(gi.ActOpts{Label: "View PosAFs", Icon: "file-image", Tooltip: "view current position activation rfs.", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		for i, paf := range ss.PosAFsNorm {
+			etview.TensorGridDialog(vp, paf, giv.DlgOpts{Title: "Position Act RF", Prompt: ss.PosAFNms[i], TmpSave: nil}, nil, nil)
+		}
+	})
 
 	tbar.AddAction(gi.ActOpts{Label: "Test Trial", Icon: "step-fwd", Tooltip: "Runs the next testing trial.", UpdateFunc: func(act *gi.Action) {
 		act.SetActiveStateUpdt(!ss.IsRunning)

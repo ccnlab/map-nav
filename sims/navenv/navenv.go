@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/emer/emergent/env"
+	"github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
 	"github.com/emer/etable/tsragg"
 	"github.com/emer/eve/eve"
@@ -56,6 +57,8 @@ type Env struct {
 	EmerHt    float32          `desc:"height of emer"`
 	MoveStep  float32          `desc:"how far to move every step"`
 	RotStep   float32          `desc:"how far to rotate every step"`
+	PosRes    int              `desc:"number of grid points for encoding position in position state"`
+	PosPop    popcode.TwoD     `desc:"2d population code parameters for encoding position, in normalized position units (0-1)"`
 	Room      RoomParams       `desc:"parameters for room"`
 	Camera    evev.Camera      `desc:"offscreen render camera settings"`
 	Policy    Policy           `view:"inline" desc:"current policy for actions"`
@@ -63,6 +66,8 @@ type Env struct {
 	CurImage  image.Image      `desc:"current first-person image"`
 	RawDepth  etensor.Float32  `desc:"raw depth map X x Y same size as camera"`
 	CurDepth  etensor.Float32  `desc:"current normalized depth map X x Y same size as camera"`
+	CurPos    mat32.Vec2       `desc:"current normalized position"`
+	CurPosMap etensor.Float32  `desc:"current normalized position map X x Y pos res"`
 	CurAct    Actions          `desc:"current action selected"`
 	PrvAct    Actions          `desc:"previous action selected"`
 	CurActMap etensor.Float32  `desc:"action as a 1-hot map, returned as state"`
@@ -100,6 +105,7 @@ func (ev *Env) Init(run int) {
 	ev.Event.Cur = -1 // init state -- key so that first Step() = 0
 	ev.RawDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
+	ev.CurPosMap.SetShape([]int{ev.PosRes, ev.PosRes}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{1, int(ActionsN)}, nil, []string{"1", "Actions"})
 }
 
@@ -129,7 +135,8 @@ func (ev *Env) Step() bool {
 func (ev *Env) States() env.Elements {
 	els := env.Elements{
 		{"Depth", []int{ev.Camera.Size.Y, ev.Camera.Size.X}, []string{"Y", "X"}},
-		{"Action", []int{1, int(ActionsN)}, []string{"1", "ActionsN"}},
+		{"PosMap", []int{ev.PosRes, ev.PosRes}, []string{"Y", "X"}},
+		{"ActMap", []int{1, int(ActionsN)}, []string{"1", "ActionsN"}},
 	}
 	return els
 }
@@ -138,7 +145,9 @@ func (ev *Env) State(element string) etensor.Tensor {
 	switch element {
 	case "Depth":
 		return &ev.CurDepth
-	case "Action":
+	case "PosMap":
+		return &ev.CurPosMap
+	case "ActMap":
 		return &ev.CurActMap
 	}
 	return nil
@@ -191,6 +200,11 @@ func (ev *Env) Defaults() {
 	ev.EmerHt = 1
 	ev.MoveStep = ev.EmerHt * .2
 	ev.RotStep = 15
+	ev.PosRes = 16
+	ev.PosPop.Defaults()
+	ev.PosPop.Min.Set(0, 0)
+	ev.PosPop.Max.Set(1, 1)
+	ev.PosPop.Sigma.Set(0.05, 0.05)
 	ev.DepthMap = giv.ColorMapName("ColdHot")
 	ev.Camera.Defaults()
 	ev.Camera.Size.X = 16
@@ -341,6 +355,10 @@ func (ev *Env) UpdateState() {
 	evev.DepthNorm(&ev.CurDepth.Values, depth, &ev.Camera, false) // no flip!
 	ev.CurActMap.SetZeros()
 	ev.CurActMap.Values[ev.CurAct] = 1.0
+	ep := mat32.Vec2{ev.Emer.Abs.Pos.X, -ev.Emer.Abs.Pos.Z}
+	ev.CurPos = ep.Div(mat32.Vec2{ev.Room.Width, ev.Room.Depth}).Add(mat32.Vec2{0.5, 0.5})
+	// fmt.Printf("cur pos: %v\n", ev.CurPos)
+	ev.PosPop.Encode(&ev.CurPosMap, ev.CurPos)
 }
 
 // UpdateView updates view if gui active
@@ -432,8 +450,8 @@ func (ev *Env) OpenWindow() *gi.Window {
 
 	cam := &sc.Camera
 
-	cam.Pose.Pos = mat32.Vec3{0, 40, 3.5}
-	cam.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
+	cam.Pose.Pos = mat32.Vec3{0, 20, 3.5}
+	cam.LookAt(mat32.Vec3{0, 2, 0}, mat32.Vec3Y)
 	sc.SaveCamera("3")
 
 	cam.Pose.Pos.Set(0, 13.256021, 8.77191)

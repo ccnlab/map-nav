@@ -92,6 +92,12 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
+			{Sel: ".7a", Desc: "depth input layers use pool inhibition",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.8",
+					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.Pool.Gi":  "1.8",
+				}},
 		},
 		"Sim": &params.Sheet{ // sim params apply to sim object
 			{Sel: "Sim", Desc: "best params always finish in this time",
@@ -139,34 +145,36 @@ var ParamSets = params.Sets{
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net          *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	CurPosMap    *etensor.Float32  `view:"current pos map from env"`
-	TrnEpcLog    *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
-	TstEpcLog    *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
-	TstTrlLog    *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
-	TstErrLog    *etable.Table     `view:"no-inline" desc:"log of all test trials where errors were made"`
-	TstErrStats  *etable.Table     `view:"no-inline" desc:"stats on test trials where errors were made"`
-	TstCycLog    *etable.Table     `view:"no-inline" desc:"testing cycle-level log data"`
-	RunLog       *etable.Table     `view:"no-inline" desc:"summary log of each run"`
-	RunStats     *etable.Table     `view:"no-inline" desc:"aggregate stats on all runs"`
-	Params       params.Sets       `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet     string            `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	Tag          string            `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
-	Topo4Prjn    *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Topo3Prjn    *prjn.PoolTile    `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
-	MaxRuns      int               `desc:"maximum number of model runs to perform"`
-	MaxEpcs      int               `desc:"maximum number of epochs to run per model run"`
-	NZeroStop    int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
-	TrainEnv     navenv.Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	NDepthCode   int               `desc:"Number of units to use for population-coding depth values"`
-	PopCode      popcode.OneD      `desc:"Parameters for depth population code"`
-	Time         leabra.Time       `desc:"leabra timing parameters and state"`
-	ViewOn       bool              `desc:"whether to update the network view while running"`
-	TrainUpdt    leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt     leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
-	TestInterval int               `desc:"how often to run through all the test patterns, in terms of training epochs"`
-	LayStatNms   []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	PosAFNms     []string          `desc:"names of layers to compute position activation fields on"`
+	Net            *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	CurPosMap      *etensor.Float32  `view:"current pos map from env"`
+	TrnEpcLog      *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
+	TstEpcLog      *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
+	TstTrlLog      *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
+	TstErrLog      *etable.Table     `view:"no-inline" desc:"log of all test trials where errors were made"`
+	TstErrStats    *etable.Table     `view:"no-inline" desc:"stats on test trials where errors were made"`
+	TstCycLog      *etable.Table     `view:"no-inline" desc:"testing cycle-level log data"`
+	RunLog         *etable.Table     `view:"no-inline" desc:"summary log of each run"`
+	RunStats       *etable.Table     `view:"no-inline" desc:"aggregate stats on all runs"`
+	Params         params.Sets       `view:"no-inline" desc:"full collection of param sets"`
+	ParamSet       string            `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
+	Tag            string            `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Topo4Prjn      *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Topo4PrjnRecip *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Topo3Prjn      *prjn.PoolTile    `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Topo4S4Prjn    *prjn.PoolTile    `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	MaxRuns        int               `desc:"maximum number of model runs to perform"`
+	MaxEpcs        int               `desc:"maximum number of epochs to run per model run"`
+	NZeroStop      int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
+	TrainEnv       navenv.Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	NDepthCode     int               `desc:"Number of units to use for population-coding depth values"`
+	PopCode        popcode.OneD      `desc:"Parameters for depth population code"`
+	Time           leabra.Time       `desc:"leabra timing parameters and state"`
+	ViewOn         bool              `desc:"whether to update the network view while running"`
+	TrainUpdt      leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
+	TestUpdt       leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
+	TestInterval   int               `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	LayStatNms     []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	PosAFNms       []string          `desc:"names of layers to compute position activation fields on"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	TrlSSE        float64   `inactive:"+" desc:"current trial's sum squared error"`
@@ -233,21 +241,33 @@ func (ss *Sim) New() {
 	ss.RunLog = &etable.Table{}
 	ss.RunStats = &etable.Table{}
 	ss.Params = ParamSets
-	ss.Topo4Prjn = prjn.NewPoolTile()
-	ss.Topo4Prjn.Size.Set(4, 4)
-	ss.Topo4Prjn.Skip.Set(2, 2)
-	ss.Topo4Prjn.Start.Set(-1, -1)
-	ss.Topo3Prjn = prjn.NewPoolTile()
-	ss.Topo3Prjn.Size.Set(3, 3)
-	ss.Topo3Prjn.Skip.Set(1, 1)
-	ss.Topo3Prjn.Start.Set(-1, -1)
 	ss.RndSeed = 1
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
 	ss.LayStatNms = []string{"MT", "MTD", "SMA", "SMAD"}
-	ss.PosAFNms = []string{"SMA", "SMAD"}
+	ss.PosAFNms = []string{"SMA", "SMAD", "7a", "7aD"}
+	ss.NewPrjns()
+}
+
+// NewPrjns creates new projections
+func (ss *Sim) NewPrjns() {
+	ss.Topo4Prjn = prjn.NewPoolTile()
+	ss.Topo4Prjn.Size.Set(4, 4)
+	ss.Topo4Prjn.Skip.Set(2, 2)
+	ss.Topo4Prjn.Start.Set(-1, -1)
+	ss.Topo4PrjnRecip = prjn.NewPoolTile()
+	*ss.Topo4PrjnRecip = *ss.Topo4Prjn
+	ss.Topo4PrjnRecip.Recip = true
+	ss.Topo3Prjn = prjn.NewPoolTile()
+	ss.Topo3Prjn.Size.Set(3, 3)
+	ss.Topo3Prjn.Skip.Set(1, 1)
+	ss.Topo3Prjn.Start.Set(-1, -1)
+	ss.Topo4S4Prjn = prjn.NewPoolTile()
+	ss.Topo4S4Prjn.Size.Set(4, 4)
+	ss.Topo4S4Prjn.Skip.Set(4, 4)
+	ss.Topo4S4Prjn.Start.Set(0, 0)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -300,6 +320,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MTD", YAlign: relpos.Front})
 	smad.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
 
+	ipl, ipld, _ := net.AddSuperDeep4D("7a", 2, 4, 8, 8, false, false) // no pulv, attn
+	ipl.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left})
+	ipld.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "7a", YAlign: relpos.Front, Space: 2})
+
 	m1, m1p := net.AddInputPulv2D("M1", 1, int(navenv.ActionsN))
 	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 4, YOffset: 2})
 
@@ -309,17 +333,27 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	mt.SetClass("MT")
 	mtd.SetClass("MT")
 
+	ipl.SetClass("7a")
+	ipld.SetClass("7a")
+
 	sma.SetClass("SMA")
 	smad.SetClass("SMA")
 
 	net.ConnectLayers(v2, mt, ss.Topo4Prjn, emer.Forward)
-	net.ConnectLayers(mtd, v2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(mtd, v2p, ss.Topo4PrjnRecip, emer.Forward)
 	net.ConnectLayers(v2p, mtd, ss.Topo4Prjn, emer.Back)
 	net.ConnectLayers(v2p, mt, ss.Topo4Prjn, emer.Back)
 
-	net.ConnectLayers(mt, sma, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(mt, ipl, ss.Topo4Prjn, emer.Forward)
+	net.ConnectLayers(ipl, mt, ss.Topo4PrjnRecip, emer.Back)
+	net.ConnectLayers(ipld, v2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(v2p, ipld, ss.Topo4S4Prjn, emer.Back)
+	net.ConnectLayers(v2p, ipl, ss.Topo4S4Prjn, emer.Back)
+
+	net.ConnectLayers(ipl, sma, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(sma, ipl, prjn.NewFull(), emer.Back)
 	net.ConnectLayers(smad, v2p, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, mtd, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(smad, ipld, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(v2p, smad, prjn.NewFull(), emer.Back)
 	net.ConnectLayers(v2p, sma, prjn.NewFull(), emer.Back)
 
@@ -342,7 +376,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	// using 4 total threads -- todo: didn't work
 	mt.SetThread(1)
-	mtd.SetThread(2)
+	mtd.SetThread(1)
+	ipl.SetThread(2)
+	ipld.SetThread(2)
 	sma.SetThread(3)
 	smad.SetThread(3)
 
@@ -360,10 +396,29 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 func (ss *Sim) InitWts(net *deep.Network) {
 	v2 := net.LayerByName("V2d")
 	mt := net.LayerByName("MT")
+	mtd := net.LayerByName("MTD")
+	ipl := net.LayerByName("7a")
+	ipld := net.LayerByName("7aD")
 	v2mt := mt.RecvPrjns().SendName("V2d").(*deep.Prjn)
 	scales := &etensor.Float32{}
 	ss.Topo4Prjn.TopoWts(v2.Shape(), mt.Shape(), scales)
 	v2mt.SetScalesRPool(scales)
+
+	v2pmt := mt.RecvPrjns().SendName("V2dP").(*deep.Prjn)
+	ss.Topo4Prjn.TopoWts(v2.Shape(), mt.Shape(), scales)
+	v2pmt.SetScalesRPool(scales)
+
+	v2pmtd := mtd.RecvPrjns().SendName("V2dP").(*deep.Prjn)
+	ss.Topo4Prjn.TopoWts(v2.Shape(), mtd.Shape(), scales)
+	v2pmtd.SetScalesRPool(scales)
+
+	v2pipl := ipl.RecvPrjns().SendName("V2dP").(*deep.Prjn)
+	ss.Topo4Prjn.TopoWts(v2.Shape(), ipl.Shape(), scales)
+	v2pipl.SetScalesRPool(scales)
+
+	v2pipld := ipld.RecvPrjns().SendName("V2dP").(*deep.Prjn)
+	ss.Topo4Prjn.TopoWts(v2.Shape(), ipld.Shape(), scales)
+	v2pipld.SetScalesRPool(scales)
 
 	net.InitWts()
 }

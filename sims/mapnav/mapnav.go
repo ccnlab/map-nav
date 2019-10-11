@@ -68,7 +68,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.2",
+					"Prjn.WtScale.Rel": "0.1",
 				}},
 			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
 				Params: params.Params{
@@ -80,19 +80,31 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.WtBal.On": "false",
 				}},
-			{Sel: ".V2d", Desc: "depth input layers use pool inhibition",
+			{Sel: ".V2d", Desc: "depth input layers use pool inhibition, weaker global?",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
-			{Sel: ".MT", Desc: "depth input layers use pool inhibition",
+			{Sel: ".S1", Desc: "S1 uses pool inhib",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.8",
+					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
-			{Sel: ".7a", Desc: "depth input layers use pool inhibition",
+			{Sel: ".MT", Desc: "MT uses pool inhibition, full global?",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.8", // 1.2 doesn't work here, nor 1.6 -- need full inhib
+					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.Pool.Gi":  "1.8",
+				}},
+			{Sel: ".7a", Desc: "IPL uses pool inhibition, weaker global?",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.2",
+					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.Pool.Gi":  "1.8",
+				}},
+			{Sel: ".PCC", Desc: "PCC uses pool inhibition but is treated as full",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.8",
 					"Layer.Inhib.Pool.On":  "true",
@@ -103,20 +115,6 @@ var ParamSets = params.Sets{
 			{Sel: "Sim", Desc: "best params always finish in this time",
 				Params: params.Params{
 					"Sim.MaxEpcs": "500",
-				}},
-		},
-	}},
-	{Name: "DefaultInhib", Desc: "output uses default inhib instead of lower", Sheets: params.Sheets{
-		"Network": &params.Sheet{
-			{Sel: "#Output", Desc: "go back to default",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.8",
-				}},
-		},
-		"Sim": &params.Sheet{ // sim params apply to sim object
-			{Sel: "Sim", Desc: "takes longer -- generally doesn't finish..",
-				Params: params.Params{
-					"Sim.MaxEpcs": "100",
 				}},
 		},
 	}},
@@ -246,7 +244,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
 	ss.LayStatNms = []string{"MT", "MTD", "SMA", "SMAD"}
-	ss.PosAFNms = []string{"SMA", "SMAD", "7a", "7aD"}
+	ss.PosAFNms = []string{"PCC", "PCCD"}
 	ss.NewPrjns()
 }
 
@@ -298,7 +296,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Event.Max = 100
 	ss.TrainEnv.Run.Max = ss.MaxRuns
 	ss.TrainEnv.PosRes = 32                  // higher res
-	ss.TrainEnv.PosPop.Sigma.Set(0.02, 0.02) // tighter for 32 -- .05 for 16
+	ss.TrainEnv.PosPop.Sigma.Set(0.04, 0.04) // .02 not good -- .05 fine
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
 
@@ -309,62 +307,116 @@ func (ss *Sim) ConfigEnv() {
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "MapNav")
+
 	v2, v2p := net.AddInputPulv4D("V2d", 8, 16, 1, ss.NDepthCode)
 
-	mt, mtd, _ := net.AddSuperDeep4D("MT", 4, 8, 6, 6, false, false) // no pulv, attn
+	s1, s1p := net.AddInputPulv4D("S1", 4, 1, 1, ss.TrainEnv.AngRes)
+
+	mt, mtd, mtp := net.AddSuperDeep4D("MT", 4, 8, 4, 4, true, false) // yes pulv, attn
 	mtctxt := mtd.RecvPrjns().SendName("MT")
 	mtctxt.SetPattern(ss.Topo3Prjn)
+
+	s1.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "V2dP", XAlign: relpos.Left, Space: 4})
+	s1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "S1", XAlign: relpos.Left, Space: 2})
+
 	mt.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2d", XAlign: relpos.Left, YAlign: relpos.Front})
-	mtd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MT", YAlign: relpos.Front, Space: 2})
+	mtd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MT", XAlign: relpos.Left, Space: 2})
+	mtp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MTD", XAlign: relpos.Left, Space: 2})
 
-	sma, smad, _ := net.AddSuperDeep2D("SMA", 8, 8, false, false) // no pulv, attn
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MTD", YAlign: relpos.Front})
-	smad.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
+	ipl, ipld, iplp := net.AddSuperDeep4D("7a", 2, 4, 5, 5, true, false) // yes pulv, attn
+	ipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MT", YAlign: relpos.Front})
+	ipld.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "7a", XAlign: relpos.Left, Space: 2})
+	iplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "7aD", XAlign: relpos.Left, Space: 2})
 
-	ipl, ipld, _ := net.AddSuperDeep4D("7a", 2, 4, 8, 8, false, false) // no pulv, attn
-	ipl.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left})
-	ipld.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "7a", YAlign: relpos.Front, Space: 2})
+	pcc, pccd, _ := net.AddSuperDeep4D("PCC", 2, 4, 5, 5, false, false) // no pulv, attn
+	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "7a", YAlign: relpos.Front})
+	pccd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCC", XAlign: relpos.Left, Space: 2})
+
+	sma, smad, smap := net.AddSuperDeep2D("SMA", 8, 8, true, false) // yes pulv, no attn
+	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "PCC", YAlign: relpos.Front})
+	smad.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left, Space: 2})
 
 	m1, m1p := net.AddInputPulv2D("M1", 1, int(navenv.ActionsN))
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMAD", YAlign: relpos.Front, Space: 4, YOffset: 2})
+	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 8})
 
 	v2.SetClass("V2d")
 	v2p.SetClass("V2d")
 
+	s1.SetClass("S1")
+	s1p.SetClass("S1")
+
 	mt.SetClass("MT")
 	mtd.SetClass("MT")
+	mtp.SetClass("MT")
 
 	ipl.SetClass("7a")
 	ipld.SetClass("7a")
+	iplp.SetClass("7a")
+
+	pcc.SetClass("PCC")
+	pccd.SetClass("PCC")
+	//pccp.SetClass("PCC")
 
 	sma.SetClass("SMA")
 	smad.SetClass("SMA")
+
+	full := prjn.NewFull()
 
 	net.ConnectLayers(v2, mt, ss.Topo4Prjn, emer.Forward)
 	net.ConnectLayers(mtd, v2p, ss.Topo4PrjnRecip, emer.Forward)
 	net.ConnectLayers(v2p, mtd, ss.Topo4Prjn, emer.Back)
 	net.ConnectLayers(v2p, mt, ss.Topo4Prjn, emer.Back)
 
+	// MT <-> IPL
 	net.ConnectLayers(mt, ipl, ss.Topo4Prjn, emer.Forward)
 	net.ConnectLayers(ipl, mt, ss.Topo4PrjnRecip, emer.Back)
-	net.ConnectLayers(ipld, v2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(ipld, v2p, full, emer.Forward)
 	net.ConnectLayers(v2p, ipld, ss.Topo4S4Prjn, emer.Back)
 	net.ConnectLayers(v2p, ipl, ss.Topo4S4Prjn, emer.Back)
 
-	net.ConnectLayers(ipl, sma, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(sma, ipl, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(smad, v2p, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, ipld, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(v2p, smad, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(v2p, sma, prjn.NewFull(), emer.Back)
+	// MTP <-> IPL
+	net.ConnectLayers(ipld, mtp, ss.Topo4PrjnRecip, emer.Forward)
+	net.ConnectLayers(mtp, ipld, ss.Topo4Prjn, emer.Back)
+	net.ConnectLayers(mtp, ipl, ss.Topo4Prjn, emer.Back)
 
-	net.ConnectLayers(sma, m1, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(smad, m1p, prjn.NewFull(), emer.Forward)
+	// note: PCC is treated as full
 
-	net.ConnectLayers(smad, mtd, prjn.NewFull(), emer.Back)
+	// S1 <-> PCC
+	net.ConnectLayers(s1, pcc, full, emer.Forward)
+	net.ConnectLayers(pccd, s1p, full, emer.Forward)
+	net.ConnectLayers(s1p, pccd, full, emer.Back)
+	net.ConnectLayers(s1p, pcc, full, emer.Back)
 
-	net.ConnectLayers(m1p, smad, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(m1p, sma, prjn.NewFull(), emer.Back)
+	// IPL <-> PCC
+	net.ConnectLayers(ipl, pcc, full, emer.Forward)
+	net.ConnectLayers(pcc, ipl, full, emer.Back)
+	net.ConnectLayers(pccd, iplp, full, emer.Forward)
+	net.ConnectLayers(iplp, pccd, full, emer.Back)
+	net.ConnectLayers(iplp, pcc, full, emer.Back)
+
+	// todo: add lateral PCC cons
+
+	// PCC <-> SMA
+	net.ConnectLayers(pcc, sma, full, emer.Forward)
+	net.ConnectLayers(sma, pcc, full, emer.Back)
+	net.ConnectLayers(smad, v2p, full, emer.Forward)
+	net.ConnectLayers(smad, pccd, full, emer.Forward)
+	// net.ConnectLayers(iplp, smad, full, emer.Back)
+	// net.ConnectLayers(iplp, sma, full, emer.Back)
+
+	// SMAP
+	net.ConnectLayers(pccd, smap, full, emer.Forward)
+	net.ConnectLayers(smap, pccd, full, emer.Back)
+	net.ConnectLayers(smap, pcc, full, emer.Back)
+
+	// SMA <-> M1
+	net.ConnectLayers(sma, m1, full, emer.Forward)
+	net.ConnectLayers(smad, m1p, full, emer.Forward)
+
+	net.ConnectLayers(smad, mtd, full, emer.Back)
+
+	net.ConnectLayers(m1p, smad, full, emer.Back)
+	net.ConnectLayers(m1p, sma, full, emer.Back)
 
 	ss.TRCLays = make([]string, 0, 10)
 	nl := ss.Net.NLayers()
@@ -380,6 +432,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	mtd.SetThread(1)
 	ipl.SetThread(2)
 	ipld.SetThread(2)
+	pcc.SetThread(3)
+	pccd.SetThread(3)
 	sma.SetThread(3)
 	smad.SetThread(3)
 
@@ -578,6 +632,10 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 
 	pats := en.State("ActMap")
 	m1.ApplyExt(pats)
+
+	s1 := net.LayerByName("S1").(*deep.Layer)
+	pats = en.State("SomaMap")
+	s1.ApplyExt(pats)
 
 	ss.CurPosMap = en.State("PosMap").(*etensor.Float32)
 }

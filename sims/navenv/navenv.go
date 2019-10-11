@@ -49,36 +49,47 @@ const (
 
 // Env manages the navigation environment
 type Env struct {
-	Nm        string           `desc:"name of this environment"`
-	Dsc       string           `desc:"description of this environment"`
-	Run       env.Ctr          `view:"inline" desc:"current run of model as provided during Init"`
-	Epoch     env.Ctr          `view:"inline" desc:"number of times through arbitrary number of Events"`
-	Event     env.Ctr          `view:"inline" desc:"current ordinal item in Table -- if Sequential then = row number in table, otherwise is index in Order list that then gives row number in Table"`
-	EmerHt    float32          `desc:"height of emer"`
-	MoveStep  float32          `desc:"how far to move every step"`
-	RotStep   float32          `desc:"how far to rotate every step"`
-	PosRes    int              `desc:"number of grid points for encoding position in position state"`
-	PosPop    popcode.TwoD     `desc:"2d population code parameters for encoding position, in normalized position units (0-1)"`
-	Room      RoomParams       `desc:"parameters for room"`
-	Camera    evev.Camera      `desc:"offscreen render camera settings"`
-	Policy    Policy           `view:"inline" desc:"current policy for actions"`
-	DepthMap  giv.ColorMapName `desc:"color map to use for rendering depth map"`
-	CurImage  image.Image      `desc:"current first-person image"`
-	RawDepth  etensor.Float32  `desc:"raw depth map X x Y same size as camera"`
-	CurDepth  etensor.Float32  `desc:"current normalized depth map X x Y same size as camera"`
-	CurPos    mat32.Vec2       `desc:"current normalized position"`
-	CurPosMap etensor.Float32  `desc:"current normalized position map X x Y pos res"`
-	CurAct    Actions          `desc:"current action selected"`
-	PrvAct    Actions          `desc:"previous action selected"`
-	CurActMap etensor.Float32  `desc:"action as a 1-hot map, returned as state"`
-	World     *eve.Group       `view:"-" desc:"world"`
-	View      *evev.View       `view:"-" desc:"view of world"`
-	Emer      *eve.Group       `view:"-" desc:"emer group"`
-	EyeR      eve.Body         `view:"-" desc:"Right eye of emer"`
-	Win       *gi.Window       `view:"-" desc:"gui window -- can be nil"`
-	SnapImg   *gi.Bitmap       `view:"-" desc:"snapshot bitmap view"`
-	DepthImg  *gi.Bitmap       `view:"-" desc:"depth map bitmap view"`
-	Frame     gpu.Framebuffer  `view:"-" desc:"offscreen render buffer"`
+	Nm               string           `desc:"name of this environment"`
+	Dsc              string           `desc:"description of this environment"`
+	Run              env.Ctr          `view:"inline" desc:"current run of model as provided during Init"`
+	Epoch            env.Ctr          `view:"inline" desc:"number of times through arbitrary number of Events"`
+	Event            env.Ctr          `view:"inline" desc:"current ordinal item in Table -- if Sequential then = row number in table, otherwise is index in Order list that then gives row number in Table"`
+	EmerHt           float32          `desc:"height of emer"`
+	MoveStep         float32          `desc:"how far to move every step"`
+	RotStep          float32          `desc:"how far to rotate every step"`
+	PosRes           int              `desc:"number of grid points for encoding position in position state"`
+	PosPop           popcode.TwoD     `desc:"2D population code parameters for encoding position, in normalized position units (0-1)"`
+	AngRes           int              `desc:"number of units for encoding angles and related velocities etc"`
+	AngPop           popcode.OneD     `desc:"1D population code parameters for encoding angles, in normalized position units (0-1)"`
+	VelPop           popcode.OneD     `desc:"1D population code parameters for encoding angles, in normalized units (-1..1)"`
+	Room             RoomParams       `desc:"parameters for room"`
+	Camera           evev.Camera      `desc:"offscreen render camera settings"`
+	Policy           Policy           `view:"inline" desc:"current policy for actions"`
+	DepthMap         giv.ColorMapName `desc:"color map to use for rendering depth map"`
+	CurImage         image.Image      `desc:"current first-person image"`
+	RawDepth         etensor.Float32  `desc:"raw depth map X x Y same size as camera"`
+	CurDepth         etensor.Float32  `desc:"current normalized depth map X x Y same size as camera"`
+	CurPos           mat32.Vec2       `desc:"current normalized position"`
+	CurPosMap        etensor.Float32  `desc:"current normalized position map X x Y pos res"`
+	HeadDir          CurPrvVel        `desc:"normalized head direction (0 = 'north' = Z)"`
+	CurHeadDirMap    etensor.Float32  `desc:"current normalized head direction map"`
+	CurHeadVelMap    etensor.Float32  `desc:"current normalized head direction map"`
+	NeckAng          CurPrvVel        `desc:"normalized neck angle relative to body"`
+	CurNeckAngMap    etensor.Float32  `desc:"current normalized neck angle map"`
+	CurNeckAngVelMap etensor.Float32  `desc:"current normalized neck angle veolicity map"`
+	CurSomaMap       etensor.Float32  `desc:"all of the head dir, angle, neck info in one place"`
+	CurAct           Actions          `desc:"current action selected"`
+	PrvAct           Actions          `desc:"previous action selected"`
+	CurActMap        etensor.Float32  `desc:"action as a 1-hot map, returned as state"`
+	World            *eve.Group       `view:"-" desc:"world"`
+	View             *evev.View       `view:"-" desc:"view of world"`
+	Emer             *eve.Group       `view:"-" desc:"emer group"`
+	Head             *eve.Group       `view:"-" desc:"Head of emer"`
+	EyeR             eve.Body         `view:"-" desc:"Right eye of emer"`
+	Win              *gi.Window       `view:"-" desc:"gui window -- can be nil"`
+	SnapImg          *gi.Bitmap       `view:"-" desc:"snapshot bitmap view"`
+	DepthImg         *gi.Bitmap       `view:"-" desc:"depth map bitmap view"`
+	Frame            gpu.Framebuffer  `view:"-" desc:"offscreen render buffer"`
 }
 
 func (ev *Env) Name() string { return ev.Nm }
@@ -86,6 +97,29 @@ func (ev *Env) Desc() string { return ev.Dsc }
 
 func (ev *Env) Validate() error {
 	return nil
+}
+
+func (ev *Env) Defaults() {
+	ev.Room.Defaults()
+	ev.Policy.Defaults()
+	ev.EmerHt = 1
+	ev.MoveStep = ev.EmerHt * .2
+	ev.RotStep = 15
+	ev.PosRes = 16
+	ev.AngRes = 16
+	ev.PosPop.Defaults()
+	ev.PosPop.Min.Set(0, 0)
+	ev.PosPop.Max.Set(1, 1)
+	ev.PosPop.Sigma.Set(0.05, 0.05)
+	ev.AngPop.Defaults()
+	ev.VelPop.Defaults()
+	ev.VelPop.Min = -1.5
+	ev.DepthMap = giv.ColorMapName("ColdHot")
+	ev.Camera.Defaults()
+	ev.Camera.Size.X = 16
+	ev.Camera.Size.Y = 8
+	ev.Camera.FOV = 90
+	ev.Camera.MaxD = 7
 }
 
 func (ev *Env) Init(run int) {
@@ -106,7 +140,12 @@ func (ev *Env) Init(run int) {
 	ev.RawDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurPosMap.SetShape([]int{ev.PosRes, ev.PosRes}, nil, []string{"Y", "X"})
-	ev.CurActMap.SetShape([]int{1, int(ActionsN)}, nil, []string{"1", "Actions"})
+	ev.CurHeadDirMap.SetShape([]int{ev.AngRes}, nil, nil)
+	ev.CurHeadVelMap.SetShape([]int{ev.AngRes}, nil, nil)
+	ev.CurNeckAngMap.SetShape([]int{ev.AngRes}, nil, nil)
+	ev.CurNeckAngVelMap.SetShape([]int{ev.AngRes}, nil, nil)
+	ev.CurSomaMap.SetShape([]int{4, 1, 1, ev.AngRes}, nil, []string{"Type", "1", "1", "Value"})
+	ev.CurActMap.SetShape([]int{int(ActionsN)}, nil, nil)
 }
 
 func (ev *Env) Step() bool {
@@ -136,7 +175,12 @@ func (ev *Env) States() env.Elements {
 	els := env.Elements{
 		{"Depth", []int{ev.Camera.Size.Y, ev.Camera.Size.X}, []string{"Y", "X"}},
 		{"PosMap", []int{ev.PosRes, ev.PosRes}, []string{"Y", "X"}},
-		{"ActMap", []int{1, int(ActionsN)}, []string{"1", "ActionsN"}},
+		{"ActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
+		{"HeadDir", []int{int(ev.AngRes)}, []string{"N"}},
+		{"HeadVel", []int{int(ev.AngRes)}, []string{"N"}},
+		{"NeckAng", []int{int(ev.AngRes)}, []string{"N"}},
+		{"NeckAngVel", []int{int(ev.AngRes)}, []string{"N"}},
+		{"SomaMap", []int{4, 1, 1, int(ev.AngRes)}, []string{"Type", "1", "1", "Value"}}, // all-in-one, 4D
 	}
 	return els
 }
@@ -149,6 +193,16 @@ func (ev *Env) State(element string) etensor.Tensor {
 		return &ev.CurPosMap
 	case "ActMap":
 		return &ev.CurActMap
+	case "HeadDir":
+		return &ev.CurHeadDirMap
+	case "HeadVel":
+		return &ev.CurHeadVelMap
+	case "NeckAng":
+		return &ev.CurNeckAngMap
+	case "NeckAngVel":
+		return &ev.CurNeckAngVelMap
+	case "SomaMap":
+		return &ev.CurSomaMap
 	}
 	return nil
 }
@@ -194,25 +248,6 @@ func (ev *Env) SetAction(act Actions) {
 	ev.CurAct = act
 }
 
-func (ev *Env) Defaults() {
-	ev.Room.Defaults()
-	ev.Policy.Defaults()
-	ev.EmerHt = 1
-	ev.MoveStep = ev.EmerHt * .2
-	ev.RotStep = 15
-	ev.PosRes = 16
-	ev.PosPop.Defaults()
-	ev.PosPop.Min.Set(0, 0)
-	ev.PosPop.Max.Set(1, 1)
-	ev.PosPop.Sigma.Set(0.05, 0.05)
-	ev.DepthMap = giv.ColorMapName("ColdHot")
-	ev.Camera.Defaults()
-	ev.Camera.Size.X = 16
-	ev.Camera.Size.Y = 8
-	ev.Camera.FOV = 90
-	ev.Camera.MaxD = 7
-}
-
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
 	ev.World = &eve.Group{}
@@ -220,7 +255,8 @@ func (ev *Env) MakeWorld() {
 
 	ev.Room.MakeRoom(ev.World, "room1")
 	ev.Emer = MakeEmer(ev.World, ev.EmerHt)
-	ev.EyeR = ev.Emer.ChildByName("head", 1).ChildByName("eye-r", 2).(eve.Body)
+	ev.Head = ev.Emer.ChildByName("head", 1).(*eve.Group)
+	ev.EyeR = ev.Head.ChildByName("eye-r", 2).(eve.Body)
 
 	ev.World.InitWorld()
 }
@@ -336,6 +372,17 @@ func (ev *Env) UpdateWorld() {
 	}
 }
 
+// NormHorizAng returns the normalized angle from quat, assuming a horizontal plane angle
+// (i.e., axis = Y +-1)
+func NormHorizAng(q mat32.Quat) float32 {
+	aa := q.ToAxisAngle()
+	ang := aa.W
+	if aa.Y < 0 {
+		ang = 2*mat32.Pi - ang
+	}
+	return ang / (2 * mat32.Pi)
+}
+
 // UpdateState updates the current state representations (depth, action)
 func (ev *Env) UpdateState() {
 	ev.View.Scene.ActivateWin()
@@ -359,6 +406,21 @@ func (ev *Env) UpdateState() {
 	ev.CurPos = ep.Div(mat32.Vec2{ev.Room.Width, ev.Room.Depth}).Add(mat32.Vec2{0.5, 0.5})
 	// fmt.Printf("cur pos: %v\n", ev.CurPos)
 	ev.PosPop.Encode(&ev.CurPosMap, ev.CurPos)
+
+	maxStep := ev.RotStep / 360
+
+	ev.HeadDir.Update(NormHorizAng(ev.Head.Abs.Quat))
+	ev.AngPop.Encode(&ev.CurHeadDirMap.Values, ev.HeadDir.Cur, ev.AngRes)
+	ev.AngPop.Encode(&ev.CurHeadVelMap.Values, ev.HeadDir.Vel/maxStep, ev.AngRes)
+
+	ev.NeckAng.Update(NormHorizAng(ev.Head.Rel.Quat))
+	ev.AngPop.Encode(&ev.CurNeckAngMap.Values, ev.NeckAng.Cur, ev.AngRes)
+	ev.AngPop.Encode(&ev.CurNeckAngVelMap.Values, ev.NeckAng.Vel/maxStep, ev.AngRes)
+
+	copy(ev.CurSomaMap.Values[0:ev.AngRes], ev.CurHeadDirMap.Values)
+	copy(ev.CurSomaMap.Values[ev.AngRes:2*ev.AngRes], ev.CurHeadVelMap.Values)
+	copy(ev.CurSomaMap.Values[2*ev.AngRes:3*ev.AngRes], ev.CurNeckAngMap.Values)
+	copy(ev.CurSomaMap.Values[3*ev.AngRes:4*ev.AngRes], ev.CurNeckAngVelMap.Values)
 }
 
 // UpdateView updates view if gui active

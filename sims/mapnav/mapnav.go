@@ -26,8 +26,8 @@ import (
 	"github.com/emer/etable/agg"
 	"github.com/emer/etable/eplot"
 	"github.com/emer/etable/etable"
-	"github.com/emer/etable/etensor"
-	"github.com/emer/etable/etview" // include to get gui views
+	"github.com/emer/etable/etensor" // include to get gui views
+	"github.com/emer/etable/etview"
 	"github.com/emer/etable/norm"
 	"github.com/emer/etable/split"
 	"github.com/emer/leabra/deep"
@@ -147,6 +147,7 @@ var ParamSets = params.Sets{
 type Sim struct {
 	Net            *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	CurPosMap      *etensor.Float32  `view:"current pos map from env"`
+	PosAFs         actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
 	TrnEpcLog      *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog      *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog      *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
@@ -192,35 +193,33 @@ type Sim struct {
 	NZero         int       `inactive:"+" desc:"number of epochs in a row with zero SSE"`
 
 	// internal state - view:"-"
-	SumSSE        float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	SumAvgSSE     float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	SumCosDiff    float64            `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
-	SumCosDiffTRC []float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch, per TRC"`
-	CntErr        int                `view:"-" inactive:"+" desc:"sum of errs to increment as we go through epoch"`
-	Win           *gi.Window         `view:"-" desc:"main GUI window"`
-	NetView       *netview.NetView   `view:"-" desc:"the network viewer"`
-	ToolBar       *gi.ToolBar        `view:"-" desc:"the master toolbar"`
-	TrnEpcPlot    *eplot.Plot2D      `view:"-" desc:"the training epoch plot"`
-	TstEpcPlot    *eplot.Plot2D      `view:"-" desc:"the testing epoch plot"`
-	TstTrlPlot    *eplot.Plot2D      `view:"-" desc:"the test-trial plot"`
-	TstCycPlot    *eplot.Plot2D      `view:"-" desc:"the test-cycle plot"`
-	RunPlot       *eplot.Plot2D      `view:"-" desc:"the run plot"`
-	TrnEpcFile    *os.File           `view:"-" desc:"log file"`
-	RunFile       *os.File           `view:"-" desc:"log file"`
-	InputValsTsr  *etensor.Float32   `view:"-" desc:"for holding layer values"`
-	OutputValsTsr *etensor.Float32   `view:"-" desc:"for holding layer values"`
-	PosAFs        []*etensor.Float32 `view:"-" desc:"position activation fields (running average)"`
-	PosAFsNorm    []*etensor.Float32 `view:"-" desc:"normalized position activation fields (running average)"`
-	PosAFTsr      *etensor.Float32   `view:"-" desc:"for holding layer values"`
-	ActVals       []float32          `view:"-" desc:"for action vals"`
-	PopVals       []float32          `view:"-" desc:"tmp pop code values"`
-	SaveWts       bool               `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
-	NoGui         bool               `view:"-" desc:"if true, runing in no GUI mode"`
-	LogSetParams  bool               `view:"-" desc:"if true, print message for all params that are set"`
-	IsRunning     bool               `view:"-" desc:"true if sim is running"`
-	StopNow       bool               `view:"-" desc:"flag to stop running"`
-	NeedsNewRun   bool               `view:"-" desc:"flag to initialize NewRun if last one finished"`
-	RndSeed       int64              `view:"-" desc:"the current random seed"`
+	SumSSE        float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumAvgSSE     float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumCosDiff    float64          `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumCosDiffTRC []float64        `view:"-" inactive:"+" desc:"sum to increment as we go through epoch, per TRC"`
+	CntErr        int              `view:"-" inactive:"+" desc:"sum of errs to increment as we go through epoch"`
+	Win           *gi.Window       `view:"-" desc:"main GUI window"`
+	NetView       *netview.NetView `view:"-" desc:"the network viewer"`
+	ToolBar       *gi.ToolBar      `view:"-" desc:"the master toolbar"`
+	TrnEpcPlot    *eplot.Plot2D    `view:"-" desc:"the training epoch plot"`
+	TstEpcPlot    *eplot.Plot2D    `view:"-" desc:"the testing epoch plot"`
+	TstTrlPlot    *eplot.Plot2D    `view:"-" desc:"the test-trial plot"`
+	TstCycPlot    *eplot.Plot2D    `view:"-" desc:"the test-cycle plot"`
+	RunPlot       *eplot.Plot2D    `view:"-" desc:"the run plot"`
+	TrnEpcFile    *os.File         `view:"-" desc:"log file"`
+	RunFile       *os.File         `view:"-" desc:"log file"`
+	InputValsTsr  *etensor.Float32 `view:"-" desc:"for holding layer values"`
+	OutputValsTsr *etensor.Float32 `view:"-" desc:"for holding layer values"`
+	PosAFTsr      *etensor.Float32 `view:"-" desc:"for holding layer values"`
+	ActVals       []float32        `view:"-" desc:"for action vals"`
+	PopVals       []float32        `view:"-" desc:"tmp pop code values"`
+	SaveWts       bool             `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
+	NoGui         bool             `view:"-" desc:"if true, runing in no GUI mode"`
+	LogSetParams  bool             `view:"-" desc:"if true, print message for all params that are set"`
+	IsRunning     bool             `view:"-" desc:"true if sim is running"`
+	StopNow       bool             `view:"-" desc:"flag to stop running"`
+	NeedsNewRun   bool             `view:"-" desc:"flag to initialize NewRun if last one finished"`
+	RndSeed       int64            `view:"-" desc:"the current random seed"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -298,12 +297,14 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Event.Max = 100
 	ss.TrainEnv.Run.Max = ss.MaxRuns
+	ss.TrainEnv.PosRes = 32                  // higher res
+	ss.TrainEnv.PosPop.Sigma.Set(0.02, 0.02) // tighter for 32 -- .05 for 16
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
 
 	ss.PopCode.Defaults()
-	ss.PopCode.Min = -0.2
-	ss.PopCode.Max = 1.2
+	ss.PopCode.Min = 0.1 // key -- never gets much below .25
+	ss.PopCode.Max = 1.1
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
@@ -701,32 +702,25 @@ func (ss *Sim) UpdtPosAFs() {
 		ss.PosAFTsr = &etensor.Float32{}
 	}
 	naf := len(ss.PosAFNms)
-	if len(ss.PosAFs) != naf {
-		ss.PosAFs = make([]*etensor.Float32, naf)
-		ss.PosAFsNorm = make([]*etensor.Float32, naf)
-	}
-	for i, lnm := range ss.PosAFNms {
-		paf := ss.PosAFs[i]
-		pafn := ss.PosAFsNorm[i]
-		if paf == nil {
-			paf = &etensor.Float32{}
-			ss.PosAFs[i] = paf
-			pafn = &etensor.Float32{}
-			ss.PosAFsNorm[i] = pafn
-			pafn.SetMetaData("grid-fill", "1")
-			pafn.SetMetaData("dim-extra", ".2")
-			pafn.SetMetaData("min", "0")
-			pafn.SetMetaData("colormap", "JetMuted")
+	if len(ss.PosAFs.RFs) != naf {
+		for _, lnm := range ss.PosAFNms {
+			ly := ss.Net.LayerByName(lnm)
+			if ly == nil {
+				continue
+			}
+			ly.UnitValsTensor(ss.PosAFTsr, "ActM")
+			af := ss.PosAFs.AddRF(lnm, ss.PosAFTsr, ss.CurPosMap)
+			af.NormRF.SetMetaData("min", "0")
+			af.NormRF.SetMetaData("colormap", "JetMuted")
 		}
+	}
+	for _, lnm := range ss.PosAFNms {
 		ly := ss.Net.LayerByName(lnm)
 		if ly == nil {
 			continue
 		}
 		ly.UnitValsTensor(ss.PosAFTsr, "ActM")
-		actrf.RunningAvg(paf, ss.PosAFTsr, ss.CurPosMap, 1000) // note: key param is time constant here!
-		pafn.CopyShapeFrom(paf)
-		pafn.CopyFrom(paf)
-		norm.TensorUnit32(pafn, 2) // 2 = norm within outer 2 dims = norm each sub-rf
+		ss.PosAFs.Add(lnm, ss.PosAFTsr, ss.CurPosMap, 0.01) // thr prevent weird artifacts
 	}
 }
 
@@ -1468,11 +1462,19 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	tbar.AddSeparator("test")
 
-	tbar.AddAction(gi.ActOpts{Label: "View PosAFs", Icon: "file-image", Tooltip: "view current position activation rfs.", UpdateFunc: func(act *gi.Action) {
+	tbar.AddAction(gi.ActOpts{Label: "Reset PosAFs", Icon: "reset", Tooltip: "reset current position activation rfs accumulation data", UpdateFunc: func(act *gi.Action) {
 		act.SetActiveStateUpdt(!ss.IsRunning)
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		for i, paf := range ss.PosAFsNorm {
-			etview.TensorGridDialog(vp, paf, giv.DlgOpts{Title: "Position Act RF", Prompt: ss.PosAFNms[i], TmpSave: nil}, nil, nil)
+		ss.PosAFs.Reset()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "View PosAFs", Icon: "file-image", Tooltip: "compute current position activation rfs and view them.", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.PosAFs.Avg()
+		ss.PosAFs.Norm()
+		for _, paf := range ss.PosAFs.RFs {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Position Act RF", Prompt: paf.Name, TmpSave: nil}, nil, nil)
 		}
 	})
 

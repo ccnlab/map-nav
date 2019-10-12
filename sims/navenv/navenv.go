@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/emer/emergent/env"
+	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
 	"github.com/emer/etable/tsragg"
@@ -62,6 +63,10 @@ type Env struct {
 	AngRes           int              `desc:"number of units for encoding angles and related velocities etc"`
 	AngPop           popcode.OneD     `desc:"1D population code parameters for encoding angles, in normalized position units (0-1)"`
 	VelPop           popcode.OneD     `desc:"1D population code parameters for encoding angles, in normalized units (-1..1)"`
+	ActRes           int              `desc:"number of units for encoding actions"`
+	ActVar           float64          `desc:"gaussian variance of noise in action for *selected* actions"`
+	ActNoise         float64          `desc:"gaussian variance of noise in action for unselected actions"`
+	ActPop           popcode.OneD     `desc:"1D population code parameters for encoding actions, in normalized units (0..1)"`
 	Room             RoomParams       `desc:"parameters for room"`
 	Camera           evev.Camera      `desc:"offscreen render camera settings"`
 	Policy           Policy           `view:"inline" desc:"current policy for actions"`
@@ -80,7 +85,9 @@ type Env struct {
 	CurSomaMap       etensor.Float32  `desc:"all of the head dir, angle, neck info in one place"`
 	CurAct           Actions          `desc:"current action selected"`
 	PrvAct           Actions          `desc:"previous action selected"`
-	CurActMap        etensor.Float32  `desc:"action as a 1-hot map, returned as state"`
+	ExtAct           Actions          `desc:"current externally-supplied action"`
+	CurActMag        float32          `desc:"magnitude of current action -- how strong"`
+	CurActMap        etensor.Float32  `desc:"action as a pop-coded map, returned as state"`
 	World            *eve.Group       `view:"-" desc:"world"`
 	View             *evev.View       `view:"-" desc:"view of world"`
 	Emer             *eve.Group       `view:"-" desc:"emer group"`
@@ -103,17 +110,21 @@ func (ev *Env) Defaults() {
 	ev.Room.Defaults()
 	ev.Policy.Defaults()
 	ev.EmerHt = 1
-	ev.MoveStep = ev.EmerHt * .2
+	ev.MoveStep = ev.EmerHt * .4
 	ev.RotStep = 15
 	ev.PosRes = 16
 	ev.AngRes = 16
+	ev.ActRes = 16
+	ev.ActVar = 0.5
+	ev.ActNoise = 0.1 // gaussian noise
 	ev.PosPop.Defaults()
-	ev.PosPop.Min.Set(0, 0)
-	ev.PosPop.Max.Set(1, 1)
-	ev.PosPop.Sigma.Set(0.05, 0.05)
+	ev.PosPop.SetRange(0, 1, 0.05)
 	ev.AngPop.Defaults()
+	ev.AngPop.SetRange(-0.2, 1.2, 0.1)
 	ev.VelPop.Defaults()
-	ev.VelPop.Min = -1.5
+	ev.VelPop.SetRange(-1.2, 1.2, 0.1)
+	ev.ActPop.Defaults()
+	ev.ActPop.SetRange(-0.5, 1.5, 0.15)
 	ev.DepthMap = giv.ColorMapName("ColdHot")
 	ev.Camera.Defaults()
 	ev.Camera.Size.X = 16
@@ -136,6 +147,7 @@ func (ev *Env) Init(run int) {
 	ev.Epoch.Init()
 	ev.Event.Init()
 	ev.Run.Cur = run
+	ev.CurActMag = 1
 	ev.Event.Cur = -1 // init state -- key so that first Step() = 0
 	ev.RawDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
 	ev.CurDepth.SetShape([]int{ev.Camera.Size.Y, ev.Camera.Size.X}, nil, []string{"Y", "X"})
@@ -145,7 +157,7 @@ func (ev *Env) Init(run int) {
 	ev.CurNeckAngMap.SetShape([]int{ev.AngRes}, nil, nil)
 	ev.CurNeckAngVelMap.SetShape([]int{ev.AngRes}, nil, nil)
 	ev.CurSomaMap.SetShape([]int{4, 1, 1, ev.AngRes}, nil, []string{"Type", "1", "1", "Value"})
-	ev.CurActMap.SetShape([]int{int(ActionsN)}, nil, nil)
+	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "Mag"})
 }
 
 func (ev *Env) Step() bool {
@@ -158,7 +170,11 @@ func (ev *Env) Step() bool {
 		mind = 0.5
 		avgd = 0.5
 	}
-	ev.CurAct = ev.Policy.Act(mind, avgd, ev.CurAct)
+	ev.CurAct = ev.Policy.Act(mind, avgd, ev.ExtAct)
+	if ev.CurAct != ev.ExtAct {
+		ev.CurActMag = float32((1 - ev.ActNoise) + erand.Gauss(ev.ActVar, -1))
+		ev.CurActMag = mat32.Clamp(ev.CurActMag, 0, 1)
+	}
 	if ev.CurAct != NoAction {
 		ev.TakeAction(ev.CurAct)
 	} else {
@@ -242,10 +258,12 @@ func (ev *Env) Action(element string, input etensor.Tensor) {
 	}
 }
 
-// SetAction is easier non-standard interface just for this
-func (ev *Env) SetAction(act Actions) {
+// SetAction is easier non-standard interface just for this -- mag is 0..1 normalized magnitude of action
+func (ev *Env) SetAction(act Actions, mag float32) {
 	ev.PrvAct = ev.CurAct
+	ev.ExtAct = act
 	ev.CurAct = act
+	ev.CurActMag = mag
 }
 
 // MakeWorld constructs a new virtual physics world
@@ -288,39 +306,39 @@ func (ev *Env) MakeView(sc *gi3d.Scene) {
 
 // StepForward moves Emer forward in current facing direction one step, and updates
 func (ev *Env) StepForward() {
-	ev.Emer.Rel.MoveOnAxis(0, 0, 1, -ev.MoveStep)
+	ev.Emer.Rel.MoveOnAxis(0, 0, 1, -ev.MoveStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // StepBackward moves Emer backward in current facing direction one step, and updates
 func (ev *Env) StepBackward() {
-	ev.Emer.Rel.MoveOnAxis(0, 0, 1, ev.MoveStep)
+	ev.Emer.Rel.MoveOnAxis(0, 0, 1, ev.MoveStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotBodyLeft rotates emer left and updates
 func (ev *Env) RotBodyLeft() {
-	ev.Emer.Rel.RotateOnAxis(0, 1, 0, ev.RotStep)
+	ev.Emer.Rel.RotateOnAxis(0, 1, 0, ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotBodyRight rotates emer right and updates
 func (ev *Env) RotBodyRight() {
-	ev.Emer.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep)
+	ev.Emer.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotHeadLeft rotates head left and updates
 func (ev *Env) RotHeadLeft() {
 	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	hd.Rel.RotateOnAxis(0, 1, 0, ev.RotStep)
+	hd.Rel.RotateOnAxis(0, 1, 0, ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotHeadRight rotates head right and updates
 func (ev *Env) RotHeadRight() {
 	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	hd.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep)
+	hd.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
@@ -400,8 +418,18 @@ func (ev *Env) UpdateState() {
 	})
 	copy(ev.RawDepth.Values, depth)
 	evev.DepthNorm(&ev.CurDepth.Values, depth, &ev.Camera, false) // no flip!
-	ev.CurActMap.SetZeros()
-	ev.CurActMap.Values[ev.CurAct] = 1.0
+
+	for ai := 0; ai < int(ActionsN); ai++ {
+		off := ai * ev.ActRes
+		sl := ev.CurActMap.Values[off : off+ev.ActRes]
+		if ai == int(ev.CurAct) {
+			ev.ActPop.Encode(&sl, ev.CurActMag, ev.ActRes)
+		} else {
+			nmag := ev.ActNoise + erand.Gauss(ev.ActNoise, -1)
+			ev.ActPop.Encode(&sl, float32(nmag), ev.ActRes)
+		}
+	}
+
 	ep := mat32.Vec2{ev.Emer.Abs.Pos.X, -ev.Emer.Abs.Pos.Z}
 	ev.CurPos = ep.Div(mat32.Vec2{ev.Room.Width, ev.Room.Depth}).Add(mat32.Vec2{0.5, 0.5})
 	// fmt.Printf("cur pos: %v\n", ev.CurPos)
@@ -411,11 +439,13 @@ func (ev *Env) UpdateState() {
 
 	ev.HeadDir.Update(NormHorizAng(ev.Head.Abs.Quat))
 	ev.AngPop.Encode(&ev.CurHeadDirMap.Values, ev.HeadDir.Cur, ev.AngRes)
-	ev.AngPop.Encode(&ev.CurHeadVelMap.Values, ev.HeadDir.Vel/maxStep, ev.AngRes)
+	vel := mat32.Clamp(ev.HeadDir.Vel/maxStep, -1, 1)
+	ev.VelPop.Encode(&ev.CurHeadVelMap.Values, vel, ev.AngRes)
 
 	ev.NeckAng.Update(NormHorizAng(ev.Head.Rel.Quat))
 	ev.AngPop.Encode(&ev.CurNeckAngMap.Values, ev.NeckAng.Cur, ev.AngRes)
-	ev.AngPop.Encode(&ev.CurNeckAngVelMap.Values, ev.NeckAng.Vel/maxStep, ev.AngRes)
+	vel = mat32.Clamp(ev.NeckAng.Vel/maxStep, -1, 1)
+	ev.VelPop.Encode(&ev.CurNeckAngVelMap.Values, vel, ev.AngRes)
 
 	copy(ev.CurSomaMap.Values[0:ev.AngRes], ev.CurHeadDirMap.Values)
 	copy(ev.CurSomaMap.Values[ev.AngRes:2*ev.AngRes], ev.CurHeadVelMap.Values)

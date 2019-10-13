@@ -35,18 +35,20 @@ var KiT_Actions = kit.Enums.AddEnum(ActionsN, false, nil)
 
 // The actions avail
 const (
-	NoAction Actions = iota
-	StepForward
-	StepBackward
+	// forward implies rot body to head
+	StepForward Actions = iota
 	RotBodyLeft
 	RotBodyRight
 	RotHeadLeft
 	RotHeadRight
-	RotBodyToHead
-	RotHeadToBody
-
+	// StepBackward
+	// RotBodyToHead
+	// RotHeadToBody
 	ActionsN
 )
+
+// ActionsCode are code letters for the actions
+var ActionsCode = []string{"F", "L", "R", "l", "r"}
 
 // Env manages the navigation environment
 type Env struct {
@@ -170,16 +172,12 @@ func (ev *Env) Step() bool {
 		mind = 0.5
 		avgd = 0.5
 	}
-	ev.CurAct = ev.Policy.Act(mind, avgd, ev.ExtAct)
+	ev.CurAct = ev.Policy.Act(mind, avgd, ev.CurPos, ev.ExtAct)
 	if ev.CurAct != ev.ExtAct {
 		ev.CurActMag = float32((1 - ev.ActNoise) + erand.Gauss(ev.ActVar, -1))
 		ev.CurActMag = mat32.Clamp(ev.CurActMag, 0, 1)
 	}
-	if ev.CurAct != NoAction {
-		ev.TakeAction(ev.CurAct)
-	} else {
-		ev.UpdateWorld()
-	}
+	ev.TakeAction(ev.CurAct)
 	ev.Epoch.Same()      // good idea to just reset all non-inner-most counters at start
 	if ev.Event.Incr() { // if true, hit max, reset to 0
 		ev.Epoch.Incr()
@@ -306,6 +304,7 @@ func (ev *Env) MakeView(sc *gi3d.Scene) {
 
 // StepForward moves Emer forward in current facing direction one step, and updates
 func (ev *Env) StepForward() {
+	ev.RotBodyToHead()
 	ev.Emer.Rel.MoveOnAxis(0, 0, 1, -ev.MoveStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
@@ -330,30 +329,26 @@ func (ev *Env) RotBodyRight() {
 
 // RotHeadLeft rotates head left and updates
 func (ev *Env) RotHeadLeft() {
-	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	hd.Rel.RotateOnAxis(0, 1, 0, ev.RotStep*ev.CurActMag)
+	ev.Head.Rel.RotateOnAxis(0, 1, 0, ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotHeadRight rotates head right and updates
 func (ev *Env) RotHeadRight() {
-	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	hd.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep*ev.CurActMag)
+	ev.Head.Rel.RotateOnAxis(0, 1, 0, -ev.RotStep*ev.CurActMag)
 	ev.UpdateWorld()
 }
 
 // RotHeadToBody rotates head straight
 func (ev *Env) RotHeadToBody() {
-	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	hd.Rel.SetAxisRotation(0, 1, 0, 0)
+	ev.Head.Rel.SetAxisRotation(0, 1, 0, 0)
 	ev.UpdateWorld()
 }
 
 // RotBodyToHead rotates body to match current head rotation relative to body
 func (ev *Env) RotBodyToHead() {
-	hd := ev.Emer.ChildByName("head", 1).(*eve.Group)
-	aa := hd.Rel.Quat.ToAxisAngle()
-	hd.Rel.SetAxisRotation(0, 1, 0, 0)
+	aa := ev.Head.Rel.Quat.ToAxisAngle()
+	ev.Head.Rel.SetAxisRotation(0, 1, 0, 0)
 	ev.Emer.Rel.RotateOnAxis(0, 1, 0, mat32.RadToDeg(aa.W)) // just get angle assuming rest is up
 	ev.UpdateWorld()
 }
@@ -363,8 +358,8 @@ func (ev *Env) TakeAction(act Actions) {
 	switch act {
 	case StepForward:
 		ev.StepForward()
-	case StepBackward:
-		ev.StepBackward()
+	// case StepBackward:
+	// 	ev.StepBackward()
 	case RotBodyLeft:
 		ev.RotBodyLeft()
 	case RotBodyRight:
@@ -373,10 +368,10 @@ func (ev *Env) TakeAction(act Actions) {
 		ev.RotHeadLeft()
 	case RotHeadRight:
 		ev.RotHeadRight()
-	case RotHeadToBody:
-		ev.RotHeadToBody()
-	case RotBodyToHead:
-		ev.RotBodyToHead()
+		// case RotHeadToBody:
+		// 	ev.RotHeadToBody()
+		// case RotBodyToHead:
+		// 	ev.RotBodyToHead()
 	}
 }
 

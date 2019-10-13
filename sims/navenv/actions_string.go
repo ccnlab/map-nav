@@ -13,21 +13,17 @@ func _() {
 	// An "invalid array index" compiler error signifies that the constant values have changed.
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
-	_ = x[NoAction-0]
-	_ = x[StepForward-1]
-	_ = x[StepBackward-2]
-	_ = x[RotBodyLeft-3]
-	_ = x[RotBodyRight-4]
-	_ = x[RotHeadLeft-5]
-	_ = x[RotHeadRight-6]
-	_ = x[RotBodyToHead-7]
-	_ = x[RotHeadToBody-8]
-	_ = x[ActionsN-9]
+	_ = x[StepForward-0]
+	_ = x[RotBodyLeft-1]
+	_ = x[RotBodyRight-2]
+	_ = x[RotHeadLeft-3]
+	_ = x[RotHeadRight-4]
+	_ = x[ActionsN-5]
 }
 
-const _Actions_name = "NoActionStepForwardStepBackwardRotBodyLeftRotBodyRightRotHeadLeftRotHeadRightRotBodyToHeadRotHeadToBodyActionsN"
+const _Actions_name = "StepForwardRotBodyLeftRotBodyRightRotHeadLeftRotHeadRightActionsN"
 
-var _Actions_index = [...]uint8{0, 8, 19, 31, 42, 54, 65, 77, 90, 103, 111}
+var _Actions_index = [...]uint8{0, 11, 22, 34, 45, 57, 65}
 
 func (i Actions) String() string {
 	if i < 0 || i >= Actions(len(_Actions_index)-1) {

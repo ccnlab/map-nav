@@ -169,6 +169,7 @@ type Sim struct {
 	CurPosMap        *etensor.Float32  `view:"current pos map from env"`
 	PosAFs           actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
 	TrnEpcLog        *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
+	TrnTrlLog        *etable.Table     `view:"no-inline" desc:"training trial-level log data"`
 	TstEpcLog        *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog        *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
 	TstErrLog        *etable.Table     `view:"no-inline" desc:"log of all test trials where errors were made"`
@@ -223,6 +224,7 @@ type Sim struct {
 	NetView       *netview.NetView `view:"-" desc:"the network viewer"`
 	ToolBar       *gi.ToolBar      `view:"-" desc:"the master toolbar"`
 	TrnEpcPlot    *eplot.Plot2D    `view:"-" desc:"the training epoch plot"`
+	TrnTrlPlot    *eplot.Plot2D    `view:"-" desc:"the training trial plot"`
 	TstEpcPlot    *eplot.Plot2D    `view:"-" desc:"the testing epoch plot"`
 	TstTrlPlot    *eplot.Plot2D    `view:"-" desc:"the test-trial plot"`
 	TstCycPlot    *eplot.Plot2D    `view:"-" desc:"the test-cycle plot"`
@@ -253,6 +255,7 @@ func (ss *Sim) New() {
 	ss.Net = &deep.Network{}
 	ss.NDepthCode = 8
 	ss.TrnEpcLog = &etable.Table{}
+	ss.TrnTrlLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
 	ss.TstTrlLog = &etable.Table{}
 	ss.TstCycLog = &etable.Table{}
@@ -295,6 +298,7 @@ func (ss *Sim) Config() {
 	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
 	ss.ConfigTrnEpcLog(ss.TrnEpcLog)
+	ss.ConfigTrnTrlLog(ss.TrnTrlLog)
 	ss.ConfigTstEpcLog(ss.TstEpcLog)
 	ss.ConfigTstTrlLog(ss.TstTrlLog)
 	ss.ConfigTstCycLog(ss.TstCycLog)
@@ -759,6 +763,7 @@ func (ss *Sim) TrainTrial() {
 	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
 	ss.AlphaCyc(true)   // train
 	ss.TrialStats(true) // accumulate
+	ss.LogTrnTrl(ss.TrnTrlLog)
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
@@ -1179,6 +1184,95 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 }
 
 //////////////////////////////////////////////
+//  TrnTrlLog
+
+// LogTrnTrl adds data from current trial to the TrnTrlLog table.
+func (ss *Sim) LogTrnTrl(dt *etable.Table) {
+	row := dt.Rows
+	dt.SetNumRows(row + 1)
+
+	env := &ss.TrainEnv
+
+	dt.SetCellFloat("Run", row, float64(env.Run.Cur))
+	dt.SetCellFloat("Epoch", row, float64(env.Epoch.Cur))
+	dt.SetCellFloat("Event", row, float64(env.Event.Cur))
+	dt.SetCellFloat("X", row, float64(env.CurPos.X))
+	dt.SetCellFloat("Y", row, float64(env.CurPos.Y))
+	dt.SetCellString("Action", row, env.CurAct.String())
+	dt.SetCellFloat("ActMag", row, float64(env.CurActMag))
+	dt.SetCellString("NetAct", row, env.ExtAct.String())
+	forced := ""
+	if env.CurAct != env.ExtAct {
+		forced = navenv.ActionsCode[env.CurAct]
+	}
+	dt.SetCellString("Forced", row, forced)
+	dt.SetCellFloat("SSE", row, ss.TrlSSE)
+	dt.SetCellFloat("AvgSSE", row, ss.TrlAvgSSE)
+	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
+
+	for i, lnm := range ss.TRCLays {
+		dt.SetCellFloat(lnm+" CosDiff", row, float64(ss.TrlCosDiffTRC[i]))
+	}
+
+	// note: essential to use Go version of update when called from another goroutine
+	ss.TrnTrlPlot.GoUpdate()
+}
+
+func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
+	// inp := ss.Net.LayerByName("InputP").(*deep.Layer)
+
+	dt.SetMetaData("name", "TrnTrlLog")
+	dt.SetMetaData("desc", "Record of trials while training, including position")
+	dt.SetMetaData("read-only", "true")
+	dt.SetMetaData("precision", strconv.Itoa(LogPrec))
+
+	nt := ss.TrainEnv.Event.Prv
+	sch := etable.Schema{
+		{"Run", etensor.INT64, nil, nil},
+		{"Epoch", etensor.INT64, nil, nil},
+		{"Event", etensor.INT64, nil, nil},
+		{"X", etensor.FLOAT64, nil, nil},
+		{"Y", etensor.FLOAT64, nil, nil},
+		{"Action", etensor.STRING, nil, nil},
+		{"ActMag", etensor.FLOAT64, nil, nil},
+		{"NetAct", etensor.STRING, nil, nil},
+		{"Forced", etensor.STRING, nil, nil},
+		{"SSE", etensor.FLOAT64, nil, nil},
+		{"AvgSSE", etensor.FLOAT64, nil, nil},
+		{"CosDiff", etensor.FLOAT64, nil, nil},
+	}
+	for _, lnm := range ss.TRCLays {
+		sch = append(sch, etable.Column{lnm + " CosDiff", etensor.FLOAT64, nil, nil})
+	}
+
+	dt.SetFromSchema(sch, nt)
+}
+
+func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+	plt.Params.Title = "MapNav Event Plot"
+	plt.Params.XAxisCol = "X"
+	plt.SetTable(dt)
+	// order of params: on, fixMin, min, fixMax, max
+	plt.SetColParams("Run", false, true, 0, false, 0)
+	plt.SetColParams("Epoch", false, true, 0, false, 0)
+	plt.SetColParams("Event", false, true, 0, false, 0)
+	plt.SetColParams("X", false, true, 0, true, 1)
+	plt.SetColParams("Y", true, true, 0, true, 1)
+	plt.SetColParams("Action", false, true, 0, false, 0)
+	plt.SetColParams("ActMag", false, true, 0, true, 1)
+	plt.SetColParams("NetAct", false, true, 0, false, 0)
+	plt.SetColParams("Forced", true, true, 0, false, 0)
+	plt.SetColParams("SSE", false, true, 0, false, 0)
+	plt.SetColParams("AvgSSE", false, true, 0, false, 0)
+	plt.SetColParams("CosDiff", false, true, 0, true, 1)
+
+	for _, lnm := range ss.TRCLays {
+		plt.SetColParams(lnm+" CosDiff", false, true, 0, true, 1)
+	}
+	return plt
+}
+
+//////////////////////////////////////////////
 //  TstTrlLog
 
 // LogTstTrl adds data from current trial to the TstTrlLog table.
@@ -1526,6 +1620,9 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	plt := tv.AddNewTab(eplot.KiT_Plot2D, "TrnEpcPlot").(*eplot.Plot2D)
 	ss.TrnEpcPlot = ss.ConfigTrnEpcPlot(plt, ss.TrnEpcLog)
 
+	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TrnTrlPlot").(*eplot.Plot2D)
+	ss.TrnTrlPlot = ss.ConfigTrnTrlPlot(plt, ss.TrnTrlLog)
+
 	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TstTrlPlot").(*eplot.Plot2D)
 	ss.TstTrlPlot = ss.ConfigTstTrlPlot(plt, ss.TstTrlLog)
 
@@ -1641,6 +1738,12 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		func(recv, send ki.Ki, sig int64, data interface{}) {
 			ss.RunLog.SetNumRows(0)
 			ss.RunPlot.Update()
+		})
+
+	tbar.AddAction(gi.ActOpts{Label: "Reset TrlLog", Icon: "reset", Tooltip: "Reset the accumulated trial log"}, win.This(),
+		func(recv, send ki.Ki, sig int64, data interface{}) {
+			ss.TrnTrlLog.SetNumRows(0)
+			ss.TrnTrlPlot.Update()
 		})
 
 	tbar.AddSeparator("misc")

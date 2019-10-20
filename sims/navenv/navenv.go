@@ -78,10 +78,10 @@ type Env struct {
 	CurDepth         etensor.Float32  `desc:"current normalized depth map X x Y same size as camera"`
 	CurPos           mat32.Vec2       `desc:"current normalized position"`
 	CurPosMap        etensor.Float32  `desc:"current normalized position map X x Y pos res"`
-	HeadDir          CurPrvVel        `desc:"normalized head direction (0 = 'north' = Z)"`
+	HeadDir          env.CurPrvF32    `desc:"normalized head direction (0 = 'north' = Z)"`
 	CurHeadDirMap    etensor.Float32  `desc:"current normalized head direction map"`
 	CurHeadVelMap    etensor.Float32  `desc:"current normalized head direction map"`
-	NeckAng          CurPrvVel        `desc:"normalized neck angle relative to body"`
+	NeckAng          env.CurPrvF32    `desc:"normalized neck angle relative to body"`
 	CurNeckAngMap    etensor.Float32  `desc:"current normalized neck angle map"`
 	CurNeckAngVelMap etensor.Float32  `desc:"current normalized neck angle veolicity map"`
 	CurSomaMap       etensor.Float32  `desc:"all of the head dir, angle, neck info in one place"`
@@ -434,12 +434,12 @@ func (ev *Env) UpdateState() {
 
 	ev.HeadDir.Update(NormHorizAng(ev.Head.Abs.Quat))
 	ev.AngPop.Encode(&ev.CurHeadDirMap.Values, ev.HeadDir.Cur, ev.AngRes)
-	vel := mat32.Clamp(ev.HeadDir.Vel/maxStep, -1, 1)
+	vel := mat32.Clamp(ev.HeadDir.Diff()/maxStep, -1, 1)
 	ev.VelPop.Encode(&ev.CurHeadVelMap.Values, vel, ev.AngRes)
 
 	ev.NeckAng.Update(NormHorizAng(ev.Head.Rel.Quat))
 	ev.AngPop.Encode(&ev.CurNeckAngMap.Values, ev.NeckAng.Cur, ev.AngRes)
-	vel = mat32.Clamp(ev.NeckAng.Vel/maxStep, -1, 1)
+	vel = mat32.Clamp(ev.NeckAng.Diff()/maxStep, -1, 1)
 	ev.VelPop.Encode(&ev.CurNeckAngVelMap.Values, vel, ev.AngRes)
 
 	copy(ev.CurSomaMap.Values[0:ev.AngRes], ev.CurHeadDirMap.Values)

@@ -432,12 +432,12 @@ func (ev *Env) UpdateState() {
 
 	maxStep := ev.RotStep / 360
 
-	ev.HeadDir.Update(NormHorizAng(ev.Head.Abs.Quat))
+	ev.HeadDir.Set(NormHorizAng(ev.Head.Abs.Quat))
 	ev.AngPop.Encode(&ev.CurHeadDirMap.Values, ev.HeadDir.Cur, ev.AngRes)
 	vel := mat32.Clamp(ev.HeadDir.Diff()/maxStep, -1, 1)
 	ev.VelPop.Encode(&ev.CurHeadVelMap.Values, vel, ev.AngRes)
 
-	ev.NeckAng.Update(NormHorizAng(ev.Head.Rel.Quat))
+	ev.NeckAng.Set(NormHorizAng(ev.Head.Rel.Quat))
 	ev.AngPop.Encode(&ev.CurNeckAngMap.Values, ev.NeckAng.Cur, ev.AngRes)
 	vel = mat32.Clamp(ev.NeckAng.Diff()/maxStep, -1, 1)
 	ev.VelPop.Encode(&ev.CurNeckAngVelMap.Values, vel, ev.AngRes)

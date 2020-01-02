@@ -299,6 +299,7 @@ func (ev *Env) ReMakeWorld() {
 func (ev *Env) MakeView(sc *gi3d.Scene) {
 	wgp := gi3d.AddNewGroup(sc, sc, "world")
 	ev.View = evev.NewView(ev.World, sc, wgp)
+	ev.View.InitLibrary()
 	ev.View.Sync()
 }
 
@@ -472,7 +473,7 @@ func (ev *Env) OpenWindow() *gi.Window {
 	width := 1024
 	height := 768
 
-	win := gi.NewWindow2D("navenv", "Navigation Environment", width, height, true) // true = pixel sizes
+	win := gi.NewMainWindow("navenv", "Navigation Environment", width, height)
 	ev.Win = win
 
 	vp := win.WinViewport2D()

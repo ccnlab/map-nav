@@ -28,14 +28,14 @@ func (rp *RoomParams) Defaults() {
 func (rp *RoomParams) MakeRoom(par *eve.Group, name string) *eve.Group {
 	rm := eve.AddNewGroup(par, name)
 	floor := eve.AddNewBox(rm, "floor", mat32.Vec3{0, -rp.Thick / 2, 0}, mat32.Vec3{rp.Width, rp.Thick, rp.Depth})
-	floor.Mat.Color = "grey"
+	floor.Color = "grey"
 	bwall := eve.AddNewBox(rm, "back-wall", mat32.Vec3{0, rp.Height / 2, -rp.Depth / 2}, mat32.Vec3{rp.Width, rp.Height, rp.Thick})
-	bwall.Mat.Color = "blue"
+	bwall.Color = "blue"
 	lwall := eve.AddNewBox(rm, "left-wall", mat32.Vec3{-rp.Width / 2, rp.Height / 2, 0}, mat32.Vec3{rp.Thick, rp.Height, rp.Depth})
-	lwall.Mat.Color = "red"
+	lwall.Color = "red"
 	rwall := eve.AddNewBox(rm, "right-wall", mat32.Vec3{rp.Width / 2, rp.Height / 2, 0}, mat32.Vec3{rp.Thick, rp.Height, rp.Depth})
-	rwall.Mat.Color = "green"
+	rwall.Color = "green"
 	fwall := eve.AddNewBox(rm, "front-wall", mat32.Vec3{0, rp.Height / 2, rp.Depth / 2}, mat32.Vec3{rp.Width, rp.Height, rp.Thick})
-	fwall.Mat.Color = "yellow"
+	fwall.Color = "yellow"
 	return rm
 }

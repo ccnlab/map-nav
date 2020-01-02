@@ -15,7 +15,7 @@ func MakeEmer(par *eve.Group, height float32) *eve.Group {
 	width := height * .4
 	depth := height * .15
 	body := eve.AddNewBox(emr, "body", mat32.Vec3{0, height / 2, 0}, mat32.Vec3{width, height, depth})
-	body.Mat.Color = "purple"
+	body.Color = "purple"
 
 	headsz := depth * 1.5
 	hhsz := .5 * headsz
@@ -23,11 +23,11 @@ func MakeEmer(par *eve.Group, height float32) *eve.Group {
 	hgp.Initial.Pos = mat32.Vec3{0, height + hhsz, 0}
 
 	head := eve.AddNewBox(hgp, "head", mat32.Vec3{0, 0, 0}, mat32.Vec3{headsz, headsz, headsz})
-	head.Mat.Color = "tan"
+	head.Color = "tan"
 	eyesz := headsz * .2
 	eyel := eve.AddNewBox(hgp, "eye-l", mat32.Vec3{-hhsz * .6, headsz * .1, -(hhsz + eyesz*.3)}, mat32.Vec3{eyesz, eyesz * .5, eyesz * .2})
-	eyel.Mat.Color = "green"
+	eyel.Color = "green"
 	eyer := eve.AddNewBox(hgp, "eye-r", mat32.Vec3{hhsz * .6, headsz * .1, -(hhsz + eyesz*.3)}, mat32.Vec3{eyesz, eyesz * .5, eyesz * .2})
-	eyer.Mat.Color = "green"
+	eyer.Color = "green"
 	return emr
 }

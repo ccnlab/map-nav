@@ -1,0 +1,5 @@
+$Name	%ActualState_Input[2:0,0]<2:3,3>	%ActualState_Input[2:0,1]	%ActualState_Input[2:0,2]	%ActualState_Input[2:1,0]	%ActualState_Input[2:1,1]	%ActualState_Input[2:1,2]	%ActualState_Input[2:2,0]	%ActualState_Input[2:2,1]	%ActualState_Input[2:2,2]	%Goal_Input[2:0,0]<2:3,3>	%Goal_Input[2:0,1]	%Goal_Input[2:0,2]	%Goal_Input[2:1,0]	%Goal_Input[2:1,1]	%Goal_Input[2:1,2]	%Goal_Input[2:2,0]	%Goal_Input[2:2,1]	%Goal_Input[2:2,2]	%ActualAction_Output[2:0,0]<2:1,4>	%ActualAction_Output[2:0,1]	%ActualAction_Output[2:0,2]	%ActualAction_Output[2:0,3]
+Event_0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	0	1	0	0
+Event_1	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	0	0	1	0	1	0	0
+Event_2	0	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	1
+Event_3	0	0	0	0	0	0	0	1	0	0	0	0	0	0	0	1	0	0	0	0	0	1

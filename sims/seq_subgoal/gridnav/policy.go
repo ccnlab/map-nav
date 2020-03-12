@@ -23,12 +23,12 @@ func (pl *Policy) Defaults() {
 }
 
 // Act is main interface call that updates dist and selects action and updates state
-func (pl *Policy) Act(inact Actions) Actions {
+func (pl *Policy) Act(inact Actions,ev *Env) Actions {
 	var act Actions
 	if pl.Auto {
-		act = pl.ActChooseAuto(inact)
+		act = pl.ActChooseAuto(inact,ev )
 	} else {
-		act = pl.ActChooseTrain(inact)
+		act = pl.ActChooseTrain(inact, ev)
 	}
 	pl.PrvAct = act
 	// fmt.Printf("chose action: %v  from  in act: %v  min, avg d: %g  %g\n", act, inact, mind, avgd)
@@ -37,10 +37,17 @@ func (pl *Policy) Act(inact Actions) Actions {
 
 // ActChooseTrain makes actual choice based on current state -- called by Act -- for
 // extensive training wheels mode
-func (pl *Policy) ActChooseTrain(inact Actions) Actions {
+func (pl *Policy) ActChooseTrain(inact Actions, ev *Env) Actions {
 	if rand.Float32() > pl.UseInAct {
 	// Random Walk policy
-		return Actions(rand.Intn(4))
+		// try up to 10 times to find an action that doesn't hit a wall
+		for i:= 0 ; i <10 ; i++ {
+			act := Actions(rand.Intn(int(ActionsN)))
+			npos := Move(ev.CurPos,act)
+			if ev.World.Loc(npos).open {
+				return act
+			}
+		}
 
 	// walk in a circle policy
 		// switch pl.PrvAct {
@@ -59,6 +66,6 @@ func (pl *Policy) ActChooseTrain(inact Actions) Actions {
 
 // ActChooseAuto makes actual choice based on current state -- called by Act -- for
 // autonomous behavior mode -- only act when absolutely necessary
-func (pl *Policy) ActChooseAuto(inact Actions) Actions {
+func (pl *Policy) ActChooseAuto(inact Actions, ev *Env) Actions {
 	return inact
 }

@@ -10,7 +10,9 @@ import (
 	"io/ioutil"
 	// "log"
 	"strings"
+	"github.com/goki/gi/mat32"
 	"github.com/emer/emergent/env"
+	"github.com/emer/emergent/popcode"
 	// "github.com/emer/emergent/erand"
 	// "github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
@@ -109,10 +111,13 @@ type Env struct {
 	PrvAct    Actions         `desc:"previous action selected"`
 	ExtAct    Actions         `desc:"current externally-supplied action"`
 	CurActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
+	PrvActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
 	World     World
 	Policy    Policy
 	PrevPos   Pos
 	NextPosMap      etensor.Float32
+	OffCycle    bool        `desc:"toggled each cycle to only update every other cycle, allowing the network a cycle to develop predictions"`
+	pop2D   popcode.TwoD
 }
 
 func (ev *Env) Name() string { return ev.Nm }
@@ -131,10 +136,24 @@ func (ev *Env) Defaults() {
 }
 
 func (ev *Env) Init(run int) {
+
 	ev.MakeWorld()
-	ev.CurPos.Row = 1
+	rows, cols := len(ev.World.grid), len(ev.World.grid[0])
+        ev.CurPos.Row = 1
 	ev.CurPos.Col = 1
 	ev.PrevPos = ev.CurPos
+
+	ev.pop2D = popcode.TwoD{}
+	ev.pop2D.Code = popcode.GaussBump
+	ev.pop2D.Min.Set(0.0,0.0)
+	ev.pop2D.Max.Set(float32(rows),float32(cols))
+	sigma := float32(0.1)
+	ev.pop2D.Sigma.Set(sigma,sigma)
+	ev.pop2D.Thr = 0.1
+	ev.pop2D.Clip = true
+	ev.pop2D.MinSum = 0.2
+
+	ev.Policy.Defaults()
 
 	ev.Run.Scale = env.Run
 	ev.Epoch.Scale = env.Epoch
@@ -146,17 +165,22 @@ func (ev *Env) Init(run int) {
 	ev.PosRes = 1
 	ev.Run.Cur = run
 	ev.Event.Cur = -1 // init state -- key so that first Step() = 0
-	ev.CurPosMap.SetShape([]int{len(ev.World.grid), len(ev.World.grid[0]), 1, ev.PosRes}, nil, []string{"Y", "X"})
+	ev.CurPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
+	ev.PrvActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 
-	ev.NextPosMap.SetShape([]int{len(ev.World.grid), len(ev.World.grid[0]), 1, ev.PosRes}, nil, []string{"Y", "X"})
+	ev.NextPosMap.SetShape([]int{rows, cols, 1, ev.PosRes}, nil, []string{"Y", "X"})
 }
 
 func (ev *Env) Step() bool {
+	// if ev.OffCycle {
+	// 	ev.OffCycle = false
+	// 	return true
+	// }
+	ev.OffCycle = true
 	// set CurAct to the output of the Policy. ExtAct is the action selected by the network
-
-	ev.CurAct = ev.Policy.Act(ev.ExtAct)
-	ev.TakeAction(ev.CurAct)
+	ev.CurAct = ev.Policy.Act(ev.ExtAct, ev)
+	ev.TakeAction(ev.PrvAct)
 	ev.Epoch.Same()      // good idea to just reset all non-inner-most counters at start
 	if ev.Event.Incr() { // if true, hit max, reset to 0
 		ev.Epoch.Incr()
@@ -170,6 +194,7 @@ func (ev *Env) States() env.Elements {
 		{"PosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
 		{"NextPosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
 		{"ActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
+		{"PrvActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
 	}
 	return els
 }
@@ -181,6 +206,8 @@ func (ev *Env) State(element string) etensor.Tensor {
 		return &ev.NextPosMap
 	case "ActMap":
 		return &ev.CurActMap
+	case "PrvActMap":
+		return &ev.PrvActMap
 	default:
 		return nil
 	}
@@ -224,20 +251,8 @@ func (ev *Env) SetAction(act Actions) {
 
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
-	// o := Tile{open: true}
-	// c := Tile{open: false}
-
-	// ev.World.grid = [][]Tile{}
-	// tbrow := []Tile{c, c, c, c, c}
-	// mrow := []Tile{c, o, o, o, c}
-	// ev.World.grid = append(ev.World.grid, tbrow)
-	// ev.World.grid = append(ev.World.grid, mrow)
-	// ev.World.grid = append(ev.World.grid, mrow)
-	// ev.World.grid = append(ev.World.grid, mrow)
-	// ev.World.grid = append(ev.World.grid, tbrow)
-
-	ev.World = NewWorld("3x3.world")
-
+	ev.World = NewWorld("5X5.world")
+	// ev.World = NewWorld("10X10.world")
 }
 
 // InitWorld does init on world and re-syncs
@@ -255,19 +270,19 @@ func Move(pos Pos, act Actions) Pos {
 	switch act {
 	case North:
 		newpos := pos
-		newpos.Row--
+		newpos.Row++
 		return newpos
 	case East:
 		newpos := pos
-		newpos.Col--
+		newpos.Col++
 		return newpos
 	case South:
 		newpos := pos
-		newpos.Row++
+		newpos.Row--
 		return newpos
 	case West:
 		newpos := pos
-		newpos.Col++
+		newpos.Col--
 		return newpos
 	default:
 		return pos
@@ -293,12 +308,21 @@ func (ev *Env) TakeAction(act Actions) {
 func (ev *Env) UpdateWorld() {
 }
 
+
+
 // UpdateState updates the current state representations (depth, action)
 func (ev *Env) UpdateState() {
-	ev.CurPosMap.SetZeros()
-	ev.CurPosMap.SetFloatRowCell(ev.CurPos.Row, ev.CurPos.Col, float64(1))
+	vec := mat32.Vec2{
+		X: float32(ev.CurPos.Col),
+		Y: float32(ev.CurPos.Row),
+	}
+
+	ev.pop2D.Encode(&ev.CurPosMap, vec)
+
 	ev.CurActMap.SetZeros()
-	ev.CurActMap.SetFloat1D(int(ev.CurAct), float64(1))
+	ev.CurActMap.SetFloat1D(int(ev.CurAct),1.0)
+	ev.PrvActMap.SetZeros()
+	ev.PrvActMap.SetFloat1D(int(ev.PrvAct),1.0)
 
 	ev.NextPosMap.SetZeros()
 	for action := 0 ; action < int(ActionsN) ; action++ {

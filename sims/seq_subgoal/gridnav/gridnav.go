@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/emer/emergent/emer"
+	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/env"
+	"github.com/emer/etable/etview"
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
@@ -56,26 +58,27 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Norm.On":     "true",
 					"Prjn.Learn.Momentum.On": "true",
 					"Prjn.Learn.WtBal.On":    "true",
+					"Prjn.Learn.Lrate":        "0.005",
 				}},
 			{Sel: "Layer", Desc: "using default 1.8 inhib for hidden layers",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":  "1.8",
+					"Layer.Inhib.Layer.Gi":  "2.4",
 					"Layer.Learn.AvgL.Gain": "1.5", // key to lower relative to 2.5
 					"Layer.Act.Gbar.L":      "0.1", // lower leak = better
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.2",
+					"Prjn.WtScale.Rel": "0.05",
 				}},
 			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
 				Params: params.Params{
-					"Prjn.WtInit.Mean": "0.8", // using .8 for localist layer
+					"Prjn.WtInit.Mean": "0.3", // using .8 for localist layer
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.Learn.Learn": "false",
 				}},
 			{Sel: ".BurstCtxt", Desc: "no weight balance on deep context prjns -- makes a diff!",
 				Params: params.Params{
-					"Prjn.Learn.WtBal.On": "false", // this should be true for larger DeepLeabra models -- e.g., sg..
+					"Prjn.Learn.WtBal.On": "true", // this should be true for larger DeepLeabra models -- e.g., sg..
 				}},
 			{Sel: ".Input", Desc: "input layers need more inhibition",
 				Params: params.Params{
@@ -83,7 +86,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#InputPToHiddenD", Desc: "critical to make this small so deep context dominates",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.05",
+					"Prjn.WtScale.Rel": "0.4",
 				}},
 		},
 	}},
@@ -188,6 +191,8 @@ type Sim struct {
 	StopNow       bool             `view:"-" desc:"flag to stop running"`
 	NeedsNewRun   bool             `view:"-" desc:"flag to initialize NewRun if last one finished"`
 	RndSeed       int64            `view:"-" desc:"the current random seed"`
+	PosAFs           actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
+	PosAFNms         []string          `desc:"names of layers to compute position activation fields on"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -215,6 +220,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
 	ss.LayStatNms = []string{"InputP", "Hidden"}
+	ss.PosAFNms = []string{"Hidden", "HiddenD"}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Configs
@@ -236,7 +242,7 @@ func (ss *Sim) ConfigEnv() {
 		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 500
+		ss.MaxEpcs = 50000
 		ss.NZeroStop = -1
 	}
 
@@ -252,6 +258,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.TestEnv.Defaults()
 	ss.TestEnv.Nm = "TestEnv"
 	ss.TestEnv.Dsc = "testing params and state"
+	ss.TestEnv.Policy.Auto = true
 	ss.TestEnv.Event.Max = 100
 	ss.TestEnv.Run.Max = ss.MaxRuns
 	ss.TestEnv.Init(0)
@@ -263,12 +270,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	worldheight := len(ss.TrainEnv.World.grid)
 	worldwidth := len(ss.TrainEnv.World.grid[0])
 	in, inp := net.AddInputPulv2D("Input",worldheight, worldwidth)
-	act, actp := net.AddInputPulv2D("Action",int(ActionsN), 1)
-	hid, hidd, _ := net.AddSuperDeep2D("Hidden", 12, 12, deep.NoPulv, deep.NoAttnPrjn)
+	act, actp := net.AddInputPulv2D("Action",1, int(ActionsN))
+	hid, hidd, _ := net.AddSuperDeep2D("Hidden", 20 , 20 , deep.NoPulv, deep.NoAttnPrjn)
 	npos := net.AddLayer2D("NextPos",worldheight, worldwidth, emer.Input)
+	prvact := net.AddLayer2D("PrvActMap",1, int(ActionsN), emer.Input)
 
 	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
 	npos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
+	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Action", YAlign: relpos.Front, Space: 2})	
 
 	hidd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Hidden", YAlign: relpos.Front, Space: 2})
 
@@ -279,23 +288,22 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	actp.SetClass("Input")
 
 	net.ConnectLayers(act, hid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(hidd, actp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actp, hidd, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(actp, hid, prjn.NewFull(), emer.Back)
-
 	net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(hidd, actp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(hidd, inp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(inp, hidd, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(inp, hid, prjn.NewFull(), emer.Back)
+	// net.ConnectLayers(inp, hidd, prjn.NewFull(), emer.Back)
+	// net.ConnectLayers(actp, hidd, prjn.NewFull(), emer.Back)
+
+	// net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
 
 	// for this small localist model with longer-term dependencies,
 	// these additional context projections turn out to be essential!
 	// larger models in general do not require them, though it might be
 	// good to check
-	net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
-	net.ConnectLayers(in, hidd, prjn.NewFull(), deep.BurstCtxt)
-	net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
-	net.ConnectLayers(act, hidd, prjn.NewFull(), deep.BurstCtxt)
+	// net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
+	// net.ConnectLayers(in, hidd, prjn.NewFull(), deep.BurstCtxt)
+	// net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
+	// net.ConnectLayers(act, hidd, prjn.NewFull(), deep.BurstCtxt)
 
 
 	net.Defaults()
@@ -414,7 +422,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 			}
 		}
 	}
-
+// dont learn on OffCycle alphacycles where prediction is still developing
+	// if train && !ss.TrainEnv.OffCycle {
 	if train {
 		ss.Net.DWt()
 	}
@@ -436,18 +445,22 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 
 	in := ss.Net.LayerByName("Input").(deep.DeepLayer).AsDeep()
 	act := ss.Net.LayerByName("Action").(deep.DeepLayer).AsDeep()
+	actp := ss.Net.LayerByName("ActionP").(deep.DeepLayer).AsDeep()
 	npos := ss.Net.LayerByName("NextPos").(deep.DeepLayer).AsDeep()
+	prvact := ss.Net.LayerByName("PrvActMap").(deep.DeepLayer).AsDeep()
 	pats := en.State("PosMap")
 	in.ApplyExt(pats)
 	pats = en.State("ActMap")
 	act.ApplyExt(pats)
 	pats = en.State("NextPosMap")
 	npos.ApplyExt(pats)
+	pats = en.State("PrvActMap")
+	prvact.ApplyExt(pats)
 
 	maxa := float32(0)
 	maxi := 0
 	for ai := 0; ai < int(ActionsN); ai++ {
-		mag := act.Neurons[ai].ActM
+		mag := actp.Neurons[ai].ActM
 		if mag > maxa {
 			maxa = mag
 			maxi = ai
@@ -563,6 +576,32 @@ func (ss *Sim) TrialStatsTRC(accum bool) {
 	}
 }
 
+
+// UpdtPosAFs updates position activation rf's
+func (ss *Sim) UpdtPosAFs() {
+	naf := len(ss.PosAFNms)
+	if len(ss.PosAFs.RFs) != naf {
+		for _, lnm := range ss.PosAFNms {
+			ly := ss.Net.LayerByName(lnm)
+			if ly == nil {
+				continue
+			}
+			ly.UnitValsTensor(&ss.PosAFTsr, "ActM")
+			af := ss.PosAFs.AddRF(lnm, &ss.PosAFTsr, &ss.TrainEnv.CurPosMap)
+			af.NormRF.SetMetaData("min", "0")
+			af.NormRF.SetMetaData("colormap", "JetMuted")
+		}
+	}
+	for _, lnm := range ss.PosAFNms {
+		ly := ss.Net.LayerByName(lnm)
+		if ly == nil {
+			continue
+		}
+		ly.UnitValsTensor(&ss.PosAFTsr, "ActM")
+		ss.PosAFs.Add(lnm, &ss.PosAFTsr, &ss.TrainEnv.CurPosMap, 0.01) // thr prevent weird artifacts
+	}
+}
+
 // TrialStatsTRC computes the trial-level statistics for TRC layers
 func (ss *Sim) EpochStatsTRC(nt float64) {
 	acd := 0.0
@@ -621,7 +660,12 @@ func (ss *Sim) TrialStats(accum bool) {
 		ss.SumAvgSSE += ss.TrlAvgSSE
 		ss.SumCosDiff += ss.TrlCosDiff
 	}
-}// TrainEpoch runs training trials for remainder of this epoch
+
+	ss.UpdtPosAFs()
+}
+
+// TrainEpoch runs training trials for remainder of this epoch
+
 func (ss *Sim) TrainEpoch() {
 	ss.StopNow = false
 	curEpc := ss.TrainEnv.Epoch.Cur
@@ -1425,6 +1469,21 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	tbar.AddSeparator("test")
 
+	tbar.AddAction(gi.ActOpts{Label: "Reset PosAFs", Icon: "reset", Tooltip: "reset current position activation rfs accumulation data", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.PosAFs.Reset()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "View PosAFs", Icon: "file-image", Tooltip: "compute current position activation rfs and view them.", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.PosAFs.Avg()
+		ss.PosAFs.Norm()
+		for _, paf := range ss.PosAFs.RFs {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Position Act RF", Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
+	})
 
 
 

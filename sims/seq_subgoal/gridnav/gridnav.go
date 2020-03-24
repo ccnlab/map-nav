@@ -150,6 +150,7 @@ type Sim struct {
 	TestUpdt         leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval     int               `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	LayStatNms       []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	UseTeacherForce float32            `desc:"Probability of using policy action vs deep layer max as plus phase for action thalamus"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	TrlSSE        float64   `inactive:"+" desc:"current trial's sum squared error"`
@@ -194,7 +195,6 @@ type Sim struct {
 	RndSeed       int64            `view:"-" desc:"the current random seed"`
 	PosAFs           actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
 	PosAFNms         []string          `desc:"names of layers to compute position activation fields on"`
-	UseTeacherForce float32            `view:"-" desc:"Probability of using policy action vs deep layer max as plus phase for action thalamus"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -273,16 +273,17 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	worldheight := len(ss.TrainEnv.World.grid)
 	worldwidth := len(ss.TrainEnv.World.grid[0])
 
+
 	in, inp := net.AddInputPulv2D("Input",worldheight, worldwidth)
 	act, actd, actp := net.AddSuperDeep2D("Action",1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
 	// todo add VM and split VL into posterior and anterior
 	vavl := net.AddLayer2D("VAVL",1,int(ActionsN), deep.TRC)
-	hid, hidd, hidp := net.AddSuperDeep2D("Hidden", 20,20 , deep.AddPulv, deep.NoAttnPrjn)
-	npos := net.AddLayer2D("NextPos",worldheight, worldwidth, emer.Input)
+	hid, hidd, hidp := net.AddSuperDeep2D("Hidden", 35,35 , deep.AddPulv, deep.NoAttnPrjn)
+	goalpos := net.AddLayer2D("GoalPos",worldheight, worldwidth, emer.Input)
 	prvact := net.AddLayer2D("PrvActMap",1, int(ActionsN), emer.Input)
 
 	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
-	npos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
+	goalpos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
 	vavl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ActionD", YAlign: relpos.Front, Space: 2})	
 	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "VAVL", YAlign: relpos.Front, Space: 2})	
 
@@ -301,7 +302,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(prvact,vavl, prjn.NewOneToOne(), deep.BurstTRC)
 
 	net.ConnectLayers(act, hid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(goalpos, hid, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(hid, actp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(inp, in, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(hidd, actp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(actd, hidp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(hidd, inp, prjn.NewFull(), emer.Forward)
@@ -448,12 +452,14 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 	in := ss.Net.LayerByName("Input").(deep.DeepLayer).AsDeep()
 	act := ss.Net.LayerByName("Action").(deep.DeepLayer).AsDeep()
 	actp := ss.Net.LayerByName("ActionP").(deep.DeepLayer).AsDeep()
-	npos := ss.Net.LayerByName("NextPos").(deep.DeepLayer).AsDeep()
+	npos := ss.Net.LayerByName("GoalPos").(deep.DeepLayer).AsDeep()
 	prvact := ss.Net.LayerByName("PrvActMap").(deep.DeepLayer).AsDeep()
 	pats := en.State("PosMap")
 	in.ApplyExt(pats)
-	pats = en.State("ActMap")
-	act.ApplyExt(pats)
+	if rand.Float32() < ss.UseTeacherForce {
+		pats = en.State("ActMap")
+		act.ApplyExt(pats)
+	}
 	pats = en.State("NextPosMap")
 	npos.ApplyExt(pats)
 	pats = en.State("PrvActMap")
@@ -623,7 +629,7 @@ func (ss *Sim) EpochStatsTRC(nt float64) {
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
 	inp := ss.Net.LayerByName("InputP").(deep.DeepLayer).AsDeep()
-	trg := ss.Net.LayerByName("NextPos").(deep.DeepLayer).AsDeep()
+	trg := ss.Net.LayerByName("GoalPos").(deep.DeepLayer).AsDeep()
 	ss.TrlCosDiff = float64(inp.CosDiff.Cos)
 	// ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
 	// compute SSE against target as activation of inp outside of trg > .5

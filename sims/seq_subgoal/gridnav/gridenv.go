@@ -169,7 +169,7 @@ func (ev *Env) Init(run int) {
 	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 	ev.PrvActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 
-	ev.NextPosMap.SetShape([]int{rows, cols, 1, ev.PosRes}, nil, []string{"Y", "X"})
+	ev.NextPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 }
 
 func (ev *Env) Step() bool {
@@ -319,18 +319,18 @@ func (ev *Env) UpdateState() {
 
 	ev.pop2D.Encode(&ev.CurPosMap, vec)
 
+
+	nextpos := Move(ev.CurPos, Actions(ev.CurAct))
+	vec = mat32.Vec2{
+		X: float32(nextpos.Col),
+		Y: float32(nextpos.Row),
+	}
+
+	ev.pop2D.Encode(&ev.NextPosMap, vec)
+
 	ev.CurActMap.SetZeros()
 	ev.CurActMap.SetFloat1D(int(ev.CurAct),1.0)
 	ev.PrvActMap.SetZeros()
 	ev.PrvActMap.SetFloat1D(int(ev.PrvAct),1.0)
 
-	ev.NextPosMap.SetZeros()
-	for action := 0 ; action < int(ActionsN) ; action++ {
-		nextpos := Move(ev.PrevPos, Actions(action))
-		if !ev.World.Loc(nextpos).open {
-			nextpos = ev.PrevPos
-		}
-		ev.NextPosMap.SetFloatRowCell(nextpos.Row,nextpos.Col, float64(1))
-
-	}
 }

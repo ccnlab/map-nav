@@ -31,6 +31,7 @@ import (
 	"github.com/emer/leabra/deep"
 	"github.com/emer/leabra/leabra"
 	"github.com/goki/gi/gi"
+	"github.com/goki/gi/mat32"
 	"github.com/goki/gi/gimain"
 	"github.com/goki/gi/giv"
 	"github.com/goki/ki/ki"
@@ -193,6 +194,7 @@ type Sim struct {
 	RndSeed       int64            `view:"-" desc:"the current random seed"`
 	PosAFs           actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
 	PosAFNms         []string          `desc:"names of layers to compute position activation fields on"`
+	UseTeacherForce float32            `view:"-" desc:"Probability of using policy action vs deep layer max as plus phase for action thalamus"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -214,6 +216,7 @@ func (ss *Sim) New() {
 	ss.RunLog = &etable.Table{}
 	ss.RunStats = &etable.Table{}
 	ss.Params = ParamSets
+	ss.UseTeacherForce = 1.0
 	ss.RndSeed = 1
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.AlphaCycle
@@ -269,41 +272,40 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "GridNav")
 	worldheight := len(ss.TrainEnv.World.grid)
 	worldwidth := len(ss.TrainEnv.World.grid[0])
+
 	in, inp := net.AddInputPulv2D("Input",worldheight, worldwidth)
-	act, actp := net.AddInputPulv2D("Action",1, int(ActionsN))
-	hid, hidd, _ := net.AddSuperDeep2D("Hidden", 20 , 20 , deep.NoPulv, deep.NoAttnPrjn)
+	act, actd, actp := net.AddSuperDeep2D("Action",1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
+	// todo add VM and split VL into posterior and anterior
+	vavl := net.AddLayer2D("VAVL",1,int(ActionsN), deep.TRC)
+	hid, hidd, hidp := net.AddSuperDeep2D("Hidden", 20,20 , deep.AddPulv, deep.NoAttnPrjn)
 	npos := net.AddLayer2D("NextPos",worldheight, worldwidth, emer.Input)
 	prvact := net.AddLayer2D("PrvActMap",1, int(ActionsN), emer.Input)
 
 	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
 	npos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
-	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Action", YAlign: relpos.Front, Space: 2})	
-
-	hidd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Hidden", YAlign: relpos.Front, Space: 2})
-
+	vavl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ActionD", YAlign: relpos.Front, Space: 2})	
+	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "VAVL", YAlign: relpos.Front, Space: 2})	
 
 	in.SetClass("Input")
 	inp.SetClass("Input")
 	act.SetClass("Input")
 	actp.SetClass("Input")
+	actd.SetClass("Input")
+
+	net.ConnectLayers(vavl, actd, prjn.NewOneToOne(), emer.Forward)
+	net.ConnectLayers(actd,vavl, prjn.NewOneToOne(), emer.Forward)
+
+
+	// placholder for cerebellar input
+	// todo when split out add BG input
+	net.ConnectLayers(prvact,vavl, prjn.NewOneToOne(), deep.BurstTRC)
 
 	net.ConnectLayers(act, hid, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(hidd, actp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(actd, hidp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(hidd, inp, prjn.NewFull(), emer.Forward)
-	// net.ConnectLayers(inp, hidd, prjn.NewFull(), emer.Back)
-	// net.ConnectLayers(actp, hidd, prjn.NewFull(), emer.Back)
-
-	// net.ConnectLayers(in, hid, prjn.NewFull(), emer.Forward)
-
-	// for this small localist model with longer-term dependencies,
-	// these additional context projections turn out to be essential!
-	// larger models in general do not require them, though it might be
-	// good to check
-	// net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
-	// net.ConnectLayers(in, hidd, prjn.NewFull(), deep.BurstCtxt)
-	// net.ConnectLayers(hidd, hidd, prjn.NewFull(), deep.BurstCtxt)
-	// net.ConnectLayers(act, hidd, prjn.NewFull(), deep.BurstCtxt)
+	net.ConnectLayers(hidd, vavl, prjn.NewFull(), emer.Forward)
 
 
 	net.Defaults()
@@ -506,7 +508,7 @@ func (ss *Sim) TrainTrial() {
 	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
 	ss.AlphaCyc(true)   // train
 	ss.TrialStats(true) // accumulate
-	ss.LogTrnTrl(ss.TrnTrlLog)
+	// ss.LogTrnTrl(ss.TrnTrlLog)
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
@@ -1348,8 +1350,8 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 // 		Gui
 
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
-	// nv.Scene().Camera.Pose.Pos.Set(0, 1.5, 3.0) // more "head on" than default which is more "top down"
-	// nv.Scene().Camera.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
+	nv.Scene().Camera.Pose.Pos.Set(0, 1.7, 4.0) // more "head on" than default which is more "top down"
+	nv.Scene().Camera.LookAt(mat32.Vec3{0, -0.5, 0}, mat32.Vec3{0, 1, 0})
 }
 
 // ConfigGui configures the GoGi gui interface for this simulation,

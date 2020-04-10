@@ -6,7 +6,7 @@ package navenv
 
 import (
 	"github.com/emer/eve/eve"
-	"github.com/goki/gi/mat32"
+	"github.com/goki/mat32"
 )
 
 // RoomParams

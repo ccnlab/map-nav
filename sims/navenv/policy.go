@@ -6,8 +6,8 @@ package navenv
 
 import (
 	"github.com/emer/emergent/erand"
-	"github.com/goki/gi/mat32"
 	"github.com/goki/ki/kit"
+	"github.com/goki/mat32"
 )
 
 // Policy provides a parameterized default "subcortical" navigation policy

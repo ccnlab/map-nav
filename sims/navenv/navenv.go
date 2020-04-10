@@ -5,6 +5,7 @@
 package navenv
 
 import (
+	"fmt"
 	"image"
 	"log"
 
@@ -18,12 +19,12 @@ import (
 	"github.com/goki/gi/gi"
 	"github.com/goki/gi/gi3d"
 	"github.com/goki/gi/giv"
-	"github.com/goki/gi/mat32"
 	"github.com/goki/gi/oswin"
 	"github.com/goki/gi/oswin/gpu"
 	"github.com/goki/gi/units"
 	"github.com/goki/ki/ki"
 	"github.com/goki/ki/kit"
+	"github.com/goki/mat32"
 )
 
 // Actions is a list of available actions for model
@@ -95,6 +96,7 @@ type Env struct {
 	Emer             *eve.Group       `view:"-" desc:"emer group"`
 	Head             *eve.Group       `view:"-" desc:"Head of emer"`
 	EyeR             eve.Body         `view:"-" desc:"Right eye of emer"`
+	Contacts         eve.Contacts     `view:"-" desc:"contacts from last step, for body"`
 	Win              *gi.Window       `view:"-" desc:"gui window -- can be nil"`
 	SnapImg          *gi.Bitmap       `view:"-" desc:"snapshot bitmap view"`
 	DepthImg         *gi.Bitmap       `view:"-" desc:"depth map bitmap view"`
@@ -139,7 +141,7 @@ func (ev *Env) Init(run int) {
 	if ev.World == nil {
 		ev.MakeWorld()
 	} else {
-		ev.InitWorld()
+		ev.WorldInit()
 		ev.UpdateWorld()
 	}
 	ev.Run.Scale = env.Run
@@ -274,12 +276,12 @@ func (ev *Env) MakeWorld() {
 	ev.Head = ev.Emer.ChildByName("head", 1).(*eve.Group)
 	ev.EyeR = ev.Head.ChildByName("eye-r", 2).(eve.Body)
 
-	ev.World.InitWorld()
+	ev.World.WorldInit()
 }
 
-// InitWorld does init on world and re-syncs
-func (ev *Env) InitWorld() {
-	ev.World.InitWorld()
+// WorldInit does init on world and re-syncs
+func (ev *Env) WorldInit() {
+	ev.World.WorldInit()
 	if ev.View != nil {
 		ev.View.Sync()
 	}
@@ -378,7 +380,32 @@ func (ev *Env) TakeAction(act Actions) {
 
 // UpdateWorld updates world after action
 func (ev *Env) UpdateWorld() {
-	ev.World.UpdateWorld()
+	ev.World.WorldRelToAbs()
+	cts := ev.World.WorldCollide(eve.DynsTopGps)
+	ev.Contacts = nil
+	for _, cl := range cts {
+		if len(cl) > 1 {
+			for _, c := range cl {
+				if c.A.Name() == "body" {
+					ev.Contacts = cl
+				}
+				fmt.Printf("A: %v  B: %v\n", c.A.Name(), c.B.Name())
+			}
+		}
+	}
+	if len(ev.Contacts) > 1 { // turn around
+		fmt.Printf("hit wall: turn around!\n")
+		// rot := 100.0 + 90.0*rand.Float32()
+		// ev.Emer.Rel.RotateOnAxis(0, 1, 0, rot)
+	}
+	if ev.View != nil {
+		ev.View.UpdatePose()
+		ev.UpdateState()
+		ev.UpdateView()
+		ev.UpdateWorld()
+		ev.UpdateView()
+		ev.UpdateState()
+	}
 	if ev.View != nil {
 		ev.View.UpdatePose()
 		ev.UpdateState()
@@ -551,7 +578,7 @@ func (ev *Env) OpenWindow() *gi.Window {
 	// cam.LookAt(mat32.Vec3{0, 5, 0}, mat32.Vec3Y)
 	sc.SaveCamera("2")
 
-	cam.Pose.Pos = mat32.Vec3{-.86, .97, 2.7}
+	cam.Pose.Pos = mat32.Vec3{-.73, .94, 2.3}
 	cam.LookAt(mat32.Vec3{0, .8, 0}, mat32.Vec3Y)
 	sc.SaveCamera("1")
 	sc.SaveCamera("default")
@@ -576,7 +603,7 @@ func (ev *Env) OpenWindow() *gi.Window {
 		sv.SetStruct(ev)
 	})
 	tbar.AddAction(gi.ActOpts{Label: "Init", Icon: "update", Tooltip: "Initialize virtual world -- go back to starting positions etc."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ev.InitWorld()
+		ev.WorldInit()
 	})
 	tbar.AddAction(gi.ActOpts{Label: "Make", Icon: "update", Tooltip: "Re-make virtual world -- do this if you have changed any of the world parameters."}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
 		ev.ReMakeWorld()

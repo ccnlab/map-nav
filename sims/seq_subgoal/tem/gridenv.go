@@ -58,6 +58,7 @@ type Pos struct {
 type Tile struct {
 	open bool
 	color int
+	visited bool
 }
 
 var tilekey = map[rune]Tile{
@@ -101,8 +102,8 @@ func (env *Env) NewWorld(filename string) World {
 
 }
 
-func (wld *World) Loc(pos Pos) Tile {
-	return wld.grid[pos.Row][pos.Col]
+func (wld *World) Loc(pos Pos) *Tile {
+	return &wld.grid[pos.Row][pos.Col]
 }
 
 // Env manages the navigation environment
@@ -152,15 +153,15 @@ func (ev *Env) Init(run int) {
 	ev.Colors = 20
 	ev.MakeWorld()
 	rows, cols := len(ev.World.grid), len(ev.World.grid[0])
-        ev.CurPos.Row = 1
-	ev.CurPos.Col = 1
+        ev.CurPos.Row = 50
+	ev.CurPos.Col = 50
 	ev.PrevPos = ev.CurPos
 
 	ev.pop2D = popcode.TwoD{}
 	ev.pop2D.Code = popcode.GaussBump
 	ev.pop2D.Min.Set(0.0,0.0)
 	ev.pop2D.Max.Set(float32(rows),float32(cols))
-	sigma := float32(0.1)
+	sigma := float32(0.001)
 	ev.pop2D.Sigma.Set(sigma,sigma)
 	ev.pop2D.Thr = 0.1
 	ev.pop2D.Clip = true
@@ -181,7 +182,7 @@ func (ev *Env) Init(run int) {
 	ev.CurPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 	ev.PrvActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
-	ev.ColorMap.SetShape([]int{ev.Colors, 1}, nil, []string{"Color", "1"})
+	ev.ColorMap.SetShape([]int{ev.Colors, 1, 1, 1}, nil, []string{"Color", "1", "1", "1"})
 
 	ev.NextPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 }
@@ -209,7 +210,7 @@ func (ev *Env) States() env.Elements {
 		{"NextPosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
 		{"ActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
 		{"PrvActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
-		{"PrvActMap", []int{ev.Colors}, []string{"ColorsN"}},
+		{"ColorMap", []int{ev.Colors}, []string{"ColorsN"}},
 	}
 	return els
 }
@@ -269,7 +270,7 @@ func (ev *Env) SetAction(act Actions) {
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
 	// ev.World = ev.NewWorld("5X5.world")
-	ev.World = ev.NewWorld("10X10.world")
+	ev.World = ev.NewWorld("100X100.world")
 }
 
 // InitWorld does init on world and re-syncs
@@ -315,6 +316,8 @@ func (ev *Env) TakeAction(act Actions) {
 		ev.PrevPos = ev.CurPos
 		ev.CurPos = newpos
 	}
+	ev.World.Loc(newpos).visited = true
+
 
 	// handle any non position side effects of action
 	// update "neural" reps of state

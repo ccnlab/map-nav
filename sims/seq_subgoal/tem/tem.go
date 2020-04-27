@@ -90,9 +90,18 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "2.2",
 				}},
+			{Sel: ".Dorsal", Desc: "input layers need more inhibition",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "2.2",
+				}},
 			{Sel: "#InputPToHiddenD", Desc: "critical to make this small so deep context dominates",
 				Params: params.Params{
 					"Prjn.WtScale.Rel": "0.4",
+				}},
+
+			{Sel: ".ActToDorsal", Desc: "critical to make this small so deep context dominates",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "0.2",
 				}},
 
 
@@ -126,7 +135,7 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Lrate":       "0.15", // err driven: .15 > .2 > .25 > .1
 					// moss=4, delta=4, lr=0.2, test = 3 are best
 				}},
-			{Sel: "#CA1ToECout", Desc: "extra strong from CA1 to ECout",
+			{Sel: ".CA1ToECout", Desc: "extra strong from CA1 to ECout",
 				Params: params.Params{
 					"Prjn.WtScale.Abs": "4.0",
 				}},
@@ -136,7 +145,7 @@ var ParamSets = params.Sets{
 					"Prjn.WtInit.Mean": "0.8",
 					"Prjn.WtInit.Var":  "0.0",
 				}},
-			{Sel: "#ECoutToECin", Desc: "one-to-one out to in",
+			{Sel: ".ECoutToECin", Desc: "one-to-one out to in",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "false",
 					"Prjn.WtInit.Mean": "0.9",
@@ -155,7 +164,7 @@ var ParamSets = params.Sets{
 					"Prjn.WtScale.Rel": "0.1",
 					"Prjn.Learn.Lrate": "0.1",
 				}},
-			{Sel: "#ECinToDG", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			{Sel: ".ECinToDG", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn":       "true", // absolutely essential to have on!
 					"Prjn.CHL.Hebb":          ".5",   // .5 > 1 overall
@@ -166,7 +175,7 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Norm.On":     "false",
 					"Prjn.Learn.WtBal.On":    "true",
 				}},
-			{Sel: "#CA3ToCA1", Desc: "Schaffer collaterals -- slower, less hebb",
+			{Sel: ".CA3ToCA1", Desc: "Schaffer collaterals -- slower, less hebb",
 				Params: params.Params{
 					"Prjn.CHL.Hebb":          "0.01",
 					"Prjn.CHL.SAvgCor":       "0.4",
@@ -193,7 +202,14 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Init": "0.02",
 					"Layer.Inhib.Layer.Gi":    "2.8",
 				}},
-			{Sel: "#CA1", Desc: "CA1 only Pools",
+			{Sel: "#MCA1", Desc: "CA1 only Pools",
+				Params: params.Params{
+					"Layer.Inhib.ActAvg.Init": "0.1",
+					"Layer.Inhib.Layer.On":    "false",
+					"Layer.Inhib.Pool.Gi":     "2.4",
+					"Layer.Inhib.Pool.On":     "true",
+				}},
+			{Sel: ".CA1", Desc: "CA1 only Pools",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
 					"Layer.Inhib.Layer.On":    "false",
@@ -253,6 +269,7 @@ type Sim struct {
 	MaxRuns          int               `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int               `desc:"maximum number of epochs to run per model run"`
 	NZeroStop        int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
+	EnvRefreshFreq   int            `desc:"how many cycles to run before shuffling env colors and initializing DG CA3 weights"`
 	TrainEnv         Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	TestEnv         Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             leabra.Time       `desc:"leabra timing parameters and state"`
@@ -261,8 +278,10 @@ type Sim struct {
 	TestUpdt         leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval     int               `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	LayStatNms       []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	TmpVals      []float32        `view:"-" desc:"temp slice for holding values -- prevent mem allocs"`
+	MTmpVals      []float32        `view:"-" desc:"temp slice for holding values -- prevent mem allocs"`
+	LTmpVals      []float32        `view:"-" desc:"temp slice for holding values -- prevent mem allocs"`
 	UseTeacherForce float32            `desc:"Probability of using policy action vs deep layer max as plus phase for action thalamus"`
+	ExploreProb     float32 `desc:"probability of accepting a proposed action into an unexplored space"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	TrlSSE        float64   `inactive:"+" desc:"current trial's sum squared error"`
@@ -334,8 +353,10 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
 	ss.TestInterval = 500
-	ss.LayStatNms = []string{"ColorP", "Ventral"}
-	ss.PosAFNms = []string{"Dorsal", "DorsalD"}
+	ss.EnvRefreshFreq = 10
+	ss.ExploreProb = .5
+	ss.LayStatNms = []string{"ColorP"}
+	ss.PosAFNms = []string{"Dorsal", "DorsalD", "MECout","MCA1"}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Configs
@@ -366,6 +387,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Event.Max = 100
 	ss.TrainEnv.Run.Max = ss.MaxRuns
+	ss.TrainEnv.Policy.ExploreProb = ss.ExploreProb
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
 
@@ -375,6 +397,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.TestEnv.Dsc = "testing params and state"
 	ss.TestEnv.Policy.Auto = true
 	ss.TestEnv.Event.Max = 100
+	ss.TestEnv.Policy.ExploreProb = ss.ExploreProb
 	ss.TestEnv.Run.Max = ss.MaxRuns
 	ss.TestEnv.Init(0)
 	ss.TestEnv.Validate()
@@ -387,39 +410,57 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	worldwidth := len(ss.TrainEnv.World.grid[0])
 
 
-	in := net.AddLayer2D("Input",worldheight, worldwidth, emer.Input)
+	in, inp := net.AddInputPulv2D("Input",worldheight, worldwidth)
 	nextpos := net.AddLayer2D("NextPos",worldheight, worldwidth, emer.Input)
 	prvact := net.AddLayer2D("PrvActMap",1, int(ActionsN), emer.Input)
 
-	col,cold,colp := net.AddSuperDeep2D("Color", 1, ss.TrainEnv.Colors, deep.AddPulv, deep.NoAttnPrjn)
+	col,colp := net.AddInputPulv2D("Color", 1, ss.TrainEnv.Colors)
 	act, actd, actp := net.AddSuperDeep2D("Action",1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
 
-	ven, vend, venp := net.AddSuperDeep2D("Ventral", 7, 7 , deep.AddPulv, deep.NoAttnPrjn)
-	dor, dord, dorp := net.AddSuperDeep2D("Dorsal", 7, 7 , deep.AddPulv, deep.NoAttnPrjn)
+	dor, dord, dorp := net.AddSuperDeep2D("Dorsal", 7 , 7 , deep.AddPulv, deep.NoAttnPrjn)
+	dor.SetClass("Dorsal")
+	dorp.SetClass("Dorsal")
+	dord.SetClass("Dorsal")
 
 	vl := net.AddLayer2D("VL",1,int(ActionsN), deep.TRC)
 
 
 
-	ecin := net.AddLayer4D("ECin", 6, 2, 3, 4, emer.Hidden)
-	ecout := net.AddLayer4D("ECout", 6, 2, 3, 4, emer.Target) // clamped in plus phase
-	ca1 := net.AddLayer4D("CA1", 6, 2, 4, 10, emer.Hidden)
-	dg := net.AddLayer2D("DG", 25, 25, emer.Hidden)
-	ca3 := net.AddLayer2D("CA3", 30, 10, emer.Hidden)
+	mecin := net.AddLayer4D("MECin", 6, 3, 3, 3, emer.Hidden)
+	mecout := net.AddLayer4D("MECout", 6, 3, 3, 3, emer.Target) // clamped in plus phase
+	lecin := net.AddLayer4D("LECin", 6, 3, 3, 3, emer.Hidden)
+	lecout := net.AddLayer4D("LECout", 6, 3, 3, 3, emer.Target) // clamped in plus phase
+	mca1 := net.AddLayer4D("MCA1", 6, 3, 2, 2, emer.Hidden)
+	lca1 := net.AddLayer4D("LCA1", 6, 3, 2, 2, emer.Hidden)
+	dg := net.AddLayer2D("DG", 25, 75, emer.Hidden)
+	ca3 := net.AddLayer2D("CA3", 30, 30, emer.Hidden)
 
-	ecin.SetClass("EC")
-	ecout.SetClass("EC")
+	mecin.SetClass("EC")
+	mecout.SetClass("EC")
+	lecin.SetClass("EC")
+	lecout.SetClass("EC")
 
-	act.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
+	mca1.SetClass("CA1")
+	lca1.SetClass("CA1")
+
+
 	nextpos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
 	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ActionD", YAlign: relpos.Front, Space: 2})	
 	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "VL", YAlign: relpos.Front, Space: 2})
 
-	ecout.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "NextPos", YAlign: relpos.Front, Space: 2})
-	ecin.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "ECout", YAlign: relpos.Front, Space: 2})
-	dg.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "ECout", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
-	ca3.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "DG", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
-	ca1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "CA3", YAlign: relpos.Front, Space: 2})
+	mecout.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "NextPos", YAlign: relpos.Front, Space: 2})
+	mecin.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "MECout", YAlign: relpos.Front, Space: 2})
+	lecout.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "MECin", YAlign: relpos.Front, Space: 2})
+	lecin.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "LECout", YAlign: relpos.Front, Space: 2})
+	mca1.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "MECout", YAlign: relpos.Front, Space: 2})
+	lca1.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "LECout", YAlign: relpos.Front, Space: 2})
+	ca3.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "MCA1", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
+	dg.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "CA3", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
+
+
+	dor.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "MECin", YAlign: relpos.Front, Space: 2})
+	act.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
+	col.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
 
 	in.SetClass("Input")
 	act.SetClass("Input")
@@ -432,8 +473,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pool1to1 := prjn.NewPoolOneToOne()
 	full := prjn.NewFull()
 
+
+	// MCA1 to inp for analysis
+	net.ConnectLayers(mca1, inp, full, emer.Forward)
+
 	// motor thalamus projections
-	net.ConnectLayers(vl, actd, prjn.NewOneToOne(), emer.Forward)
+	pj := net.ConnectLayers(vl, actd, prjn.NewOneToOne(), emer.Forward)
 
 
 	// placholder for cerebellar input
@@ -442,43 +487,61 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 
 	// action projections
-	net.ConnectLayers(act, dor, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actd,dorp, prjn.NewFull(), emer.Forward)
+	pj = net.ConnectLayers(act, dor, prjn.NewFull(), emer.Forward)
+	pj.SetClass("ActToDorsal")
+	pj = net.ConnectLayers(actd,dorp, prjn.NewFull(), emer.Forward)
+	pj.SetClass("ActToDorsal")
 	net.ConnectLayers(actd, vl, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actp, act, full, emer.Forward)
+	net.ConnectLayers(actp, act, full, emer.Back)
 
 	// color projections
-	net.ConnectLayers(col, ven, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(cold,venp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(colp, col, full, emer.Forward)
+	net.ConnectLayers(col, lecin, prjn.NewFull(), emer.Forward)
 
 	// dorsal projections
 	net.ConnectLayers(dord, actp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(dor, ecin, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dord, dorp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dor, mecin, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dorp, dor, prjn.NewFull(), emer.Back)
 
-	// ventral projections
-	net.ConnectLayers(vend, colp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(ven, ecin, prjn.NewFull(), emer.Forward)
 
-	// ECout back projections
-	net.ConnectLayers(ecout, ecin, onetoone, emer.Back)
+	// ECout projections
+	pj = net.ConnectLayers(mecout, mecin, onetoone, emer.Back)
+	pj.SetClass("ECoutToECin")
+	pj = net.ConnectLayers(lecout, lecin, onetoone, emer.Back)
+	pj.SetClass("ECoutToECin")
+
+	net.ConnectLayers(mecout, dorp, full, emer.Forward)
+	net.ConnectLayers(lecout, colp, full, emer.Forward)
 
 	// EC <-> CA1 encoder pathways
-	pj := net.ConnectLayersPrjn(ecin, ca1, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
+	pj = net.ConnectLayersPrjn(mecin, mca1, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
 	pj.SetClass("EcCa1Prjn")
-	pj = net.ConnectLayersPrjn(ca1, ecout, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
+	pj = net.ConnectLayersPrjn(mca1, mecout, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
+	pj.SetClass("EcCa1Prjn CA1ToECout")
+	pj = net.ConnectLayersPrjn(mecout, mca1, pool1to1, emer.Back, &hip.EcCa1Prjn{})
 	pj.SetClass("EcCa1Prjn")
-	pj = net.ConnectLayersPrjn(ecout, ca1, pool1to1, emer.Back, &hip.EcCa1Prjn{})
+
+
+	pj = net.ConnectLayersPrjn(lecin, lca1, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
+	pj.SetClass("EcCa1Prjn")
+	pj = net.ConnectLayersPrjn(lca1, lecout, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
+	pj.SetClass("EcCa1Prjn CA1ToECout")
+	pj = net.ConnectLayersPrjn(lecout, lca1, pool1to1, emer.Back, &hip.EcCa1Prjn{})
 	pj.SetClass("EcCa1Prjn")
 
 	// Perforant pathway
 	ppath := prjn.NewUnifRnd()
 	ppath.PCon = 0.25
 
-	pj = net.ConnectLayersPrjn(ecin, dg, ppath, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL")
+	pj = net.ConnectLayersPrjn(mecin, dg, ppath, emer.Forward, &hip.CHLPrjn{})
+	pj.SetClass("HippoCHL ECinToDG")
 
-	pj = net.ConnectLayersPrjn(ecin, ca3, ppath, emer.Forward, &hip.EcCa1Prjn{})
+	pj = net.ConnectLayersPrjn(lecin, dg, ppath, emer.Forward, &hip.CHLPrjn{})
+	pj.SetClass("HippoCHL ECinToDG")
+
+	pj = net.ConnectLayersPrjn(mecin, ca3, ppath, emer.Forward, &hip.EcCa1Prjn{})
+	pj.SetClass("PPath")
+	pj = net.ConnectLayersPrjn(lecin, ca3, ppath, emer.Forward, &hip.EcCa1Prjn{})
 	pj.SetClass("PPath")
 	pj = net.ConnectLayersPrjn(ca3, ca3, full, emer.Lateral, &hip.EcCa1Prjn{})
 	pj.SetClass("PPath")
@@ -490,8 +553,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pj.SetClass("HippoCHL")
 
 	// Schafer collaterals
-	pj = net.ConnectLayersPrjn(ca3, ca1, full, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL")
+	pj = net.ConnectLayersPrjn(ca3, mca1, full, emer.Forward, &hip.CHLPrjn{})
+	pj.SetClass("HippoCHL CA3ToCA1")
+	pj = net.ConnectLayersPrjn(ca3, lca1, full, emer.Forward, &hip.CHLPrjn{})
+	pj.SetClass("HippoCHL CA3ToCA1")
 
 
 
@@ -512,6 +577,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	nl := ss.Net.NLayers()
 	for li := 0; li < nl; li++ {
 		ly := ss.Net.Layer(li)
+		// each layer on its own thread
+		ly.SetThread(li)
+
 		if ly.Type() == deep.TRC {
 			ss.TRCLays = append(ss.TRCLays, ly.Name())
 		}
@@ -585,28 +653,38 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
-	ca1 := ss.Net.LayerByName("CA1").(leabra.LeabraLayer).AsLeabra()
+	mca1 := ss.Net.LayerByName("MCA1").(leabra.LeabraLayer).AsLeabra()
+	lca1 := ss.Net.LayerByName("LCA1").(leabra.LeabraLayer).AsLeabra()
 	ca3 := ss.Net.LayerByName("CA3").(leabra.LeabraLayer).AsLeabra()
-	ecin := ss.Net.LayerByName("ECin").(leabra.LeabraLayer).AsLeabra()
-	ecout := ss.Net.LayerByName("ECout").(leabra.LeabraLayer).AsLeabra()
-	ca1FmECin := ca1.RcvPrjns.SendName("ECin").(*hip.EcCa1Prjn)
-	ca1FmCa3 := ca1.RcvPrjns.SendName("CA3").(*hip.CHLPrjn)
+	mecin := ss.Net.LayerByName("MECin").(leabra.LeabraLayer).AsLeabra()
+	mecout := ss.Net.LayerByName("MECout").(leabra.LeabraLayer).AsLeabra()
+	lecin := ss.Net.LayerByName("LECin").(leabra.LeabraLayer).AsLeabra()
+	lecout := ss.Net.LayerByName("LECout").(leabra.LeabraLayer).AsLeabra()
+	mca1FmMECin := mca1.RcvPrjns.SendName("MECin").(*hip.EcCa1Prjn)
+	lca1FmLECin := lca1.RcvPrjns.SendName("LECin").(*hip.EcCa1Prjn)
+	mca1FmCa3 := mca1.RcvPrjns.SendName("CA3").(*hip.CHLPrjn)
+	lca1FmCa3 := lca1.RcvPrjns.SendName("CA3").(*hip.CHLPrjn)
 	ca3FmDg := ca3.RcvPrjns.SendName("DG").(leabra.LeabraPrjn).AsLeabra()
 
 	// First Quarter: CA1 is driven by ECin, not by CA3 recall
 	// (which is not really active yet anyway)
-	ca1FmECin.WtScale.Abs = 1
-	ca1FmCa3.WtScale.Abs = 0
+	mca1FmMECin.WtScale.Abs = 1
+	lca1FmLECin.WtScale.Abs = 1
+	mca1FmCa3.WtScale.Abs = 0
+	lca1FmCa3.WtScale.Abs = 0
 
 	dgwtscale := ca3FmDg.WtScale.Rel
 	ca3FmDg.WtScale.Rel = 0 // turn off DG input to CA3 in first quarter
 
 	if train {
-		ecout.SetType(emer.Target) // clamp a plus phase during testing
+		mecout.SetType(emer.Target) // clamp a plus phase during testing
+		lecout.SetType(emer.Target) // clamp a plus phase during testing
 	} else {
-		ecout.SetType(emer.Compare) // don't clamp
+		mecout.SetType(emer.Compare) // don't clamp
+		lecout.SetType(emer.Compare) // don't clamp
 	}
-	ecout.UpdateExtFlags() // call this after updating type
+	mecout.UpdateExtFlags() // call this after updating type
+	lecout.UpdateExtFlags() // call this after updating type
 
 	ss.Net.AlphaCycInit()
 	ss.Time.AlphaCycStart()
@@ -632,8 +710,10 @@ func (ss *Sim) AlphaCyc(train bool) {
 		}
 		switch qtr + 1 {
 		case 1: // Second, Third Quarters: CA1 is driven by CA3 recall
-			ca1FmECin.WtScale.Abs = 0
-			ca1FmCa3.WtScale.Abs = 1
+			mca1FmMECin.WtScale.Abs = 0
+			lca1FmLECin.WtScale.Abs = 0
+			mca1FmCa3.WtScale.Abs = 1
+			lca1FmCa3.WtScale.Abs = 1
 			if train {
 				ca3FmDg.WtScale.Rel = dgwtscale // restore after 1st quarter
 			} else {
@@ -642,14 +722,18 @@ func (ss *Sim) AlphaCyc(train bool) {
 			ss.Net.GScaleFmAvgAct() // update computed scaling factors
 			ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
 		case 3: // Fourth Quarter: CA1 back to ECin drive only
-			ca1FmECin.WtScale.Abs = 1
-			ca1FmCa3.WtScale.Abs = 0
+			mca1FmMECin.WtScale.Abs = 1
+			lca1FmLECin.WtScale.Abs = 1
+			mca1FmCa3.WtScale.Abs = 0
+			lca1FmCa3.WtScale.Abs = 0
 			ss.Net.GScaleFmAvgAct() // update computed scaling factors
 			ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
 
 			if train { // clamp ECout from ECin
-				ecin.UnitVals(&ss.TmpVals, "Act")
-				ecout.ApplyExt1D32(ss.TmpVals)
+				mecin.UnitVals(&ss.MTmpVals, "Act")
+				mecout.ApplyExt1D32(ss.MTmpVals)
+				lecin.UnitVals(&ss.LTmpVals, "Act")
+				lecout.ApplyExt1D32(ss.LTmpVals)
 			}
 		}
 		ss.Net.QuarterFinal(&ss.Time)
@@ -670,7 +754,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 	}
 
 	ca3FmDg.WtScale.Rel = dgwtscale // restore
-	ca1FmCa3.WtScale.Abs = 1
+	mca1FmCa3.WtScale.Abs = 1
+	lca1FmCa3.WtScale.Abs = 1
 
 	if train {
 		ss.Net.DWt()
@@ -755,12 +840,34 @@ func (ss *Sim) TrainTrial() {
 				return
 			}
 		}
+		if epc % ss.EnvRefreshFreq== 0 {
+			ss.ResetEnvironment()
+
+		}
 	}
 
 	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
 	ss.AlphaCyc(true)   // train
 	ss.TrialStats(true) // accumulate
 	// ss.LogTrnTrl(ss.TrnTrlLog)
+}
+
+func (ss *Sim) ResetEnvironment() {
+			dg := ss.Net.LayerByName("DG").(*deep.Layer)
+			dg.InitWts()
+			ca3 := ss.Net.LayerByName("CA3").(*deep.Layer)
+			ca3.InitWts()
+			ss.Net.InitActs()
+			ss.ResetPosition()
+
+			ss.TrainEnv.MakeWorld()
+}
+func (ss *Sim) ResetPosition() {
+
+			ss.TrainEnv.CurPos.Col = 50
+			ss.TrainEnv.CurPos.Row = 50
+
+
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
@@ -843,7 +950,7 @@ func (ss *Sim) UpdtPosAFs() {
 			ly.UnitValsTensor(&ss.PosAFTsr, "ActM")
 			af := ss.PosAFs.AddRF(lnm, &ss.PosAFTsr, &ss.TrainEnv.CurPosMap)
 			af.NormRF.SetMetaData("min", "0")
-			af.NormRF.SetMetaData("colormap", "JetMuted")
+			af.NormRF.SetMetaData("colormap", "ColdHot")
 		}
 	}
 	for _, lnm := range ss.PosAFNms {
@@ -875,7 +982,7 @@ func (ss *Sim) EpochStatsTRC(nt float64) {
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
 	colp := ss.Net.LayerByName("ColorP").(deep.DeepLayer).AsDeep()
-	trg := ss.Net.LayerByName("NextPos").(deep.DeepLayer).AsDeep()
+	trg := ss.Net.LayerByName("Color").(deep.DeepLayer).AsDeep()
 	ss.TrlCosDiff = float64(colp.CosDiff.Cos)
 	// ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
 	// compute SSE against target as activation of inp outside of trg > .5
@@ -903,7 +1010,7 @@ func (ss *Sim) TrialStats(accum bool) {
 	ss.TrlSSE = sse
 	ss.TrlAvgSSE = sse // not really meaningful
 	if ss.TrlSSE > 0.01 { // include some tolerance
-		ss.CntErr = 1
+		ss.CntErr += 1
 	} else {
 		ss.CntErr = 0
 	}
@@ -923,6 +1030,8 @@ func (ss *Sim) TrialStats(accum bool) {
 func (ss *Sim) TrainEpoch() {
 	ss.StopNow = false
 	curEpc := ss.TrainEnv.Epoch.Cur
+	ss.ResetPosition()
+	ss.Net.InitActs()
 	for {
 		ss.TrainTrial()
 		if ss.StopNow || ss.TrainEnv.Epoch.Cur != curEpc {
@@ -1602,8 +1711,8 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 // 		Gui
 
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
-	nv.Scene().Camera.Pose.Pos.Set(0, 1.7, 4.0) // more "head on" than default which is more "top down"
-	nv.Scene().Camera.LookAt(mat32.Vec3{0, -0.5, 0}, mat32.Vec3{0, 1, 0})
+	nv.Scene().Camera.Pose.Pos.Set(-2.6, 2.4, 8.2) // more "head on" than default which is more "top down"
+	nv.Scene().Camera.LookAt(mat32.Vec3{-2.6, -0.5, 0}, mat32.Vec3{0, 1, 0})
 }
 
 // ConfigGui configures the GoGi gui interface for this simulation,

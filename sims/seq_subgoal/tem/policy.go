@@ -16,10 +16,12 @@ type Policy struct {
 	AvoidPGo     float32    `desc:"probability of going when avoid turning if current avg dist > prev"`
 	PrvAct       Actions    `inactive:"+" desc:"previous action"`
 	CurPos       mat32.Vec2 `inactive:"+" desc:"current position"`
+	ExploreProb     float32
 }
 
 func (pl *Policy) Defaults() {
 	pl.UseInAct = 0.2
+	pl.ExploreProb = .5
 }
 
 // Act is main interface call that updates dist and selects action and updates state
@@ -44,7 +46,13 @@ func (pl *Policy) ActChooseTrain(inact Actions, ev *Env) Actions {
 		for i:= 0 ; i <10 ; i++ {
 			act := Actions(rand.Intn(int(ActionsN)))
 			npos := Move(ev.CurPos,act)
-			if ev.World.Loc(npos).open {
+			ntile := ev.World.Loc(npos)
+			if !ntile.open {
+				continue
+			}
+			if ntile.visited {
+				return act
+			} else if rand.Float32() < pl.ExploreProb {
 				return act
 			}
 		}

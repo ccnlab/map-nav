@@ -7,7 +7,6 @@ package main
 import (
 	// "image"
 	"fmt"
-	"math/rand"
 	"io/ioutil"
 	// "log"
 	"strings"
@@ -57,8 +56,6 @@ type Pos struct {
 }
 type Tile struct {
 	open bool
-	color int
-	visited bool
 }
 
 var tilekey = map[rune]Tile{
@@ -66,18 +63,11 @@ var tilekey = map[rune]Tile{
 	'#' : Tile{open:false},
 }
 
-func (env *Env) NewTile(symbol rune) Tile{
-	tile := tilekey[symbol]
-	tile.color = rand.Intn(env.Colors)
-	return tile
-
-}
-
 type World struct {
 	grid [][]Tile
 }
 
-func (env *Env) NewWorld(filename string) World {
+func NewWorld(filename string) World {
 	dat, err := ioutil.ReadFile(filename)
 
 	if err != nil {
@@ -95,15 +85,15 @@ func (env *Env) NewWorld(filename string) World {
 	}
 	for row, line := range lines {
 		for col, symbol := range line {
-			world.grid[row][col] = env.NewTile(symbol)
+			world.grid[row][col] = tilekey[symbol]
 		}
 	}
 	return world
 
 }
 
-func (wld *World) Loc(pos Pos) *Tile {
-	return &wld.grid[pos.Row][pos.Col]
+func (wld *World) Loc(pos Pos) Tile {
+	return wld.grid[pos.Row][pos.Col]
 }
 
 // Env manages the navigation environment
@@ -122,15 +112,12 @@ type Env struct {
 	ExtAct    Actions         `desc:"current externally-supplied action"`
 	CurActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
 	PrvActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
-	ColorMap etensor.Float32 `desc:" color as a 1 hot tensor, returned as state"`
 	World     World
 	Policy    Policy
 	PrevPos   Pos
 	NextPosMap      etensor.Float32
 	OffCycle    bool        `desc:"toggled each cycle to only update every other cycle, allowing the network a cycle to develop predictions"`
-	Colors  int
 	pop2D   popcode.TwoD
-
 }
 
 func (ev *Env) Name() string { return ev.Nm }
@@ -150,17 +137,17 @@ func (ev *Env) Defaults() {
 
 func (ev *Env) Init(run int) {
 
-	ev.Colors = 20
 	ev.MakeWorld()
 	rows, cols := len(ev.World.grid), len(ev.World.grid[0])
-	ev.CenterAgent()
+        ev.CurPos.Row = 1
+	ev.CurPos.Col = 1
 	ev.PrevPos = ev.CurPos
 
 	ev.pop2D = popcode.TwoD{}
 	ev.pop2D.Code = popcode.GaussBump
 	ev.pop2D.Min.Set(0.0,0.0)
 	ev.pop2D.Max.Set(float32(rows),float32(cols))
-	sigma := float32(0.001)
+	sigma := float32(0.1)
 	ev.pop2D.Sigma.Set(sigma,sigma)
 	ev.pop2D.Thr = 0.1
 	ev.pop2D.Clip = true
@@ -181,16 +168,8 @@ func (ev *Env) Init(run int) {
 	ev.CurPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 	ev.PrvActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
-	ev.ColorMap.SetShape([]int{ev.Colors, 1, 1, 1}, nil, []string{"Color", "1", "1", "1"})
 
 	ev.NextPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
-}
-
-func (ev *Env) CenterAgent() {
-
-	rows, cols := len(ev.World.grid), len(ev.World.grid[0])
-        ev.CurPos.Row = rows/2 
-	ev.CurPos.Col = cols/2
 }
 
 func (ev *Env) Step() bool {
@@ -216,7 +195,6 @@ func (ev *Env) States() env.Elements {
 		{"NextPosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
 		{"ActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
 		{"PrvActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
-		{"ColorMap", []int{ev.Colors}, []string{"ColorsN"}},
 	}
 	return els
 }
@@ -230,8 +208,6 @@ func (ev *Env) State(element string) etensor.Tensor {
 		return &ev.CurActMap
 	case "PrvActMap":
 		return &ev.PrvActMap
-	case "ColorMap":
-		return &ev.ColorMap
 	default:
 		return nil
 	}
@@ -275,9 +251,9 @@ func (ev *Env) SetAction(act Actions) {
 
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
-	// ev.World = ev.NewWorld("5X5.world")
-	// ev.World = ev.NewWorld("10X10.world")
-	ev.World = ev.NewWorld("16x16.world")
+	ev.World = NewWorld("3x3.world")
+	// ev.World = NewWorld("5X5.world")
+	// ev.World = NewWorld("10X10.world")
 }
 
 // InitWorld does init on world and re-syncs
@@ -323,8 +299,6 @@ func (ev *Env) TakeAction(act Actions) {
 		ev.PrevPos = ev.CurPos
 		ev.CurPos = newpos
 	}
-	ev.World.Loc(newpos).visited = true
-
 
 	// handle any non position side effects of action
 	// update "neural" reps of state
@@ -359,9 +333,5 @@ func (ev *Env) UpdateState() {
 	ev.CurActMap.SetFloat1D(int(ev.CurAct),1.0)
 	ev.PrvActMap.SetZeros()
 	ev.PrvActMap.SetFloat1D(int(ev.PrvAct),1.0)
-
-	curcolor := ev.World.Loc(ev.CurPos).color
-	ev.ColorMap.SetZeros()
-	ev.ColorMap.SetFloat1D(curcolor, 1.0)
 
 }

@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/emer/leabra/hip"
+	"github.com/emer/leabra/pbwm"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/env"
@@ -29,8 +29,8 @@ import (
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor" // include to get gui views
 	"github.com/emer/etable/split"
-	"github.com/emer/leabra/deep"
 	"github.com/emer/leabra/leabra"
+	"github.com/emer/leabra/deep"
 	"github.com/goki/gi/gi"
 	"github.com/goki/mat32"
 	"github.com/goki/gi/gimain"
@@ -60,27 +60,42 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Norm.On":     "true",
 					"Prjn.Learn.Momentum.On": "true",
 					"Prjn.Learn.WtBal.On":    "true",
-					"Prjn.Learn.Lrate":        "0.005",
+					// "Prjn.Learn.Lrate":        "0.005",
 				}},
 			{Sel: "Layer", Desc: "using default 1.8 inhib for hidden layers",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":  "2.4",
+					"Layer.Inhib.Pool.Gi":     "4.0",
+					"Layer.Inhib.Layer.Gi":  "1.8",
 					"Layer.Learn.AvgL.Gain": "1.5", // key to lower relative to 2.5
 					"Layer.Act.Gbar.L":      "0.1", // lower leak = better
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.05",
+					"Prjn.WtScale.Rel": "0.0",
 				}},
 			{Sel: ".Lateral", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
 					"Prjn.WtScale.Rel": "0.3",
+				}},
+			{Sel: ".Strong", Desc: "prjns that have high relative weight. generally for ensuring one pool is active",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "5",
 				}},
 			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
 				Params: params.Params{
 					"Prjn.WtInit.Mean": "0.3", // using .8 for localist layer
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.Learn.Learn": "false",
+				}},
+			{Sel: ".MotorTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
+				Params: params.Params{
+					"Prjn.WtInit.Mean": "0.8", // using .8 for localist layer
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.Learn.Learn": "false",
+				}},
+			{Sel: ".MThalOut", Desc: "standard weight is .3 here for larger distributed reps. no learn",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "3",
 				}},
 			{Sel: ".BurstCtxt", Desc: "no weight balance on deep context prjns -- makes a diff!",
 				Params: params.Params{
@@ -90,133 +105,136 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "2.2",
 				}},
-			{Sel: ".Dorsal", Desc: "input layers need more inhibition",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "2.2",
-				}},
-			{Sel: "#InputPToHiddenD", Desc: "critical to make this small so deep context dominates",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.4",
-				}},
 
-			{Sel: ".ActToDorsal", Desc: "critical to make this small so deep context dominates",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.2",
-				}},
-
-
-			{Sel: "Prjn", Desc: "keeping default params for generic prjns",
-				Params: params.Params{
-					"Prjn.Learn.Momentum.On": "true",
-					"Prjn.Learn.Norm.On":     "true",
-					"Prjn.Learn.WtBal.On":    "false",
-				}},
-			{Sel: ".EcCa1Prjn", Desc: "encoder projections -- no norm, moment",
-				Params: params.Params{
-					"Prjn.Learn.Lrate":        "0.04",
-					"Prjn.Learn.Momentum.On":  "false",
-					"Prjn.Learn.Norm.On":      "false",
-					"Prjn.Learn.WtBal.On":     "true",
-					"Prjn.Learn.XCal.SetLLrn": "false", // using bcm now, better
-				}},
-			{Sel: ".HippoCHL", Desc: "hippo CHL projections -- no norm, moment, but YES wtbal = sig better",
-				Params: params.Params{
-					"Prjn.CHL.Hebb":          "0.05",
-					"Prjn.Learn.Lrate":       "0.2",
-					"Prjn.Learn.Momentum.On": "false",
-					"Prjn.Learn.Norm.On":     "false",
-					"Prjn.Learn.WtBal.On":    "true",
-				}},
-			{Sel: ".PPath", Desc: "perforant path, new Dg error-driven EcCa1Prjn prjns",
-				Params: params.Params{
-					"Prjn.Learn.Momentum.On": "false",
-					"Prjn.Learn.Norm.On":     "false",
-					"Prjn.Learn.WtBal.On":    "true",
-					"Prjn.Learn.Lrate":       "0.15", // err driven: .15 > .2 > .25 > .1
-					// moss=4, delta=4, lr=0.2, test = 3 are best
-				}},
-			{Sel: ".CA1ToECout", Desc: "extra strong from CA1 to ECout",
-				Params: params.Params{
-					"Prjn.WtScale.Abs": "4.0",
-				}},
-			{Sel: "#InputToECin", Desc: "one-to-one input to EC",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Mean": "0.8",
-					"Prjn.WtInit.Var":  "0.0",
-				}},
-			{Sel: ".ECoutToECin", Desc: "one-to-one out to in",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Mean": "0.9",
-					"Prjn.WtInit.Var":  "0.01",
-					"Prjn.WtScale.Rel": "0.5",
-				}},
-			{Sel: "#DGToCA3", Desc: "Mossy fibers: strong, non-learning",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Mean": "0.9",
-					"Prjn.WtInit.Var":  "0.01",
-					"Prjn.WtScale.Rel": "4",
-				}},
-			{Sel: "#CA3ToCA3", Desc: "CA3 recurrent cons",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.1",
-					"Prjn.Learn.Lrate": "0.1",
-				}},
-			{Sel: ".ECinToDG", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-				Params: params.Params{
-					"Prjn.Learn.Learn":       "true", // absolutely essential to have on!
-					"Prjn.CHL.Hebb":          ".5",   // .5 > 1 overall
-					"Prjn.CHL.SAvgCor":       "0.1",  // .1 > .2 > .3 > .4 ?
-					"Prjn.CHL.MinusQ1":       "true", // dg self err?
-					"Prjn.Learn.Lrate":       "0.4",  // .4 > .3 > .2
-					"Prjn.Learn.Momentum.On": "false",
-					"Prjn.Learn.Norm.On":     "false",
-					"Prjn.Learn.WtBal.On":    "true",
-				}},
-			{Sel: ".CA3ToCA1", Desc: "Schaffer collaterals -- slower, less hebb",
-				Params: params.Params{
-					"Prjn.CHL.Hebb":          "0.01",
-					"Prjn.CHL.SAvgCor":       "0.4",
-					"Prjn.Learn.Lrate":       "0.1",
-					"Prjn.Learn.Momentum.On": "false",
-					"Prjn.Learn.Norm.On":     "false",
-					"Prjn.Learn.WtBal.On":    "true",
-				}},
-			{Sel: ".EC", Desc: "all EC layers: only pools, no layer-level",
+			{Sel: ".Premotor", Desc: "all EC layers: ",
 				Params: params.Params{
 					"Layer.Act.Gbar.L":        ".1",
 					"Layer.Inhib.ActAvg.Init": "0.2",
-					"Layer.Inhib.Layer.On":    "false",
+					"Layer.Inhib.Layer.Gi":     "2.5",
+					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Inhib.Pool.Gi":     "2.0",
 					"Layer.Inhib.Pool.On":     "true",
 				}},
-			{Sel: "#DG", Desc: "very sparse = high inibhition",
+			{Sel: ".PPC", Desc: "all EC layers: only pools, no layer-level",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.01",
-					"Layer.Inhib.Layer.Gi":    "3.8",
-				}},
-			{Sel: "#CA3", Desc: "sparse = high inibhition",
-				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.02",
-					"Layer.Inhib.Layer.Gi":    "2.8",
-				}},
-			{Sel: "#MCA1", Desc: "CA1 only Pools",
-				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.On":    "false",
-					"Layer.Inhib.Pool.Gi":     "2.4",
+					"Layer.Act.Gbar.L":        ".1",
+					"Layer.Inhib.ActAvg.Init": "0.2",
+					"Layer.Inhib.Layer.On":    "true",
+					"Layer.Inhib.Layer.Gi":     "1.6",
+					"Layer.Inhib.Pool.Gi":     "2.0",
 					"Layer.Inhib.Pool.On":     "true",
 				}},
-			{Sel: ".CA1", Desc: "CA1 only Pools",
+
+			{Sel: ".BgFixed", Desc: "BG Matrix -> GP wiring",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.On":    "false",
-					"Layer.Inhib.Pool.Gi":     "2.4",
-					"Layer.Inhib.Pool.On":     "true",
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
 				}},
-		},
+			{Sel: "RWPrjn", Desc: "Reward prediction -- into PVi",
+				Params: params.Params{
+					"Prjn.Learn.Lrate": "0.02",
+					"Prjn.WtInit.Mean": "0",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: "#RWPredToSNc", Desc: "Fixed strong",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Mean": "1",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: "#Rew", Desc: "Reward layer -- no clamp limits",
+				Params: params.Params{
+					"Layer.Act.Clamp.Range.Min": "-1",
+					"Layer.Act.Clamp.Range.Max": "1",
+				}},
+			{Sel: ".PFCToDeep", Desc: "PFC -> Deep consistent wt",
+				Params: params.Params{
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: ".PFCFmDeep", Desc: "PFC Deep -> PFC fixed",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: ".PFCMntDToOut", Desc: "PFC MntD -> PFC Out fixed",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: ".FmPFCOutD", Desc: "PFC OutD needs to be strong b/c avg act says weak",
+				Params: params.Params{
+					"Prjn.WtScale.Abs": "4",
+				}},
+			{Sel: ".PFCFixed", Desc: "Input -> PFC",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Sym":  "false",
+				}},
+			{Sel: ".MatrixPrjn", Desc: "Matrix learning",
+				Params: params.Params{
+					"Prjn.Learn.Lrate": "0.04",
+					"Prjn.WtInit.Var":  "0.1",
+					"Prjn.WtScale.Rel": "3",
+				}},
+			{Sel: "MatrixLayer", Desc: "exploring these options",
+				Params: params.Params{
+					"Layer.Act.XX1.Gain":       "100",
+					"Layer.Inhib.Layer.Gi":     "1.6",
+					"Layer.Inhib.Layer.FB":     "0.5",
+					"Layer.Inhib.Pool.On":      "true",
+					"Layer.Inhib.Pool.Gi":      "1.9", // def 1.9
+					"Layer.Inhib.Pool.FB":      "0",
+					"Layer.Inhib.Self.On":      "true",
+					"Layer.Inhib.Self.Gi":      "0.4", // def 0.3
+					"Layer.Inhib.ActAvg.Init":  "0.3",
+					"Layer.Inhib.ActAvg.Fixed": "true",
+				}},
+			{Sel: "#GPiThal", Desc: "defaults also set automatically by layer but included here just to be sure",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi":     "1.8",
+					"Layer.Inhib.Layer.FB":     "0.5",
+					"Layer.Inhib.Pool.On":      "false",
+					"Layer.Inhib.ActAvg.Init":  ".2",
+					"Layer.Inhib.ActAvg.Fixed": "true",
+					"Layer.Act.Dt.GTau":        "3",
+					"Layer.Gate.NoGo":          "1",
+					"Layer.Gate.Thr":           "0.2",
+				}},
+			{Sel: "#GPeNoGo", Desc: "GPe is a regular layer -- needs special params",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi":     "2.2",
+					"Layer.Inhib.Layer.FB":     "0.5",
+					"Layer.Inhib.Layer.FBTau":  "3", // otherwise a bit jumpy
+					"Layer.Inhib.Pool.On":      "false",
+					"Layer.Inhib.ActAvg.Init":  ".2",
+					"Layer.Inhib.ActAvg.Fixed": "true",
+				}},
+			{Sel: ".PFC", Desc: "pfc defaults",
+				Params: params.Params{
+					"Layer.Inhib.Layer.On":     "false",
+					"Layer.Inhib.Pool.On":      "true",
+					"Layer.Inhib.Pool.Gi":      "1.8",
+					"Layer.Inhib.Pool.FB":      "1",
+					"Layer.Inhib.ActAvg.Init":  "0.2",
+					"Layer.Inhib.ActAvg.Fixed": "true",
+				}},
+			{Sel: "#SNc", Desc: "allow negative",
+				Params: params.Params{
+					"Layer.Act.Clamp.Range.Min": "-1",
+					"Layer.Act.Clamp.Range.Max": "1",
+				}},			},
 	}},
 	{Name: "DefaultInhib", Desc: "output uses default inhib instead of lower", Sheets: params.Sheets{
 		"Network": &params.Sheet{
@@ -253,7 +271,7 @@ var ParamSets = params.Sets{
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net              *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Net              *pbwm.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	TrnEpcLog        *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TrnTrlLog        *etable.Table     `view:"no-inline" desc:"training trial-level log data"`
 	TstEpcLog        *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
@@ -271,7 +289,6 @@ type Sim struct {
 	NZeroStop        int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
 	EnvRefreshFreq   int            `desc:"how many cycles to run before shuffling env colors and initializing DG CA3 weights"`
 	TrainEnv         Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	TestEnv         Env        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             leabra.Time       `desc:"leabra timing parameters and state"`
 	ViewOn           bool              `desc:"whether to update the network view while running"`
 	TrainUpdt        leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
@@ -338,7 +355,7 @@ var TheSim Sim
 // New creates new blank elements and initializes defaults
 
 func (ss *Sim) New() {
-	ss.Net = &deep.Network{}
+	ss.Net = &pbwm.Network{}
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TrnTrlLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
@@ -347,7 +364,7 @@ func (ss *Sim) New() {
 	ss.RunLog = &etable.Table{}
 	ss.RunStats = &etable.Table{}
 	ss.Params = ParamSets
-	ss.UseTeacherForce = 1.0
+	ss.UseTeacherForce = 0.1
 	ss.RndSeed = 1
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.AlphaCycle
@@ -355,8 +372,8 @@ func (ss *Sim) New() {
 	ss.TestInterval = 500
 	ss.EnvRefreshFreq = 5
 	ss.ExploreProb = .5
-	ss.LayStatNms = []string{"ColorP"}
-	ss.PosAFNms = []string{"Dorsal", "DorsalD", "MECout","MCA1", "DG", "CA3"}
+	ss.LayStatNms = []string{"Input"}
+	ss.PosAFNms = []string{"SMotPFCmnt","PMotPFCmnt","SMotPFCoutD","PMotPFCoutD","smotPPC","Precuneus"}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Configs
@@ -390,182 +407,277 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Policy.ExploreProb = ss.ExploreProb
 	ss.TrainEnv.Init(0)
 	ss.TrainEnv.Validate()
+}
+
+func  AddConnectedSuperDeep2D(net *pbwm.Network, name string, shapeY, shapeX int, pulvLay, attn bool) (super, deep, pulv emer.Layer) {
+	super,deep,pulv = net.AddSuperDeep2D(name,shapeY,shapeX,pulvLay,attn)
+
+	super.SetClass(name)
+	deep.SetClass(name)
+	pulv.SetClass(name)
+
+	net.ConnectLayers(deep, pulv, prjn.NewFull(), emer.Forward)
+
+	net.ConnectLayers(pulv, deep, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(pulv, super, prjn.NewFull(), emer.Back)
+
+	return super,deep,pulv
+}
+func  AddConnectedSuperDeep4D(net *pbwm.Network, name string, nPoolsY, nPoolsX, nNeurY, nNeurX int, pulvLay, attn bool) (super, deep, pulv emer.Layer) {
+	super,deep,pulv = net.AddSuperDeep4D(name,nPoolsY,nPoolsX,nNeurY,nNeurX ,pulvLay,attn)
+
+	super.SetClass(name)
+	deep.SetClass(name)
+	pulv.SetClass(name)
+
+	net.ConnectLayers(deep, pulv, prjn.NewFull(), emer.Forward)
+
+	net.ConnectLayers(pulv, deep, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(pulv, super, prjn.NewFull(), emer.Back)
+
+	return super,deep,pulv
+}
+
+func ConnectColumnsByName(net *pbwm.Network, send, recv string, pat prjn.Pattern) {
+
+	s := net.LayerByName(send).(deep.DeepLayer).AsDeep()
+	sd := net.LayerByName(send+"D").(deep.DeepLayer).AsDeep()
+
+	r := net.LayerByName(recv).(deep.DeepLayer).AsDeep()
+	rd := net.LayerByName(recv+"D").(deep.DeepLayer).AsDeep()
+	rp := net.LayerByName(recv+"P").(deep.DeepLayer).AsDeep()
 
 
-	ss.TestEnv.Defaults()
-	ss.TestEnv.Nm = "TestEnv"
-	ss.TestEnv.Dsc = "testing params and state"
-	ss.TestEnv.Policy.Auto = true
-	ss.TestEnv.Event.Max = 100
-	ss.TestEnv.Policy.ExploreProb = ss.ExploreProb
-	ss.TestEnv.Run.Max = ss.MaxRuns
-	ss.TestEnv.Init(0)
-	ss.TestEnv.Validate()
+	pj := net.ConnectLayers(s,r,pat, emer.Forward)
+	pj.SetClass(send+"To"+recv+" From"+send+" To"+recv)
+	pj = net.ConnectLayers(sd,rp,pat, emer.Forward) 
+	pj.SetClass(send+"To"+recv+" From"+send+" To"+recv)
+	pj = net.ConnectLayers(r,s,pat, emer.Back) 
+	pj.SetClass(recv+"To"+send+" From"+recv+" To"+send)
+	pj = net.ConnectLayers(rd,sd,pat, emer.Back) 
+	pj.SetClass(recv+"To"+send+" From"+recv+" To"+send)
+
+
 }
 
 
-func (ss *Sim) ConfigNet(net *deep.Network) {
+
+
+func (ss *Sim) ConfigNet(net *pbwm.Network) {
 	net.InitName(net, "TEM")
 	worldheight := len(ss.TrainEnv.World.grid)
 	worldwidth := len(ss.TrainEnv.World.grid[0])
 
 
-	in, inp := net.AddInputPulv2D("Input",worldheight, worldwidth)
-	nextpos := net.AddLayer2D("NextPos",worldheight, worldwidth, emer.Input)
-	prvact := net.AddLayer2D("PrvActMap",1, int(ActionsN), emer.Input)
+	in, _:= net.AddInputPulv2D("Input",worldheight, worldwidth)
+	goalpos := net.AddLayer2D("GoalPos",worldheight, worldwidth, emer.Input)
+	rew, rp, da := net.AddRWLayers("", relpos.Behind, 2)
+	snc := da.(*pbwm.RWDaLayer)
+	snc.SetName("SNc")
 
-	col,colp := net.AddInputPulv2D("Color", 1, ss.TrainEnv.Colors)
-	act, actd, actp := net.AddSuperDeep2D("Action",1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
+	ongoingact, _ := net.AddInputPulv2D("OngoingAction",1, int(ActionsN))
 
-	dor, dord, dorp := net.AddSuperDeep2D("Dorsal", 10 , 10 , deep.AddPulv, deep.NoAttnPrjn)
-	dor.SetClass("Dorsal")
-	dorp.SetClass("Dorsal")
-	dord.SetClass("Dorsal")
+	upcomingact, upcomingactp := net.AddInputPulv2D("UpcomingAction",1, int(ActionsN))
+
+	pmotstripes := 8 
+	pmotstripesize := 4
+	smotstripes := 8
+	smotstripesize := 4
+
+	// args:
+	//nY = y pools,
+	//nMaint = maint x pools,
+	//nOut out x pools,
+	//nNeurBgY & nNeurBgX = bg pool size,
+	//nNeurPfcY & nNeurPfcX = pfc pool size
+	pmotmtxGo, pmotmtxNoGo, pmotgpe, pmotgpi, pmotMnt, pmotMntD, pmotOut, pmotOutD := net.AddPBWM("PMot", pmotstripes, 1, 1,  1, pmotstripesize, 1,pmotstripesize)
+	_ = pmotgpe
+	_ = pmotgpi
+	_ = pmotMnt
+	_ = pmotMntD
+	_ = pmotOut
+	smotmtxGo, smotmtxNoGo, smotgpe, smotgpi, smotMnt, smotMntD, smotOut, smotOutD := net.AddPBWM("SMot", smotstripes, 1, 1,  1,smotstripesize, 1, smotstripesize)
+	_ = smotgpe
+	_ = smotgpi
+	_ = smotMnt
+	_ = smotMntD
+	_ = smotOut
+
+	dlpfc, _, _ := AddConnectedSuperDeep4D(ss.Net, "dlPFC",1,1,worldheight, worldwidth, deep.AddPulv, deep.NoAttnPrjn)
+
+
+	pmotppc, _, pmotppcp:= AddConnectedSuperDeep4D(ss.Net, "pmotPPC",worldheight,worldwidth,1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
+	smotppc, _, smotppcp:= AddConnectedSuperDeep4D(ss.Net, "smotPPC",worldheight,worldwidth,1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
+	precun, _, precunp:= AddConnectedSuperDeep4D(ss.Net, "Precuneus",worldheight,worldwidth,1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
 
 	vl := net.AddLayer2D("VL",1,int(ActionsN), deep.TRC)
+	va := net.AddLayer4D("VA",1,int(ActionsN),1,1, deep.TRC)
+	vm := net.AddLayer2D("VM",worldheight,worldwidth, deep.TRC)
+	vm.SetClass("Input")
 
 
-
-	mecin := net.AddLayer4D("MECin", 6, 3, 3, 10, emer.Hidden)
-	mecout := net.AddLayer4D("MECout", 6, 3, 3, 10, emer.Target) // clamped in plus phase
-	lecin := net.AddLayer4D("LECin", 6, 3, 3, 3, emer.Hidden)
-	lecout := net.AddLayer4D("LECout", 6, 3, 3, 3, emer.Target) // clamped in plus phase
-	mca1 := net.AddLayer4D("MCA1", 6, 3, 2, 10, emer.Hidden)
-	lca1 := net.AddLayer4D("LCA1", 6, 3, 2, 10, emer.Hidden)
-	dg := net.AddLayer2D("DG", 25, 75, emer.Hidden)
-	ca3 := net.AddLayer2D("CA3", 30, 30, emer.Hidden)
-
-	mecin.SetClass("EC")
-	mecout.SetClass("EC")
-	lecin.SetClass("EC")
-	lecout.SetClass("EC")
-
-	mca1.SetClass("CA1")
-	lca1.SetClass("CA1")
+	goalpos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 1})	
+	rew.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Input", YAlign: relpos.Front, Space: 1})
+	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Rew", YAlign: relpos.Front, Space: 1})	
+	va.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "VL", YAlign: relpos.Front, Space: 1})	
+	vm.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "VA", YAlign: relpos.Front, Space: 1})	
+	upcomingact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "VL", YAlign: relpos.Front, Space: 3})
+	ongoingact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "UpcomingAction", YAlign: relpos.Front, Space: 1})
 
 
-	nextpos.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Input", YAlign: relpos.Front, Space: 2})	
-	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "ActionD", YAlign: relpos.Front, Space: 2})	
-	prvact.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "VL", YAlign: relpos.Front, Space: 2})
+	smotppc.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Input", YAlign: relpos.Front, Space: 1})
+	pmotppc.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "smotPPC", YAlign: relpos.Front, Space: 6})
+	precun.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "smotPPC", YAlign: relpos.Front, Space: 6})
 
-	mecout.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "NextPos", YAlign: relpos.Front, Space: 2})
-	mecin.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "MECout", YAlign: relpos.Front, Space: 2})
-	lecout.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "MECin", YAlign: relpos.Front, Space: 2})
-	lecin.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "LECout", YAlign: relpos.Front, Space: 2})
-	mca1.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "MECout", YAlign: relpos.Front, Space: 2})
-	lca1.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "LECout", YAlign: relpos.Front, Space: 2})
-	ca3.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "MCA1", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
-	dg.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "CA3", YAlign: relpos.Front, XAlign: relpos.Left, Space: 0})
-
-
-	dor.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "MECin", YAlign: relpos.Front, Space: 2})
-	act.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
-	col.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
+	pmotmtxGo.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "pmotPPC", YAlign: relpos.Front, Space: 1})
+	smotmtxGo.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "smotPPC", YAlign: relpos.Front, Space: 1})
+	dlpfc.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Precuneus", YAlign: relpos.Front, Space: 1})
+	
 
 	in.SetClass("Input")
-	act.SetClass("Input")
-	actp.SetClass("Input")
-	actd.SetClass("Input")
+	upcomingact.SetClass("Input")
 
 
 
 	onetoone := prjn.NewOneToOne()
 	pool1to1 := prjn.NewPoolOneToOne()
 	full := prjn.NewFull()
+	tile1to1 := prjn.NewRect()
+	tile1to1.Size.Set(1,1)
+	tile1to1.Scale.Set(1,1)
+	tile1to1.Wrap = true
+
+	// circle := prjn.NewCircle()
+	// circle.AutoScale = true
+	pool1to1offset := prjn.NewPoolOneToOne()
+	pool1to1offset.RecvStart = 1
 
 
-	// MCA1 to inp for analysis
-	net.ConnectLayers(mca1, inp, full, emer.Forward)
 
 	// motor thalamus projections
-	pj := net.ConnectLayers(vl, actd, prjn.NewOneToOne(), emer.Forward)
+	// pj := net.ConnectLayers(va, pmotMnt, full, emer.Forward)
+	// pj.SetClass("MThalOut")
 
 
-	// placholder for cerebellar input
-	// todo when split out add BG input
-	net.ConnectLayers(prvact,vl, prjn.NewOneToOne(), deep.BurstTRC)
+
+	// prvact projections
+	pj := net.ConnectLayers(ongoingact,vl, onetoone, deep.BurstTRC) // prvact acting as cerebellum
+	pj.SetClass("MotorTRC")
 
 
 	// action projections
-	pj = net.ConnectLayers(act, dor, prjn.NewFull(), emer.Forward)
-	pj.SetClass("ActToDorsal")
-	pj = net.ConnectLayers(actd,dorp, prjn.NewFull(), emer.Forward)
-	pj.SetClass("ActToDorsal")
-	net.ConnectLayers(actd, vl, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actp, act, full, emer.Back)
-
-	// color projections
-	net.ConnectLayers(col, lecin, prjn.NewFull(), emer.Forward)
-
-	// dorsal projections
-	net.ConnectLayers(dord, actp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(dord, dorp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(dor, mecin, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(dorp, dor, prjn.NewFull(), emer.Back)
+	pj = net.ConnectLayers(upcomingact, va, onetoone, deep.BurstTRC) // act acting like the bg signal from gpi for motor loop
+	pj.SetClass("MotorTRC")
+	net.ConnectLayers(upcomingact, pmotMnt, tile1to1, emer.Forward)
+	pj.SetClass("Strong")
+	net.ConnectLayers(upcomingactp, pmotMnt, tile1to1, emer.Forward)
+	pj.SetClass("Strong")
+	net.ConnectLayers(upcomingact, pmotppc, tile1to1, emer.Forward)
 
 
-	// ECout projections
-	pj = net.ConnectLayers(mecout, mecin, onetoone, emer.Back)
-	pj.SetClass("ECoutToECin")
-	pj = net.ConnectLayers(lecout, lecin, onetoone, emer.Back)
-	pj.SetClass("ECoutToECin")
+	// pj = net.ConnectLayers(upcomingact, motppc, pool1to1, emer.Forward) 
+	// pj.SetClass("Strong")
+	// pj = net.ConnectLayers(upcomingact, motppcp, pool1to1, emer.Forward)
+	// pj.SetClass("Strong")
+	// pj = net.ConnectLayers(upcomingact, motppcd, pool1to1, emer.Forward)
+	// pj.SetClass("Strong")
 
-	net.ConnectLayers(mecout, dorp, full, emer.Forward)
-	net.ConnectLayers(lecout, colp, full, emer.Forward)
+	// input projections
+	pj = net.ConnectLayers(in, pmotppc, full, emer.Forward)
+	pj = net.ConnectLayers(in, pmotppcp, full, emer.Forward)
+	net.ConnectLayers(in, smotppc, full, emer.Forward)
+	net.ConnectLayers(in, smotppcp, full, emer.Forward)
+	net.ConnectLayers(in, precun, full, emer.Forward)
+	net.ConnectLayers(in, precunp, full, emer.Forward)
 
-	// EC <-> CA1 encoder pathways
-	pj = net.ConnectLayersPrjn(mecin, mca1, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn")
-	pj = net.ConnectLayersPrjn(mca1, mecout, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn CA1ToECout")
-	pj = net.ConnectLayersPrjn(mecout, mca1, pool1to1, emer.Back, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn")
+	// premotor projections
 
-
-	pj = net.ConnectLayersPrjn(lecin, lca1, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn")
-	pj = net.ConnectLayersPrjn(lca1, lecout, pool1to1, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn CA1ToECout")
-	pj = net.ConnectLayersPrjn(lecout, lca1, pool1to1, emer.Back, &hip.EcCa1Prjn{})
-	pj.SetClass("EcCa1Prjn")
-
-	// Perforant pathway
-	ppath := prjn.NewUnifRnd()
-	ppath.PCon = 0.25
-
-	pj = net.ConnectLayersPrjn(mecin, dg, ppath, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL ECinToDG")
-
-	pj = net.ConnectLayersPrjn(lecin, dg, ppath, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL ECinToDG")
-
-	pj = net.ConnectLayersPrjn(mecin, ca3, ppath, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("PPath")
-	pj = net.ConnectLayersPrjn(lecin, ca3, ppath, emer.Forward, &hip.EcCa1Prjn{})
-	pj.SetClass("PPath")
-	pj = net.ConnectLayersPrjn(ca3, ca3, full, emer.Lateral, &hip.EcCa1Prjn{})
-	pj.SetClass("PPath")
-
-	// Mossy fibers
-	mossy := prjn.NewUnifRnd()
-	mossy.PCon = 0.02
-	pj = net.ConnectLayersPrjn(dg, ca3, mossy, emer.Forward, &hip.CHLPrjn{}) // no learning
-	pj.SetClass("HippoCHL")
-
-	// Schafer collaterals
-	pj = net.ConnectLayersPrjn(ca3, mca1, full, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL CA3ToCA1")
-	pj = net.ConnectLayersPrjn(ca3, lca1, full, emer.Forward, &hip.CHLPrjn{})
-	pj.SetClass("HippoCHL CA3ToCA1")
+	net.ConnectLayersPrjn(pmotMntD, rp, full, emer.Forward, &pbwm.RWPrjn{})
+	pj = net.ConnectLayers(pmotMntD,smotMnt, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotMntD,pmotppc, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotMntD,pmotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotMntD,upcomingactp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotMntD,upcomingact, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotMntD,va, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,smotMnt, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,pmotppc, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,pmotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,upcomingactp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,upcomingact, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(pmotOutD,va, full, emer.Forward)
+	pj.SetClass("Strong")
 
 
+	// supplemental motor projections
+	pj = net.ConnectLayers(smotMntD,pmotMnt, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotMntD,smotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotMntD,smotppc, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotMntD,smotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotOutD,pmotMnt, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotOutD,smotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotOutD,smotppc, full, emer.Forward)
+	pj.SetClass("Strong")
+	pj = net.ConnectLayers(smotOutD,smotppcp, full, emer.Forward)
+	pj.SetClass("Strong")
+
+	// dlpfc projections
+	pj = net.ConnectLayers(dlpfc,pmotppc, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(dlpfc,pmotppcp, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(dlpfc,smotppc, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(dlpfc,smotppcp, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(dlpfc,precun, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(dlpfc,precunp, pool1to1, emer.Forward)
+
+	pj = net.ConnectLayers(dlpfc, vm, onetoone, deep.BurstTRC) // dlpfc acting as bg signal from SNpr
+	pj.SetClass("MotorTRC")
+
+	//pmotPPC projections
+	net.ConnectLayersPrjn(pmotppc, rp, full, emer.Forward, &pbwm.RWPrjn{})
+	pj = net.ConnectLayers(pmotppc,pmotMnt, full, emer.Forward)
+	pj = net.ConnectLayersPrjn(pmotppc, pmotmtxGo, full, emer.Forward, &pbwm.MatrixTracePrjn{})
+	pj.SetClass("MatrixPrjn")
+	pj = net.ConnectLayersPrjn(pmotppc, pmotmtxNoGo, full, emer.Forward, &pbwm.MatrixTracePrjn{})
+	pj.SetClass("MatrixPrjn")
+	pj = net.ConnectLayers(pmotppc,smotppc, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(pmotppc,smotppcp, pool1to1, emer.Forward)
+	net.ConnectLayers(pmotppc, va, full, emer.Back)
+
+	//smotPPC projections
+	net.ConnectLayersPrjn(smotMntD, rp, full, emer.Forward, &pbwm.RWPrjn{})
+	net.ConnectLayers(smotppc, vm, full, emer.Forward)
+	pj = net.ConnectLayers(smotppc,smotMnt, full, emer.Forward)
+	pj = net.ConnectLayersPrjn(smotppc, smotmtxGo, full, emer.Forward, &pbwm.MatrixTracePrjn{})
+	pj.SetClass("MatrixPrjn")
+	pj = net.ConnectLayersPrjn(smotppc, smotmtxNoGo, full, emer.Forward, &pbwm.MatrixTracePrjn{})
+	pj.SetClass("MatrixPrjn")
+	pj = net.ConnectLayers(smotppc,precun, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(smotppc,precunp, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(smotppc,pmotppc, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(smotppc,pmotppcp, pool1to1, emer.Forward)
+
+	// precuneus projections
+	pj = net.ConnectLayers(precun, smotppc, pool1to1, emer.Forward)
+	pj = net.ConnectLayers(precun, smotppcp, pool1to1, emer.Forward)
 
 
-
-
-
-
-
+	snc.SendToAllBut(nil) // send dopamine to all layers..
 	net.Defaults()
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
 	err := net.Build()
@@ -617,7 +729,7 @@ func (ss *Sim) Counters(train bool) string {
 	// if train {
 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
 	// } else {
-	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
 	// }
 }
 
@@ -638,6 +750,30 @@ func (ss *Sim) UpdateView(train bool) {
 // If train is true, then learning DWt or WtFmDWt calls are made.
 // Handles netview updating within scope of AlphaCycle
 
+func (ss *Sim) ApplyReward(train bool) {
+	var en *Env
+	if train {
+		en = &ss.TrainEnv
+	} else {
+		en = &ss.TrainEnv// should be test env but need to get that set up TODO
+	}
+
+	out := ss.Net.LayerByName("UpcomingActionP").(deep.DeepLayer).AsDeep()
+	upcomingact := ss.Net.LayerByName("UpcomingAction").(deep.DeepLayer).AsDeep()
+	if rand.Float32() < ss.UseTeacherForce {
+		pats := en.State("TeachActMap")
+		upcomingact.ApplyExt(pats)
+	}
+	mxi := out.Pools[0].Inhib.Act.MaxIdx
+	netact := Actions(mxi)
+	ss.TrainEnv.SetAction(netact)
+	en.SetReward(netact)
+	pats := en.State("Reward")
+	ly := ss.Net.LayerByName("Rew").(deep.DeepLayer).AsDeep()
+	ly.ApplyExt1DTsr(pats)
+	pats = en.State("ActMap")
+	upcomingact.ApplyExt(pats)
+}
 func (ss *Sim) AlphaCyc(train bool) {
 	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
 	viewUpdt := ss.TrainUpdt
@@ -653,39 +789,6 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
-	mca1 := ss.Net.LayerByName("MCA1").(leabra.LeabraLayer).AsLeabra()
-	lca1 := ss.Net.LayerByName("LCA1").(leabra.LeabraLayer).AsLeabra()
-	ca3 := ss.Net.LayerByName("CA3").(leabra.LeabraLayer).AsLeabra()
-	mecin := ss.Net.LayerByName("MECin").(leabra.LeabraLayer).AsLeabra()
-	mecout := ss.Net.LayerByName("MECout").(leabra.LeabraLayer).AsLeabra()
-	lecin := ss.Net.LayerByName("LECin").(leabra.LeabraLayer).AsLeabra()
-	lecout := ss.Net.LayerByName("LECout").(leabra.LeabraLayer).AsLeabra()
-	mca1FmMECin := mca1.RcvPrjns.SendName("MECin").(*hip.EcCa1Prjn)
-	lca1FmLECin := lca1.RcvPrjns.SendName("LECin").(*hip.EcCa1Prjn)
-	mca1FmCa3 := mca1.RcvPrjns.SendName("CA3").(*hip.CHLPrjn)
-	lca1FmCa3 := lca1.RcvPrjns.SendName("CA3").(*hip.CHLPrjn)
-	ca3FmDg := ca3.RcvPrjns.SendName("DG").(leabra.LeabraPrjn).AsLeabra()
-
-	// First Quarter: CA1 is driven by ECin, not by CA3 recall
-	// (which is not really active yet anyway)
-	mca1FmMECin.WtScale.Abs = 1
-	lca1FmLECin.WtScale.Abs = 1
-	mca1FmCa3.WtScale.Abs = 0
-	lca1FmCa3.WtScale.Abs = 0
-
-	dgwtscale := ca3FmDg.WtScale.Rel
-	ca3FmDg.WtScale.Rel = 0 // turn off DG input to CA3 in first quarter
-
-	if train {
-		mecout.SetType(emer.Target) // clamp a plus phase during testing
-		lecout.SetType(emer.Target) // clamp a plus phase during testing
-	} else {
-		mecout.SetType(emer.Compare) // don't clamp
-		lecout.SetType(emer.Compare) // don't clamp
-	}
-	mecout.UpdateExtFlags() // call this after updating type
-	lecout.UpdateExtFlags() // call this after updating type
-
 	ss.Net.AlphaCycInit()
 	ss.Time.AlphaCycStart()
 	for qtr := 0; qtr < 4; qtr++ {
@@ -698,9 +801,7 @@ func (ss *Sim) AlphaCyc(train bool) {
 			if ss.ViewOn {
 				switch viewUpdt {
 				case leabra.Cycle:
-					if cyc != ss.Time.CycPerQtr-1 { // will be updated by quarter
-						ss.UpdateView(train)
-					}
+					ss.UpdateView(train)
 				case leabra.FastSpike:
 					if (cyc+1)%10 == 0 {
 						ss.UpdateView(train)
@@ -709,37 +810,11 @@ func (ss *Sim) AlphaCyc(train bool) {
 			}
 		}
 		switch qtr + 1 {
-		case 1: // Second, Third Quarters: CA1 is driven by CA3 recall
-			mca1FmMECin.WtScale.Abs = 0
-			lca1FmLECin.WtScale.Abs = 0
-			mca1FmCa3.WtScale.Abs = 1
-			lca1FmCa3.WtScale.Abs = 1
-			if train {
-				ca3FmDg.WtScale.Rel = dgwtscale // restore after 1st quarter
-			} else {
-				ca3FmDg.WtScale.Rel = 1 // significantly weaker for recall
-			}
-			ss.Net.GScaleFmAvgAct() // update computed scaling factors
-			ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
-		case 3: // Fourth Quarter: CA1 back to ECin drive only
-			mca1FmMECin.WtScale.Abs = 1
-			lca1FmLECin.WtScale.Abs = 1
-			mca1FmCa3.WtScale.Abs = 0
-			lca1FmCa3.WtScale.Abs = 0
-			ss.Net.GScaleFmAvgAct() // update computed scaling factors
-			ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
+		case 3: // Fourth Quarter
+			ss.ApplyReward(train)
 
-			if train { // clamp ECout from ECin
-				mecin.UnitVals(&ss.MTmpVals, "Act")
-				mecout.ApplyExt1D32(ss.MTmpVals)
-				lecin.UnitVals(&ss.LTmpVals, "Act")
-				lecout.ApplyExt1D32(ss.LTmpVals)
-			}
 		}
 		ss.Net.QuarterFinal(&ss.Time)
-		if qtr+1 == 3 {
-			// ss.MemStats(train) // must come after QuarterFinal
-		}
 		ss.Time.QuarterInc()
 		if ss.ViewOn {
 			switch {
@@ -752,11 +827,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 			}
 		}
 	}
-
-	ca3FmDg.WtScale.Rel = dgwtscale // restore
-	mca1FmCa3.WtScale.Abs = 1
-	lca1FmCa3.WtScale.Abs = 1
-
+// dont learn on OffCycle alphacycles where prediction is still developing
+	// if train && !ss.TrainEnv.OffCycle {
 	if train {
 		ss.Net.DWt()
 	}
@@ -769,44 +841,29 @@ func (ss *Sim) AlphaCyc(train bool) {
 }
 
 
+
 // ApplyInputs applies input patterns from given envirbonment.
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
+func (ss *Sim) ApplyInputs(net *pbwm.Network, en env.Env) {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// // going to the same layers, but good practice and cheap anyway
 
 	in := ss.Net.LayerByName("Input").(deep.DeepLayer).AsDeep()
-	act := ss.Net.LayerByName("Action").(deep.DeepLayer).AsDeep()
-	actp := ss.Net.LayerByName("ActionP").(deep.DeepLayer).AsDeep()
-	npos := ss.Net.LayerByName("NextPos").(deep.DeepLayer).AsDeep()
-	prvact := ss.Net.LayerByName("PrvActMap").(deep.DeepLayer).AsDeep()
-	col := ss.Net.LayerByName("Color").(deep.DeepLayer).AsDeep()
+	goalpos := ss.Net.LayerByName("GoalPos").(deep.DeepLayer).AsDeep()
+	dlpfc := ss.Net.LayerByName("dlPFC").(deep.DeepLayer).AsDeep()
+	ongoingact := ss.Net.LayerByName("OngoingAction").(deep.DeepLayer).AsDeep()
 	pats := en.State("PosMap")
 	in.ApplyExt(pats)
-	if rand.Float32() < ss.UseTeacherForce {
-		pats = en.State("ActMap")
-		act.ApplyExt(pats)
-	}
-	pats = en.State("NextPosMap")
-	npos.ApplyExt(pats)
+	pats = en.State("GoalPosMap")
+	goalpos.ApplyExt(pats)
+	pats = en.State("GoalPosMap")
+	dlpfc.ApplyExt(pats)
 	pats = en.State("PrvActMap")
-	prvact.ApplyExt(pats)
+	ongoingact.ApplyExt(pats)
 	pats = en.State("ColorMap")
-	col.ApplyExt(pats)
 
-	maxa := float32(0)
-	maxi := 0
-	for ai := 0; ai < int(ActionsN); ai++ {
-		mag := actp.Neurons[ai].ActM
-		if mag > maxa {
-			maxa = mag
-			maxi = ai
-		}
-	}
-	netact := Actions(maxi)
-	ss.TrainEnv.SetAction(netact)
 	ss.TrainEnv.Step()
 
 }
@@ -853,14 +910,14 @@ func (ss *Sim) TrainTrial() {
 }
 
 func (ss *Sim) ResetEnvironment() {
-			dg := ss.Net.LayerByName("DG").(*deep.Layer)
-			dg.InitWts()
-			ca3 := ss.Net.LayerByName("CA3").(*deep.Layer)
-			ca3.InitWts()
-			ss.Net.InitActs()
-			ss.TrainEnv.CenterAgent()
+			// dg := ss.Net.LayerByName("DG").(*deep.Layer)
+			// dg.InitWts()
+			// ca3 := ss.Net.LayerByName("CA3").(*deep.Layer)
+			// ca3.InitWts()
+			// ss.Net.InitActs()
+			// ss.TrainEnv.CenterAgent()
 
-			ss.TrainEnv.MakeWorld()
+			// ss.TrainEnv.MakeWorld()
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
@@ -878,7 +935,6 @@ func (ss *Sim) RunEnd() {
 func (ss *Sim) NewRun() {
 	run := ss.TrainEnv.Run.Cur
 	ss.TrainEnv.Init(run)
-	ss.TestEnv.Init(run)
 	ss.Time.Reset()
 	ss.Net.InitWts()
 	ss.InitStats()
@@ -916,7 +972,7 @@ func (ss *Sim) TrialStatsTRC(accum bool) {
 	}
 	acd := 0.0
 	for i, ln := range ss.TRCLays {
-		ly := ss.Net.LayerByName(ln).(*deep.Layer)
+		ly := ss.Net.LayerByName(ln).(*pbwm.Layer)
 		cd := float64(ly.CosDiff.Cos)
 		acd += cd
 		ss.TrlCosDiffTRC[i] = cd
@@ -974,34 +1030,13 @@ func (ss *Sim) EpochStatsTRC(nt float64) {
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
-	colp := ss.Net.LayerByName("ColorP").(deep.DeepLayer).AsDeep()
-	trg := ss.Net.LayerByName("Color").(deep.DeepLayer).AsDeep()
-	ss.TrlCosDiff = float64(colp.CosDiff.Cos)
-	// ss.TrlSSE, ss.TrlAvgSSE = inp.MSE(0.5) // 0.5 = per-unit tolerance -- right side of .5
-	// compute SSE against target as activation of inp outside of trg > .5
-	sse := 0.0
-	gotOne := false
-	for ni := range colp.Neurons {
-		inn := &colp.Neurons[ni]
-		if inn.IsOff() {
-			continue
-		}
-		tgn := &trg.Neurons[ni]
-		if tgn.Act > 0.5 {
-			if inn.ActM > 0.4 {
-				gotOne = true
-			}
-		} else {
-			if inn.ActM > 0.5 {
-				sse += float64(inn.ActM)
-			}
-		}
+	ly := ss.Net.LayerByName("Rew").(deep.DeepLayer).AsDeep()
+	reward := ly.Neurons[0].Act
+	ss.TrlSSE = 0
+	if reward > 0.01 {
+		ss.TrlSSE += 1
 	}
-	if !gotOne {
-		sse += 1
-	}
-	ss.TrlSSE = sse
-	ss.TrlAvgSSE = sse // not really meaningful
+
 	if ss.TrlSSE > 0.01 { // include some tolerance
 		ss.CntErr += 1
 	} else {
@@ -1088,11 +1123,18 @@ func (ss *Sim) SaveWeights(filename gi.FileName) {
 // Testing
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
+//
+func (ss *Sim) TestConfig() {
+}
+func (ss *Sim) TrainConfig() {
+}
 func (ss *Sim) TestTrial(returnOnChg bool) {
-	ss.TestEnv.Step()
+	ss.TestConfig()
+
+	ss.TrainEnv.Step()
 	
 	// Query counters FIRST
-	_, _, chg := ss.TestEnv.Counter(env.Epoch)
+	_, _, chg := ss.TrainEnv.Counter(env.Epoch)
 	if chg {
 		if ss.ViewOn && ss.TestUpdt > leabra.AlphaCycle {
 			ss.UpdateView(false)
@@ -1103,29 +1145,34 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 		}
 	}
 	
-	ss.ApplyInputs(ss.Net, &ss.TestEnv)
+	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
 	ss.AlphaCyc(false)   // !train
 	ss.TrialStats(false) // !accumulate
 	ss.LogTstTrl(ss.TstTrlLog)
+	ss.TrainConfig()
 }
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() {
-	ss.TestEnv.Init(ss.TrainEnv.Run.Cur)
+	ss.TestConfig()
+	ss.TrainEnv.Init(ss.TrainEnv.Run.Cur)
 	for {
 		ss.TestTrial(true) // return on change -- don't wrap
-		_, _, chg := ss.TestEnv.Counter(env.Epoch)
+		_, _, chg := ss.TrainEnv.Counter(env.Epoch)
 		if chg || ss.StopNow {
 			break
 		}
 	}
+	ss.TrainConfig()
 }
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
 func (ss *Sim) RunTestAll() {
+	ss.TestConfig()
 	ss.StopNow = false
 	ss.TestAll()
 	ss.Stopped()
+	ss.TrainConfig()
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -1178,7 +1225,7 @@ func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error {
 		}
 	}
 	// note: if you have more complex environments with parameters, definitely add
-	// sheets for them, e.g., "TrainEnv", "TestEnv" etc
+	// sheets for them, e.g., "TrainEnv", "TrainEnv" etc
 	return err
 }
 
@@ -1253,7 +1300,7 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	}
 
 	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(*deep.Layer)
+		ly := ss.Net.LayerByName(lnm).(*pbwm.Layer)
 		dt.SetCellFloat(ly.Nm+" ActAvg", row, float64(ly.Pools[0].ActAvg.ActPAvgEff))
 	}
 
@@ -1329,7 +1376,7 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	dt.SetCellFloat("Event", row, float64(env.Event.Cur))
 	dt.SetCellFloat("X", row, float64(env.CurPos.Col))
 	dt.SetCellFloat("Y", row, float64(env.CurPos.Row))
-	dt.SetCellString("Action", row, env.CurAct.String())
+	dt.SetCellString("UpcomingAction", row, env.CurAct.String())
 	dt.SetCellString("NetAct", row, env.ExtAct.String())
 	forced := ""
 	if env.CurAct != env.ExtAct {
@@ -1363,7 +1410,7 @@ func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
 		{"Event", etensor.INT64, nil, nil},
 		{"X", etensor.FLOAT64, nil, nil},
 		{"Y", etensor.FLOAT64, nil, nil},
-		{"Action", etensor.STRING, nil, nil},
+		{"UpcomingAction", etensor.STRING, nil, nil},
 		{"ActMag", etensor.FLOAT64, nil, nil},
 		{"NetAct", etensor.STRING, nil, nil},
 		{"Forced", etensor.STRING, nil, nil},
@@ -1388,7 +1435,7 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Event", false, true, 0, false, 0)
 	plt.SetColParams("X", false, true, 0, false, 1)
 	plt.SetColParams("Y", true, true, 0, false, 1)
-	plt.SetColParams("Action", false, true, 0, false, 0)
+	plt.SetColParams("UpcomingAction", false, true, 0, false, 0)
 	plt.SetColParams("ActMag", false, true, 0, true, 1)
 	plt.SetColParams("NetAct", false, true, 0, false, 0)
 	plt.SetColParams("Forced", true, true, 0, false, 0)
@@ -1397,7 +1444,7 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("CosDiff", false, true, 0, true, 1)
 
 	for _, lnm := range ss.TRCLays {
-		plt.SetColParams(lnm+" CosDiff", false, true, 0, true, 1)
+		plt.SetColParams(lnm+" CosDiff", true, true, 0, true, 1)
 	}
 	return plt
 }
@@ -1421,13 +1468,13 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
 	dt.SetCellFloat("Trial", row, float64(trl))
-	dt.SetCellString("TrialName", row, ss.TestEnv.String())
+	dt.SetCellString("TrialName", row, ss.TrainEnv.String())
 	dt.SetCellFloat("SSE", row, ss.TrlSSE)
 	dt.SetCellFloat("AvgSSE", row, ss.TrlAvgSSE)
 	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
 
 	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(*deep.Layer)
+		ly := ss.Net.LayerByName(lnm).(*pbwm.Layer)
 		dt.SetCellFloat(ly.Nm+" ActM.Avg", row, float64(ly.Pools[0].ActM.Avg))
 	}
 	// inp.UnitValsTensor(&ss.InputValsTsr, "ActM")
@@ -1581,7 +1628,7 @@ func (ss *Sim) LogTstCyc(dt *etable.Table, cyc int) {
 
 	dt.SetCellFloat("Cycle", cyc, float64(cyc))
 	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(*deep.Layer)
+		ly := ss.Net.LayerByName(lnm).(*pbwm.Layer)
 		dt.SetCellFloat(ly.Nm+" Ge.Avg", cyc, float64(ly.Pools[0].Inhib.Ge.Avg))
 		dt.SetCellFloat(ly.Nm+" Act.Avg", cyc, float64(ly.Pools[0].Inhib.Act.Avg))
 	}
@@ -1704,8 +1751,11 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 // 		Gui
 
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
-	nv.Scene().Camera.Pose.Pos.Set(-2.6, 2.4, 8.2) // more "head on" than default which is more "top down"
-	nv.Scene().Camera.LookAt(mat32.Vec3{-2.6, -0.5, 0}, mat32.Vec3{0, 1, 0})
+	nv.Params.LayNmSize = 0.02
+	// left/right,up/down, forward/back
+	nv.Scene().Camera.Pose.Pos.Set(-.2, 1.2, 3) // more "head on" than default which is more "top down"
+	nv.Scene().Camera.LookAt(mat32.Vec3{-.2, 0, 0}, mat32.Vec3{0, 1, 0})
+	nv.Config()
 }
 
 // ConfigGui configures the GoGi gui interface for this simulation,

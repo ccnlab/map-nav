@@ -275,9 +275,11 @@ func (ev *Env) SetAction(act Actions) {
 
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
-	// ev.World = ev.NewWorld("5X5.world")
+
+	// ev.World = ev.NewWorld("3x3.world")
+	ev.World = ev.NewWorld("5X5.world")
 	// ev.World = ev.NewWorld("10X10.world")
-	ev.World = ev.NewWorld("16x16.world")
+	// ev.World = ev.NewWorld("16x16.world")
 }
 
 // InitWorld does init on world and re-syncs

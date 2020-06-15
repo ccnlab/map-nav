@@ -94,6 +94,10 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "2.2",
 				}},
+			{Sel: ".Dorsal2", Desc: "input layers need more inhibition",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "2.2",
+				}},
 			{Sel: "#InputPToHiddenD", Desc: "critical to make this small so deep context dominates",
 				Params: params.Params{
 					"Prjn.WtScale.Rel": "0.4",
@@ -101,7 +105,11 @@ var ParamSets = params.Sets{
 
 			{Sel: ".ActToDorsal", Desc: "critical to make this small so deep context dominates",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.2",
+					"Prjn.WtScale.Rel": "0.3",
+				}},
+			{Sel: ".ActToDorsal2", Desc: "critical to make this small so deep context dominates",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "0.1",
 				}},
 
 
@@ -356,7 +364,7 @@ func (ss *Sim) New() {
 	ss.EnvRefreshFreq = 5
 	ss.ExploreProb = .5
 	ss.LayStatNms = []string{"ColorP"}
-	ss.PosAFNms = []string{"Dorsal", "DorsalD", "MECout","MCA1", "DG", "CA3"}
+	ss.PosAFNms = []string{"Dorsal2", "Dorsal2D", "Dorsal", "DorsalD", "MECout","MCA1", "DG", "CA3"}
 }
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Configs
@@ -417,17 +425,22 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	col,colp := net.AddInputPulv2D("Color", 1, ss.TrainEnv.Colors)
 	act, actd, actp := net.AddSuperDeep2D("Action",1, int(ActionsN), deep.AddPulv, deep.NoAttnPrjn)
 
-	dor, dord, dorp := net.AddSuperDeep2D("Dorsal", 10 , 10 , deep.AddPulv, deep.NoAttnPrjn)
+	dor, dord, dorp := net.AddSuperDeep4D("Dorsal", 1,3,5 , 5 , deep.AddPulv, deep.NoAttnPrjn)
 	dor.SetClass("Dorsal")
 	dorp.SetClass("Dorsal")
 	dord.SetClass("Dorsal")
+
+	dor2, dor2d, dor2p := net.AddSuperDeep4D("Dorsal2", 1,3,5,5 , deep.AddPulv, deep.NoAttnPrjn)
+	dor2.SetClass("Dorsal2")
+	dor2p.SetClass("Dorsal2")
+	dor2d.SetClass("Dorsal2")
 
 	vl := net.AddLayer2D("VL",1,int(ActionsN), deep.TRC)
 
 
 
-	mecin := net.AddLayer4D("MECin", 6, 3, 3, 10, emer.Hidden)
-	mecout := net.AddLayer4D("MECout", 6, 3, 3, 10, emer.Target) // clamped in plus phase
+	mecin := net.AddLayer4D("MECin", 6, 1, 3, 10, emer.Hidden)
+	mecout := net.AddLayer4D("MECout", 6, 1, 3, 10, emer.Target) // clamped in plus phase
 	lecin := net.AddLayer4D("LECin", 6, 3, 3, 3, emer.Hidden)
 	lecout := net.AddLayer4D("LECout", 6, 3, 3, 3, emer.Target) // clamped in plus phase
 	mca1 := net.AddLayer4D("MCA1", 6, 3, 2, 10, emer.Hidden)
@@ -459,6 +472,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 
 	dor.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "MECin", YAlign: relpos.Front, Space: 2})
+	dor2.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
 	act.SetRelPos(relpos.Rel{Rel: relpos.Below, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
 	col.SetRelPos(relpos.Rel{Rel: relpos.LeftOf, Other: "Dorsal", YAlign: relpos.Front, Space: 2})
 
@@ -471,6 +485,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	onetoone := prjn.NewOneToOne()
 	pool1to1 := prjn.NewPoolOneToOne()
+	pool1to1off3 := prjn.NewPoolOneToOne()
+	pool1to1off3.RecvStart = 3
+	pool1off3to1 := prjn.NewPoolOneToOne()
+	pool1to1off3.SendStart = 3
 	full := prjn.NewFull()
 
 
@@ -487,9 +505,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 
 	// action projections
-	pj = net.ConnectLayers(act, dor, prjn.NewFull(), emer.Forward)
+	pj = net.ConnectLayers(act, dor, full, emer.Forward)
 	pj.SetClass("ActToDorsal")
-	pj = net.ConnectLayers(actd,dorp, prjn.NewFull(), emer.Forward)
+	pj = net.ConnectLayers(actd,dorp, full, emer.Forward)
 	pj.SetClass("ActToDorsal")
 	net.ConnectLayers(actd, vl, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(actp, act, full, emer.Back)
@@ -500,8 +518,17 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// dorsal projections
 	net.ConnectLayers(dord, actp, prjn.NewFull(), emer.Forward)
 	net.ConnectLayers(dord, dorp, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(dor, mecin, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dor, mecin, pool1to1, emer.Forward)
 	net.ConnectLayers(dorp, dor, prjn.NewFull(), emer.Back)
+	pj = net.ConnectLayers(dor, dor2, full, emer.Forward)
+	pj.SetClass("ActToDorsal")
+	pj = net.ConnectLayers(dord,dor2p, full, emer.Forward)
+	pj.SetClass("ActToDorsal")
+
+	net.ConnectLayers(dor2d, actp, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dor2d, dor2p, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(dor2, mecin, pool1to1off3, emer.Forward)
+	net.ConnectLayers(dor2p, dor2, prjn.NewFull(), emer.Back)
 
 
 	// ECout projections
@@ -510,7 +537,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pj = net.ConnectLayers(lecout, lecin, onetoone, emer.Back)
 	pj.SetClass("ECoutToECin")
 
-	net.ConnectLayers(mecout, dorp, full, emer.Forward)
+	net.ConnectLayers(mecout, dorp, pool1to1, emer.Forward)
+	net.ConnectLayers(mecout, dorp, pool1off3to1, emer.Forward)
 	net.ConnectLayers(lecout, colp, full, emer.Forward)
 
 	// EC <-> CA1 encoder pathways

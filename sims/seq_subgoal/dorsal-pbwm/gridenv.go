@@ -114,20 +114,24 @@ type Env struct {
 	Epoch     env.Ctr `view:"inline" desc:"number of times through arbitrary number of Events"`
 	Event     env.Ctr `view:"inline" desc:"current ordinal item in Table -- if Sequential then = row number in table, otherwise is index in Order list that then gives row number in Table"`
 	CurPos    Pos     `desc:"current normalized position"`
+	GoalPos    Pos     `desc:"current normalized position"`
 	PosRes    int
 	CurPosMap etensor.Float32 `desc:"current position as 1-hot tensor"`
+	GoalPosMap etensor.Float32 `desc:"current position as 1-hot tensor"`
+	RewardVal float32
+	Reward   etensor.Float64 `desc:"reward value"`
 	ActRes    int
 	CurAct    Actions         `desc:"current action selected"`
+	TeachAct    Actions         `desc:"current action selected"`
 	PrvAct    Actions         `desc:"previous action selected"`
 	ExtAct    Actions         `desc:"current externally-supplied action"`
 	CurActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
+	TeachActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
 	PrvActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
 	ColorMap etensor.Float32 `desc:" color as a 1 hot tensor, returned as state"`
 	World     World
 	Policy    Policy
 	PrevPos   Pos
-	NextPosMap      etensor.Float32
-	OffCycle    bool        `desc:"toggled each cycle to only update every other cycle, allowing the network a cycle to develop predictions"`
 	Colors  int
 	pop2D   popcode.TwoD
 
@@ -180,10 +184,12 @@ func (ev *Env) Init(run int) {
 	ev.Event.Cur = -1 // init state -- key so that first Step() = 0
 	ev.CurPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 	ev.CurActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
+	ev.TeachActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 	ev.PrvActMap.SetShape([]int{int(ActionsN), 1, 1, ev.ActRes}, nil, []string{"Action", "1", "1", "1"})
 	ev.ColorMap.SetShape([]int{ev.Colors, 1, 1, 1}, nil, []string{"Color", "1", "1", "1"})
+	ev.Reward.SetShape([]int{1}, nil, []string{"1"})
 
-	ev.NextPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
+	ev.GoalPosMap.SetShape([]int{rows, cols}, nil, []string{"Y", "X"})
 }
 
 func (ev *Env) CenterAgent() {
@@ -194,14 +200,11 @@ func (ev *Env) CenterAgent() {
 }
 
 func (ev *Env) Step() bool {
-	// if ev.OffCycle {
-	// 	ev.OffCycle = false
-	// 	return true
-	// }
-	ev.OffCycle = true
 	// set CurAct to the output of the Policy. ExtAct is the action selected by the network
 	ev.CurAct = ev.Policy.Act(ev.ExtAct, ev)
 	ev.TakeAction(ev.PrvAct)
+	ev.SelectGoal(1)
+	ev.UpdateState()
 	ev.Epoch.Same()      // good idea to just reset all non-inner-most counters at start
 	if ev.Event.Incr() { // if true, hit max, reset to 0
 		ev.Epoch.Incr()
@@ -209,14 +212,45 @@ func (ev *Env) Step() bool {
 
 	return true
 }
+func (ev *Env) SetReward(networkaction Actions) {
+	newpos := Move(ev.CurPos,networkaction)
+	if ev.GoalPos.Equals(newpos) {
+		ev.RewardVal = 1
+	} else {
+		ev.RewardVal = -1
+	}
+	ev.Reward.Values[0] = float64(ev.RewardVal)
+	ev.UpdateState()
+
+}
+
+func (pos *Pos) Equals(otherpos Pos) bool {
+	return pos.Col == otherpos.Col && pos.Row == otherpos.Row
+}
+func (ev *Env) SelectGoal(stepsaway int){
+	pos := ev.CurPos
+	for i := 0 ; i < stepsaway ; i++ {
+		act := ev.RandomAction()
+		ev.TeachAct = act
+		pos = Move(pos, act)
+	}
+	ev.GoalPos = pos
+
+}
+
+func (ev *Env) RandomAction() Actions {
+	return Actions(rand.Intn(int(ActionsN)))
+}
 
 func (ev *Env) States() env.Elements {
 	els := env.Elements{
 		{"PosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
-		{"NextPosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
+		{"GoalPosMap", []int{len(ev.World.grid), len(ev.World.grid[0])}, []string{"Y", "X"}},
 		{"ActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
 		{"PrvActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
+		{"TeachActMap", []int{int(ActionsN)}, []string{"ActionsN"}},
 		{"ColorMap", []int{ev.Colors}, []string{"ColorsN"}},
+		{"Reward", []int{1}, []string{"1"}},
 	}
 	return els
 }
@@ -224,14 +258,18 @@ func (ev *Env) State(element string) etensor.Tensor {
 	switch element {
 	case "PosMap":
 		return &ev.CurPosMap
-	case "NextPosMap":
-		return &ev.NextPosMap
+	case "GoalPosMap":
+		return &ev.GoalPosMap
 	case "ActMap":
 		return &ev.CurActMap
+	case "TeachActMap":
+		return &ev.TeachActMap
 	case "PrvActMap":
 		return &ev.PrvActMap
 	case "ColorMap":
 		return &ev.ColorMap
+	case "Reward":
+		return &ev.Reward
 	default:
 		return nil
 	}
@@ -275,9 +313,11 @@ func (ev *Env) SetAction(act Actions) {
 
 // MakeWorld constructs a new virtual physics world
 func (ev *Env) MakeWorld() {
-	// ev.World = ev.NewWorld("5X5.world")
+
+	// ev.World = ev.NewWorld("3x3.world")
+	ev.World = ev.NewWorld("5X5.world")
 	// ev.World = ev.NewWorld("10X10.world")
-	ev.World = ev.NewWorld("16x16.world")
+	// ev.World = ev.NewWorld("16x16.world")
 }
 
 // InitWorld does init on world and re-syncs
@@ -327,8 +367,6 @@ func (ev *Env) TakeAction(act Actions) {
 
 
 	// handle any non position side effects of action
-	// update "neural" reps of state
-	ev.UpdateState()
 }
 
 // UpdateWorld updates world after action
@@ -343,20 +381,18 @@ func (ev *Env) UpdateState() {
 		X: float32(ev.CurPos.Col),
 		Y: float32(ev.CurPos.Row),
 	}
-
 	ev.pop2D.Encode(&ev.CurPosMap, vec)
 
-
-	nextpos := Move(ev.CurPos, Actions(ev.CurAct))
 	vec = mat32.Vec2{
-		X: float32(nextpos.Col),
-		Y: float32(nextpos.Row),
+		X: float32(ev.GoalPos.Col),
+		Y: float32(ev.GoalPos.Row),
 	}
-
-	ev.pop2D.Encode(&ev.NextPosMap, vec)
+	ev.pop2D.Encode(&ev.GoalPosMap, vec)
 
 	ev.CurActMap.SetZeros()
 	ev.CurActMap.SetFloat1D(int(ev.CurAct),1.0)
+	ev.TeachActMap.SetZeros()
+	ev.TeachActMap.SetFloat1D(int(ev.TeachAct),1.0)
 	ev.PrvActMap.SetZeros()
 	ev.PrvActMap.SetFloat1D(int(ev.PrvAct),1.0)
 

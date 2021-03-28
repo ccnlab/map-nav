@@ -31,9 +31,9 @@ import (
 	"github.com/goki/gi/gi"
 	"github.com/goki/gi/gimain"
 	"github.com/goki/gi/giv"
-	"github.com/goki/gi/mat32"
 	"github.com/goki/ki/ki"
 	"github.com/goki/ki/kit"
+	"github.com/goki/mat32"
 )
 
 // this is the stub main for gogi that calls our actual mainrun function, at end of file
@@ -59,9 +59,7 @@ func (ev *PatsType) UnmarshalJSON(b []byte) error { return kit.EnumUnmarshalJSON
 const (
 	LineMaze PatsType = iota
 
-
 	OpenField
-
 
 	PatsTypeN
 )
@@ -182,9 +180,9 @@ var ParamSets = params.Sets{
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net          *leabra.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	Learn        LearnType         `desc:"select which type of learning to use"`
-	Pats         PatsType          `desc:"select which type of patterns to use"`
+	Net   *leabra.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Learn LearnType       `desc:"select which type of learning to use"`
+	Pats  PatsType        `desc:"select which type of patterns to use"`
 	// Easy         *etable.Table     `view:"no-inline" desc:"easy training patterns -- can be learned with Hebbian"`
 	// Hard         *etable.Table     `view:"no-inline" desc:"hard training patterns -- require error-driven"`
 	// Impossible   *etable.Table     `view:"no-inline" desc:"impossible training patterns -- require error-driven + hidden layer"`
@@ -322,22 +320,20 @@ func (ss *Sim) UpdateEnv() {
 		//	ss.TrainEnv.Table =  splits.Splits[0]//etable.NewIdxView(ss.Lines2)
 		//	ss.TestEnv.Table =  splits.Splits[1]//etable.NewIdxView(ss.Lines2)
 
-
 	}
 }
 
 func (ss *Sim) ConfigNet(net *leabra.Network) {
 	net.InitName(net, "SubGoalGen")
 	curin := net.AddLayer2D("ActualState_Input", 3, 3, emer.Input)
-	actout := net.AddLayer2D("ActualAction_Output", 1,4, emer.Target)
-	goalin  := net.AddLayer2D("Goal_Input", 3, 3, emer.Input)
-	statenodes  := net.AddLayer2D("StateNodes", 3, 3, emer.Hidden)
-	actnodes  := net.AddLayer2D("ActionNodes", 1, 4, emer.Hidden)
-	actrelhid  := net.AddLayer2D("ActRelHid", 15, 15, emer.Hidden)
-	actbtwn  := net.AddLayer2D("ActionBetween", 1, 4, emer.Hidden)
+	actout := net.AddLayer2D("ActualAction_Output", 1, 4, emer.Target)
+	goalin := net.AddLayer2D("Goal_Input", 3, 3, emer.Input)
+	statenodes := net.AddLayer2D("StateNodes", 3, 3, emer.Hidden)
+	actnodes := net.AddLayer2D("ActionNodes", 1, 4, emer.Hidden)
+	actrelhid := net.AddLayer2D("ActRelHid", 15, 15, emer.Hidden)
+	actbtwn := net.AddLayer2D("ActionBetween", 1, 4, emer.Hidden)
 	curhid := net.AddLayer2D("CurHidden", 3, 3, emer.Hidden)
 	goalhid := net.AddLayer2D("GoalHidden", 3, 3, emer.Hidden)
-
 
 	actout.SetClass("ActualAction_Output")
 	actbtwn.SetClass("PPC")
@@ -357,18 +353,17 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	net.ConnectLayers(curin, curhid, prjn.NewOneToOne(), emer.Forward)
 	net.ConnectLayers(goalin, goalhid, prjn.NewOneToOne(), emer.Forward)
 
-	net.ConnectLayers(curhid,actrelhid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(goalhid,actrelhid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actrelhid,curhid, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(actrelhid,goalhid, prjn.NewFull(), emer.Back)
-	net.ConnectLayers(actbtwn,actrelhid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actrelhid,actbtwn, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(curhid, actrelhid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(goalhid, actrelhid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(actrelhid, curhid, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(actrelhid, goalhid, prjn.NewFull(), emer.Back)
+	net.ConnectLayers(actbtwn, actrelhid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(actrelhid, actbtwn, prjn.NewFull(), emer.Back)
 
-	net.ConnectLayers(statenodes,curhid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(statenodes,goalhid, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actbtwn,actnodes, prjn.NewFull(), emer.Forward)
-	net.ConnectLayers(actnodes,actbtwn, prjn.NewFull(), emer.Back)
-
+	net.ConnectLayers(statenodes, curhid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(statenodes, goalhid, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(actbtwn, actnodes, prjn.NewFull(), emer.Forward)
+	net.ConnectLayers(actnodes, actbtwn, prjn.NewFull(), emer.Back)
 
 	net.ConnectLayers(actnodes, actout, prjn.NewOneToOne(), emer.Forward)
 	net.ConnectLayers(actout, actnodes, prjn.NewOneToOne(), emer.Back)
@@ -507,7 +502,7 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	lays := []string{"ActualState_Input","Goal_Input", "ActualAction_Output"}
+	lays := []string{"ActualState_Input", "Goal_Input", "ActualAction_Output"}
 	for _, lnm := range lays {
 		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
 		pats := en.State(ly.Nm)

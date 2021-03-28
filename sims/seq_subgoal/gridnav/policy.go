@@ -6,16 +6,17 @@ package main
 
 import (
 	"math/rand"
-	"github.com/goki/gi/mat32"
+
+	"github.com/goki/mat32"
 )
 
 // Policy provides a parameterized default "subcortical" navigation policy
 type Policy struct {
-	Auto         bool       `desc:"let the network do the driving, instead of having strong training wheels"`
-	UseInAct     float32    `desc:"probability of using input activation from model"`
-	AvoidPGo     float32    `desc:"probability of going when avoid turning if current avg dist > prev"`
-	PrvAct       Actions    `inactive:"+" desc:"previous action"`
-	CurPos       mat32.Vec2 `inactive:"+" desc:"current position"`
+	Auto     bool       `desc:"let the network do the driving, instead of having strong training wheels"`
+	UseInAct float32    `desc:"probability of using input activation from model"`
+	AvoidPGo float32    `desc:"probability of going when avoid turning if current avg dist > prev"`
+	PrvAct   Actions    `inactive:"+" desc:"previous action"`
+	CurPos   mat32.Vec2 `inactive:"+" desc:"current position"`
 }
 
 func (pl *Policy) Defaults() {
@@ -23,10 +24,10 @@ func (pl *Policy) Defaults() {
 }
 
 // Act is main interface call that updates dist and selects action and updates state
-func (pl *Policy) Act(inact Actions,ev *Env) Actions {
+func (pl *Policy) Act(inact Actions, ev *Env) Actions {
 	var act Actions
 	if pl.Auto {
-		act = pl.ActChooseAuto(inact,ev )
+		act = pl.ActChooseAuto(inact, ev)
 	} else {
 		act = pl.ActChooseTrain(inact, ev)
 	}
@@ -39,17 +40,17 @@ func (pl *Policy) Act(inact Actions,ev *Env) Actions {
 // extensive training wheels mode
 func (pl *Policy) ActChooseTrain(inact Actions, ev *Env) Actions {
 	if rand.Float32() > pl.UseInAct {
-	// Random Walk policy
+		// Random Walk policy
 		// try up to 10 times to find an action that doesn't hit a wall
-		for i:= 0 ; i <10 ; i++ {
+		for i := 0; i < 10; i++ {
 			act := Actions(rand.Intn(int(ActionsN)))
-			npos := Move(ev.CurPos,act)
+			npos := Move(ev.CurPos, act)
 			if ev.World.Loc(npos).open {
 				return act
 			}
 		}
 
-	// walk in a circle policy
+		// walk in a circle policy
 		// switch pl.PrvAct {
 		// 	case North:
 		// 		return East

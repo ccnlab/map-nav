@@ -8,11 +8,14 @@ import (
 	// "image"
 	"fmt"
 	"io/ioutil"
+
 	// "log"
 	"strings"
-	"github.com/goki/gi/mat32"
+
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/popcode"
+	"github.com/goki/mat32"
+
 	// "github.com/emer/emergent/erand"
 	// "github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
@@ -22,7 +25,6 @@ import (
 	// "github.com/goki/gi/gi"
 	// "github.com/goki/gi/gi3d"
 	// "github.com/goki/gi/giv"
-	// "github.com/goki/gi/mat32"
 	// "github.com/goki/gi/oswin"
 	// "github.com/goki/gi/oswin/gpu"
 	// "github.com/goki/gi/units"
@@ -59,8 +61,8 @@ type Tile struct {
 }
 
 var tilekey = map[rune]Tile{
-	' ' : Tile{open:true},
-	'#' : Tile{open:false},
+	' ': Tile{open: true},
+	'#': Tile{open: false},
 }
 
 type World struct {
@@ -75,13 +77,13 @@ func NewWorld(filename string) World {
 	}
 	datstr := string(dat)
 	datstr = strings.Trim(datstr, "\n")
-	lines := strings.Split(datstr,"\n")
+	lines := strings.Split(datstr, "\n")
 
 	world := World{
 		grid: make([][]Tile, len(lines)),
 	}
 	for i := range lines {
-		world.grid[i] = make([]Tile,len(lines[0]))
+		world.grid[i] = make([]Tile, len(lines[0]))
 	}
 	for row, line := range lines {
 		for col, symbol := range line {
@@ -98,26 +100,26 @@ func (wld *World) Loc(pos Pos) Tile {
 
 // Env manages the navigation environment
 type Env struct {
-	Nm        string  `desc:"name of this environment"`
-	Dsc       string  `desc:"description of this environment"`
-	Run       env.Ctr `view:"inline" desc:"current run of model as provided during Init"`
-	Epoch     env.Ctr `view:"inline" desc:"number of times through arbitrary number of Events"`
-	Event     env.Ctr `view:"inline" desc:"current ordinal item in Table -- if Sequential then = row number in table, otherwise is index in Order list that then gives row number in Table"`
-	CurPos    Pos     `desc:"current normalized position"`
-	PosRes    int
-	CurPosMap etensor.Float32 `desc:"current position as 1-hot tensor"`
-	ActRes    int
-	CurAct    Actions         `desc:"current action selected"`
-	PrvAct    Actions         `desc:"previous action selected"`
-	ExtAct    Actions         `desc:"current externally-supplied action"`
-	CurActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
-	PrvActMap etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
-	World     World
-	Policy    Policy
-	PrevPos   Pos
-	NextPosMap      etensor.Float32
-	OffCycle    bool        `desc:"toggled each cycle to only update every other cycle, allowing the network a cycle to develop predictions"`
-	pop2D   popcode.TwoD
+	Nm         string  `desc:"name of this environment"`
+	Dsc        string  `desc:"description of this environment"`
+	Run        env.Ctr `view:"inline" desc:"current run of model as provided during Init"`
+	Epoch      env.Ctr `view:"inline" desc:"number of times through arbitrary number of Events"`
+	Event      env.Ctr `view:"inline" desc:"current ordinal item in Table -- if Sequential then = row number in table, otherwise is index in Order list that then gives row number in Table"`
+	CurPos     Pos     `desc:"current normalized position"`
+	PosRes     int
+	CurPosMap  etensor.Float32 `desc:"current position as 1-hot tensor"`
+	ActRes     int
+	CurAct     Actions         `desc:"current action selected"`
+	PrvAct     Actions         `desc:"previous action selected"`
+	ExtAct     Actions         `desc:"current externally-supplied action"`
+	CurActMap  etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
+	PrvActMap  etensor.Float32 `desc:"action as a 1 hot tensor, returned as state"`
+	World      World
+	Policy     Policy
+	PrevPos    Pos
+	NextPosMap etensor.Float32
+	OffCycle   bool `desc:"toggled each cycle to only update every other cycle, allowing the network a cycle to develop predictions"`
+	pop2D      popcode.TwoD
 }
 
 func (ev *Env) Name() string { return ev.Nm }
@@ -125,7 +127,7 @@ func (ev *Env) Desc() string { return ev.Dsc }
 
 // String returns the current state as a string
 func (ev *Env) String() string {
-	return fmt.Sprintf("Run %d Epoch %d Event %d ",ev.Run.Cur, ev.Epoch.Cur, ev.Event.Cur)
+	return fmt.Sprintf("Run %d Epoch %d Event %d ", ev.Run.Cur, ev.Epoch.Cur, ev.Event.Cur)
 }
 func (ev *Env) Validate() error {
 	return nil
@@ -139,16 +141,16 @@ func (ev *Env) Init(run int) {
 
 	ev.MakeWorld()
 	rows, cols := len(ev.World.grid), len(ev.World.grid[0])
-        ev.CurPos.Row = 1
+	ev.CurPos.Row = 1
 	ev.CurPos.Col = 1
 	ev.PrevPos = ev.CurPos
 
 	ev.pop2D = popcode.TwoD{}
 	ev.pop2D.Code = popcode.GaussBump
-	ev.pop2D.Min.Set(0.0,0.0)
-	ev.pop2D.Max.Set(float32(rows),float32(cols))
+	ev.pop2D.Min.Set(0.0, 0.0)
+	ev.pop2D.Max.Set(float32(rows), float32(cols))
 	sigma := float32(0.1)
-	ev.pop2D.Sigma.Set(sigma,sigma)
+	ev.pop2D.Sigma.Set(sigma, sigma)
 	ev.pop2D.Thr = 0.1
 	ev.pop2D.Clip = true
 	ev.pop2D.MinSum = 0.2
@@ -264,7 +266,6 @@ func (ev *Env) ReMakeWorld() {
 	ev.MakeWorld()
 }
 
-
 func Move(pos Pos, act Actions) Pos {
 
 	switch act {
@@ -308,8 +309,6 @@ func (ev *Env) TakeAction(act Actions) {
 func (ev *Env) UpdateWorld() {
 }
 
-
-
 // UpdateState updates the current state representations (depth, action)
 func (ev *Env) UpdateState() {
 	vec := mat32.Vec2{
@@ -318,7 +317,6 @@ func (ev *Env) UpdateState() {
 	}
 
 	ev.pop2D.Encode(&ev.CurPosMap, vec)
-
 
 	nextpos := Move(ev.CurPos, Actions(ev.CurAct))
 	vec = mat32.Vec2{
@@ -329,8 +327,8 @@ func (ev *Env) UpdateState() {
 	ev.pop2D.Encode(&ev.NextPosMap, vec)
 
 	ev.CurActMap.SetZeros()
-	ev.CurActMap.SetFloat1D(int(ev.CurAct),1.0)
+	ev.CurActMap.SetFloat1D(int(ev.CurAct), 1.0)
 	ev.PrvActMap.SetZeros()
-	ev.PrvActMap.SetFloat1D(int(ev.PrvAct),1.0)
+	ev.PrvActMap.SetFloat1D(int(ev.PrvAct), 1.0)
 
 }

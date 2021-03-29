@@ -115,7 +115,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.FOV = 180
 	ev.FoveaSize = 1
 	ev.FoveaAngInc = 5
-	ev.PopSize = 12
+	ev.PopSize = 16
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 
@@ -186,7 +186,7 @@ func (ev *FWorld) ConfigImpl() {
 	ev.NextStates["ProxSoma"] = ps
 
 	vs := &etensor.Float32{}
-	vs.SetShape([]int{1, ev.PopSize}, nil, []string{"1", "Pop"})
+	vs.SetShape([]int{ev.PopSize, 1}, nil, []string{"Pop", "1"})
 	ev.NextStates["Vestibular"] = vs
 
 	is := &etensor.Float32{}

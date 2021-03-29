@@ -69,29 +69,35 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.WtBal.On": "false",
 				}},
-			{Sel: ".V2d", Desc: "depth input layers use pool inhibition, weaker global?",
+			{Sel: "#V2Pd", Desc: "depth input layers use pool inhibition, weaker global?",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
 				}},
-			{Sel: ".S1", Desc: "S1 uses pool inhib",
+			{Sel: "#S1S", Desc: "S1 uses pool inhib",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.0", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.4", // weaker
 				}},
-			{Sel: ".MT", Desc: "MT uses pool inhibition, full global?",
+			{Sel: "#S1V", Desc: "S1V regular",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.6", // 1.4 too low,
+					"Layer.Inhib.Layer.Gi": "1.8",
+				}},
+			{Sel: ".MSTd", Desc: "MT uses pool inhibition, full global?",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.6",
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.6",
 				}},
-			{Sel: ".7a", Desc: "IPL uses pool inhibition, weaker global?",
+			{Sel: ".cIPL", Desc: "cIPL global",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.2",
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.6",
+					"Layer.Inhib.Layer.Gi": "1.8",
+				}},
+			{Sel: "#cIPLP", Desc: "cIPL global",
+				Params: params.Params{
+					"Layer.TRC.NoTopo": "true", // true def
 				}},
 			{Sel: ".PCC", Desc: "PCC uses pool inhibition but is treated as full",
 				Params: params.Params{
@@ -261,8 +267,6 @@ type Sim struct {
 	Trace         *etensor.Int       `view:"no-inline" desc:"trace of movement for visualization"`
 	TraceView     *etview.TensorGrid `desc:"view of the activity trace"`
 	WorldView     *etview.TensorGrid `desc:"view of the world"`
-	State         *etable.Table      `desc:"table recording env"`
-	StateView     *etview.TableView  `view:"-" desc:"the main view"`
 	TrnEpcPlot    *eplot.Plot2D      `view:"-" desc:"the training epoch plot"`
 	TrnTrlPlot    *eplot.Plot2D      `view:"-" desc:"the training trial plot"`
 	TstEpcPlot    *eplot.Plot2D      `view:"-" desc:"the testing epoch plot"`
@@ -364,40 +368,55 @@ func (ss *Sim) ConfigEnv() {
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
 
+	ev := &ss.TrainEnv
+	fsz := 1 + 2*ev.FoveaSize
+	// popsize = 12
+
 	// input / output layers:
-	v2 := net.AddLayer4D("V2d", 8, 16, 1, ss.TrainEnv.NFOVRays, emer.Input)
-	s1 := net.AddLayer4D("S1", 4, 1, 1, ss.TrainEnv.PopSize, emer.Input)
+	v2pd := net.AddLayer4D("V2Pd", 1, ev.NFOVRays, ev.PopSize, 1, emer.Input) // Depth
+	v2fd := net.AddLayer4D("V2Fd", 1, fsz, ev.PopSize, 1, emer.Input)         // FovDepth
 
-	m1 := net.AddLayer2D("M1", 7, 7, emer.Hidden)
-	m1p := net.AddLayer2D("M1P", ss.TrainEnv.PatSize.Y, ss.TrainEnv.PatSize.X, emer.Target)
+	v1f := net.AddLayer4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, emer.Input) // Fovea
 
-	mt, mtct, mtp := net.AddDeep4D("MT", 4, 8, 4, 4)
-	mtp.Shape().SetShape([]int{4, 8, 1, ss.TrainEnv.NFOVRays}, nil, nil)
-	mtp.(*deep.TRCLayer).Drivers.Add("V2d")
+	s1s := net.AddLayer4D("S1S", 1, 4, 2, 1, emer.Input)                       // ProxSoma
+	s1v := net.AddLayer2D("S1V", ev.PopSize, 1, emer.Input)                    // Vestibular
+	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
 
-	ipl, iplct, iplp := net.AddDeep4D("7a", 2, 4, 5, 5)
-	iplp.Shape().SetShape([]int{2, 4, 3, ss.TrainEnv.NFOVRays}, nil, nil)
-	iplp.(*deep.TRCLayer).Drivers.Add("V2d", "S1") // V2d = NDepthCode = 8, S1 = AngRes = 16,
+	m1 := net.AddLayer2D("M1", 8, 8, emer.Hidden)
+	m1p := net.AddLayer2D("M1P", ev.PatSize.Y, ev.PatSize.X, emer.Target) // Action
 
-	pcc, pccct, pccp := net.AddDeep4D("PCC", 2, 4, 5, 5)
-	pccp.Shape().SetShape([]int{2, 4, 3, ss.TrainEnv.NFOVRays}, nil, nil)
-	pccp.(*deep.TRCLayer).Drivers.Add("V2d", "S1") // V2d = NDepthCode = 8, S1 = AngRes = 16,
+	mstd, mstdct, mstdp := net.AddDeep4D("MSTd", 1, 6, 7, 7) // full field optic flow
+	mstdp.Shape().SetShape([]int{1, 6, ev.PopSize, 2}, nil, nil)
+	mstdp.(*deep.TRCLayer).Drivers.Add("V2Pd", "S1V")
+
+	cipl, ciplct, ciplp := net.AddDeep2D("cIPL", 8, 8)
+	ciplp.Shape().SetShape([]int{1, 6, 7, 7}, nil, nil)
+	ciplp.(*deep.TRCLayer).Drivers.Add("MSTd")
+	// note: has Layer.TRC.NoTopo set to true in params by default
+
+	pcc, pccct, pccp := net.AddDeep2D("PCC", 8, 8)
+	pccp.Shape().SetShape([]int{11, 8}, nil, nil)
+	pccp.(*deep.TRCLayer).Drivers.Add("cIPL", "S1S", "S1V")
 	// note: has Layer.TRC.NoTopo set to true in params by default
 
 	sma, smact, smap := net.AddDeep2D("SMA", 8, 8)
-	smap.Shape().SetShape([]int{m1.Shape().Dim(0) + 1, ss.TrainEnv.PopSize}, nil, nil)
-	smap.(*deep.TRCLayer).Drivers.Add("M1", "S1")
+	smap.Shape().SetShape([]int{16, 8}, nil, nil)
+	smap.(*deep.TRCLayer).Drivers.Add("M1", "PCC")
+
+	// mt, mtct, mtp := net.AddDeep4D("MT", 4, 8, 4, 4)
+	// mtp.Shape().SetShape([]int{4, 8, 1, ss.TrainEnv.NFOVRays}, nil, nil)
+	// mtp.(*deep.TRCLayer).Drivers.Add("V2Pd")
 
 	m1.SetClass("M1")
 	m1p.SetClass("M1")
 
-	mt.SetClass("MT")
-	mtct.SetClass("MT")
-	mtp.SetClass("MT")
+	mstd.SetClass("MSTd")
+	mstdct.SetClass("MSTd")
+	mstdp.SetClass("MSTd")
 
-	ipl.SetClass("7a")
-	iplct.SetClass("7a")
-	iplp.SetClass("7a")
+	cipl.SetClass("cIPL")
+	ciplct.SetClass("cIPL")
+	ciplp.SetClass("cIPL")
 
 	pcc.SetClass("PCC")
 	pccct.SetClass("PCC")
@@ -407,26 +426,32 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	smact.SetClass("SMA")
 	smap.SetClass("SMA")
 
-	s1.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "V2d", XAlign: relpos.Left, Space: 4})
+	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "V2Pd", YAlign: relpos.Front, Space: 4})
+	v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "V1F", XAlign: relpos.Left, Space: 4})
 
-	mt.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2d", XAlign: relpos.Left, YAlign: relpos.Front})
-	mtct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MT", XAlign: relpos.Left, Space: 2})
-	mtp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MTCT", XAlign: relpos.Left, Space: 2})
+	s1s.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "V1F", YAlign: relpos.Front, Space: 4})
+	s1v.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "S1S", YAlign: relpos.Front, Space: 8})
+	ins.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "S1V", YAlign: relpos.Front, Space: 4})
 
-	ipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MT", YAlign: relpos.Front})
-	iplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "7a", XAlign: relpos.Left, Space: 2})
-	iplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "7aCT", XAlign: relpos.Left, Space: 2})
+	m1p.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Ins", YAlign: relpos.Front, Space: 8})
 
-	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "7a", YAlign: relpos.Front, Space: 10})
+	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2Pd", XAlign: relpos.Left, YAlign: relpos.Front})
+	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTd", XAlign: relpos.Left, Space: 2})
+	mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTdCT", XAlign: relpos.Left, Space: 2})
+
+	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MSTd", YAlign: relpos.Front, Space: 2})
+	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "cIPL", XAlign: relpos.Left, Space: 2})
+	ciplp.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MSTdP", YAlign: relpos.Back, Space: 2})
+
+	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "cIPL", YAlign: relpos.Front, Space: 6})
 	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCC", XAlign: relpos.Left, Space: 2})
 	pccp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCCCT", XAlign: relpos.Left, Space: 2})
 
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "PCC", YAlign: relpos.Front, Space: 10})
+	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "PCC", YAlign: relpos.Front, Space: 6})
 	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left, Space: 2})
 	smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 2})
 
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 8})
-	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "M1", XAlign: relpos.Left, Space: 8})
+	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
 
 	full := prjn.NewFull()
 	sameu := prjn.NewPoolSameUnit()
@@ -435,15 +460,15 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// basic super cons
 
-	net.ConnectLayers(v2, mt, ss.Prjn4x4Skp2, emer.Forward)
+	net.ConnectLayers(v2pd, mstd, ss.Prjn4x4Skp2, emer.Forward)
 
-	// MT <-> IPL
-	net.ConnectLayers(mt, ipl, ss.Prjn4x4Skp2, emer.Forward)
-	net.ConnectLayers(ipl, mt, ss.Prjn4x4Skp2Recip, emer.Back)
+	// MStd <-> CIPl
+	net.ConnectLayers(mstd, cipl, full, emer.Forward)
+	net.ConnectLayers(cipl, mstd, full, emer.Back)
 
-	// IPL <-> PCC
-	net.ConnectLayers(ipl, pcc, full, emer.Forward)
-	net.ConnectLayers(pcc, ipl, full, emer.Back)
+	// CIPl <-> PCC
+	net.ConnectLayers(cipl, pcc, full, emer.Forward)
+	net.ConnectLayers(pcc, cipl, full, emer.Back)
 
 	// PCC <-> SMA
 	net.ConnectLayers(pcc, sma, full, emer.Forward)
@@ -455,43 +480,43 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.BidirConnectLayers(m1, m1p, full)
 
 	////////////////////
-	// to MT
+	// to MStd
 
-	net.ConnectLayers(mt, mt, sameu, emer.Lateral)
+	net.ConnectLayers(mstd, mstd, sameu, emer.Lateral)
 
-	net.ConnectLayers(sma, mt, full, emer.Back)
-	net.ConnectLayers(s1, mt, full, emer.Back)
+	net.ConnectLayers(sma, mstd, full, emer.Back)
+	net.ConnectLayers(s1s, mstd, full, emer.Back)
 
-	net.ConnectCtxtToCT(mtct, mtct, ss.Prjn3x3Skp1).SetClass("CTSelf")
+	net.ConnectCtxtToCT(mstdct, mstdct, ss.Prjn3x3Skp1).SetClass("CTSelf")
 
-	// MTCT top-down depth
-	net.ConnectLayers(iplct, mtct, ss.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
-	net.ConnectLayers(pccct, mtct, full, emer.Back).SetClass("CTBack")
+	// MStdCT top-down depth
+	net.ConnectLayers(ciplct, mstdct, ss.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(pccct, mstdct, full, emer.Back).SetClass("CTBack")
 
 	// todo: try S -> CT leak back -- useful in wwi3d
-	// todo: try higher CT -> mtp  -- useful in wwi3d
+	// todo: try higher CT -> mstdp  -- useful in wwi3d
 
 	////////////////////
-	// to IPL / 7a
+	// to CIPl / 7a
 
-	net.ConnectLayers(sma, ipl, full, emer.Back)
-	net.ConnectLayers(s1, ipl, full, emer.Back)
-	net.ConnectLayers(m1p, ipl, full, emer.Back) // todo: m1?
+	net.ConnectLayers(sma, cipl, full, emer.Back)
+	net.ConnectLayers(s1s, cipl, full, emer.Back)
+	net.ConnectLayers(m1p, cipl, full, emer.Back) // todo: m1?
 
-	net.ConnectCtxtToCT(iplct, iplct, full).SetClass("CTSelf")
+	net.ConnectCtxtToCT(ciplct, ciplct, full).SetClass("CTSelf")
 
-	net.ConnectLayers(pccct, iplct, full, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(smact, iplct, full, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(pccct, ciplct, full, emer.Back).SetClass("CTBack")
+	// net.ConnectLayers(smact, ciplct, full, emer.Back).SetClass("CTBack")
 
-	net.ConnectLayers(mtct, iplp, ss.Prjn4x4Skp2, emer.Forward).SetClass("FwdToPulv")
+	net.ConnectLayers(mstdct, ciplp, ss.Prjn4x4Skp2, emer.Forward).SetClass("FwdToPulv")
 
 	// todo: try S -> CT leak back -- useful in wwi3d
-	// todo: try higher CT -> mtp  -- useful in wwi3d
+	// todo: try higher CT -> mstdp  -- useful in wwi3d
 
 	////////////////////
 	// to PCC
 
-	net.ConnectLayers(s1, pcc, full, emer.Forward)
+	net.ConnectLayers(s1s, pcc, full, emer.Forward)
 	net.ConnectLayers(m1p, pcc, full, emer.Back)
 
 	net.ConnectCtxtToCT(pccct, pccct, full).SetClass("CTSelf")
@@ -501,7 +526,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// to SMA
 
-	net.ConnectLayers(ipl, sma, full, emer.Forward) // todo: forward??
+	net.ConnectLayers(cipl, sma, full, emer.Forward) // todo: forward??
 	net.ConnectLayers(m1p, sma, full, emer.Back)
 
 	net.ConnectCtxtToCT(smact, smact, full).SetClass("CTSelf")
@@ -535,10 +560,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	// using 4 total threads -- todo: didn't work
 	/*
-		mt.SetThread(1)
-		mtct.SetThread(1)
-		ipl.SetThread(2)
-		iplct.SetThread(2)
+		mstd.SetThread(1)
+		mstdct.SetThread(1)
+		cipl.SetThread(2)
+		ciplct.SetThread(2)
 		pcc.SetThread(3)
 		pccct.SetThread(3)
 		sma.SetThread(3)
@@ -626,6 +651,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
+	ev := &ss.TrainEnv
+
 	ss.Net.AlphaCycInit()
 	ss.Time.AlphaCycStart()
 	for qtr := 0; qtr < 4; qtr++ {
@@ -648,6 +675,12 @@ func (ss *Sim) AlphaCyc(train bool) {
 		}
 		ss.Net.QuarterFinal(&ss.Time)
 		ss.Time.QuarterInc()
+		if qtr == 2 {
+			// todo: read network layer, decode, present act
+			act := ev.ActGen()
+			ev.Action(ev.Acts[act], nil)
+			// fmt.Printf("action: %s\n", ev.Acts[act])
+		}
 		if ss.ViewOn {
 			switch {
 			case viewUpdt <= leabra.Quarter:
@@ -680,7 +713,7 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 	// going to the same layers, but good practice and cheap anyway
 
 	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action"}
-	lays := []string{"V2d", "V2d", "V1fov", "S1", "S1v", "Insula", "M1"}
+	lays := []string{"V2Pd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "M1P"}
 	for i, lnm := range lays {
 		lyi := ss.Net.LayerByName(lnm)
 		if lyi == nil {
@@ -699,6 +732,8 @@ func (ss *Sim) TrainTrial() {
 	if ss.NeedsNewRun {
 		ss.NewRun()
 	}
+
+	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
@@ -1562,20 +1597,6 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 
 	ss.Trace = ss.TrainEnv.World.Clone().(*etensor.Int)
 
-	sch := etable.Schema{
-		{"TrialName", etensor.STRING, nil, nil},
-		{"Depth", etensor.FLOAT32, ss.TrainEnv.CurStates["Depth"].Shape.Shp, nil},
-		{"FovDepth", etensor.FLOAT32, ss.TrainEnv.CurStates["FovDepth"].Shape.Shp, nil},
-		{"Fovea", etensor.FLOAT32, ss.TrainEnv.CurStates["Fovea"].Shape.Shp, nil},
-		{"ProxSoma", etensor.FLOAT32, ss.TrainEnv.CurStates["ProxSoma"].Shape.Shp, nil},
-		{"Vestibular", etensor.FLOAT32, ss.TrainEnv.CurStates["Vestibular"].Shape.Shp, nil},
-		{"Inters", etensor.FLOAT32, ss.TrainEnv.CurStates["Inters"].Shape.Shp, nil},
-		{"Action", etensor.FLOAT32, ss.TrainEnv.CurStates["Action"].Shape.Shp, nil},
-	}
-	ss.State = etable.NewTable("input")
-	ss.State.SetFromSchema(sch, 1)
-	ss.State.SetMetaData("TrialName:width", "50")
-
 	width := 1600
 	height := 1200
 
@@ -1600,17 +1621,10 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 	tv := gi.AddNewTabView(split, "tv")
 	ss.WorldTabs = tv
 
-	sps := tv.AddNewTab(gi.KiT_SplitView, "State").(*gi.SplitView)
-	sps.Dim = mat32.Y
-	sps.SetStretchMax()
-
-	ss.StateView = etview.AddNewTableView(sps, "State")
-	ss.StateView.SetTable(ss.State, nil)
-
-	ss.TraceView = etview.AddNewTensorGrid(sps, "Trace", ss.Trace)
-	ss.ConfigWorldView(ss.TraceView)
-
-	sps.SetSplits(.3, .7)
+	tg := tv.AddNewTab(etview.KiT_TensorGrid, "Trace").(*etview.TensorGrid)
+	ss.TraceView = tg
+	tg.SetTensor(ss.Trace)
+	ss.ConfigWorldView(tg)
 
 	wg := tv.AddNewTab(etview.KiT_TensorGrid, "World").(*etview.TensorGrid)
 	ss.WorldView = wg
@@ -1743,12 +1757,6 @@ func (ss *Sim) UpdateWorldGui() {
 	if ss.WorldWin == nil {
 		return
 	}
-	for i := 1; i < ss.State.NumCols(); i++ {
-		cnm := ss.State.ColNames[i]
-		inp := ss.TrainEnv.State(cnm)
-		ss.State.SetCellTensor(cnm, 0, inp)
-	}
-	ss.State.SetCellString("TrialName", 0, ss.TrainEnv.String())
 
 	if ss.TrainEnv.Scene.Chg { // something important happened, refresh
 		ss.Trace.CopyFrom(ss.TrainEnv.World)
@@ -1758,9 +1766,7 @@ func (ss *Sim) UpdateWorldGui() {
 	ss.Trace.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, nc+ss.TrainEnv.Angle/ss.TrainEnv.AngInc)
 
 	updt := ss.WorldTabs.UpdateStart()
-	// ss.TraceView.UpdateSig()
-	// ss.TrainEnvView.UpdateSig()
-	ss.StateView.UpdateTable()
+	ss.TraceView.UpdateSig()
 	ss.WorldTabs.UpdateEnd(updt)
 }
 
@@ -2000,43 +2006,45 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	// 		win.Close()
 	// 	})
 
-	inQuitPrompt := false
-	gi.SetQuitReqFunc(func() {
-		if inQuitPrompt {
-			return
-		}
-		inQuitPrompt = true
-		gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Quit?",
-			Prompt: "Are you <i>sure</i> you want to quit and lose any unsaved params, weights, logs, etc?"}, true, true,
-			win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-				if sig == int64(gi.DialogAccepted) {
-					gi.Quit()
-				} else {
-					inQuitPrompt = false
-				}
-			})
-	})
+	/*
+		inQuitPrompt := false
+		gi.SetQuitReqFunc(func() {
+			if inQuitPrompt {
+				return
+			}
+			inQuitPrompt = true
+			gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Quit?",
+				Prompt: "Are you <i>sure</i> you want to quit and lose any unsaved params, weights, logs, etc?"}, true, true,
+				win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+					if sig == int64(gi.DialogAccepted) {
+						gi.Quit()
+					} else {
+						inQuitPrompt = false
+					}
+				})
+		})
 
-	// gi.SetQuitCleanFunc(func() {
-	// 	fmt.Printf("Doing final Quit cleanup here..\n")
-	// })
+		// gi.SetQuitCleanFunc(func() {
+		// 	fmt.Printf("Doing final Quit cleanup here..\n")
+		// })
 
-	inClosePrompt := false
-	win.SetCloseReqFunc(func(w *gi.Window) {
-		if inClosePrompt {
-			return
-		}
-		inClosePrompt = true
-		gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Close Window?",
-			Prompt: "Are you <i>sure</i> you want to close the window?  This will Quit the App as well, losing all unsaved params, weights, logs, etc"}, true, true,
-			win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-				if sig == int64(gi.DialogAccepted) {
-					gi.Quit()
-				} else {
-					inClosePrompt = false
-				}
-			})
-	})
+		inClosePrompt := false
+		win.SetCloseReqFunc(func(w *gi.Window) {
+			if inClosePrompt {
+				return
+			}
+			inClosePrompt = true
+			gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Close Window?",
+				Prompt: "Are you <i>sure</i> you want to close the window?  This will Quit the App as well, losing all unsaved params, weights, logs, etc"}, true, true,
+				win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+					if sig == int64(gi.DialogAccepted) {
+						gi.Quit()
+					} else {
+						inClosePrompt = false
+					}
+				})
+		})
+	*/
 
 	win.SetCloseCleanFunc(func(w *gi.Window) {
 		go gi.Quit() // once main window is closed, quit

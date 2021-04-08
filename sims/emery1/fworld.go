@@ -30,6 +30,7 @@ import (
 type FWorld struct {
 	Nm          string                      `desc:"name of this environment"`
 	Dsc         string                      `desc:"description of this environment"`
+	Disp        bool                        `desc:"update display -- turn off to make it faster"`
 	Size        evec.Vec2i                  `desc:"size of 2D world"`
 	PatSize     evec.Vec2i                  `desc:"size of patterns for mats, acts"`
 	World       *etensor.Int                `view:"no-inline" desc:"2D grid world, each cell is a material (mat)"`
@@ -109,6 +110,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.Params["FoodRefresh"] = 100 // time steps before food is refreshed
 	ev.Params["WaterRefresh"] = 50 // time steps before water is refreshed
 
+	ev.Disp = true
 	ev.Size.Set(100, 100)
 	ev.PatSize.Set(5, 5)
 	ev.AngInc = 15

@@ -38,8 +38,24 @@ There are 4 discrete movement actions, plus any additional optional interaction 
 
 This environment thus supports a rich, extensible, ecologically-based framework in which to explore the temporally-extended pursuit of basic survival goals.
 
+# Learning logic
+
+* predictive logic: SMA = current action, influences Super layers on time T, T+1 prediction = sensory outcome associated with that action (state updates happens at start of new cycle, after action is taken)
+
 # Known Issues
 
 * The depth view scanner can see through non-H/V lines sometimes, if there is a "thin" diagonal aligned just so along its track.  use double-thick diagonal lines to be safe.
 
+# TODO
 
+* key insight: if error-driven learning is only operative form of learning, that's all the model cares about, and it just doesn't stop to eat or drink!
+
+* record stats preceding each action type (action actually taken).
+
+* record body state levels -- key performance measure..
+
+* add gradual transition schedule to self-control during training..
+
+* S1SP broken?
+
+* LIP projects attention to ITP -- tune it

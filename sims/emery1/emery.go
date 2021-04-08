@@ -1,4 +1,4 @@
-// Copyright (c) 2019, The Emergent Authors. All rights reserved.
+// Copyright (c) 2021, The Emergent Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -49,154 +49,7 @@ func main() {
 // LogPrec is precision for saving float values in logs
 const LogPrec = 4
 
-// ParamSets is the default set of parameters -- Base is always applied, and others can be optionally
-// selected to apply on top of that
-var ParamSets = params.Sets{
-	{Name: "Base", Desc: "these are the best params", Sheets: params.Sheets{
-		"Network": &params.Sheet{
-			{Sel: "Layer", Desc: "using default 1.8 inhib for hidden layers",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":  "1.8",
-					"Layer.Learn.AvgL.Gain": "2.5",
-					"Layer.Act.Gbar.L":      "0.2",
-				}},
-			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
-				Params: params.Params{
-					"Prjn.WtInit.Mean": "0.3",
-					"Prjn.WtInit.Var":  "0",
-					"Prjn.Learn.Learn": "false",
-				}},
-			{Sel: ".BurstCtxt", Desc: "no weight balance on deep context prjns -- makes a diff!",
-				Params: params.Params{
-					"Prjn.Learn.WtBal.On": "false",
-				}},
-			{Sel: "#V2Pd", Desc: "depth input layers use pool inhibition, weaker global?",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.8",
-				}},
-			{Sel: "#S1S", Desc: "S1 uses pool inhib",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.0", // some weaker global inhib
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.4", // weaker
-				}},
-			{Sel: "#S1V", Desc: "S1V regular",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.8",
-				}},
-			{Sel: ".MSTd", Desc: "MT uses pool inhibition, full global?",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.6",
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.6",
-				}},
-			{Sel: ".cIPL", Desc: "cIPL global",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.8",
-				}},
-			{Sel: "#cIPLP", Desc: "cIPL global",
-				Params: params.Params{
-					"Layer.TRC.NoTopo": "true", // true def
-				}},
-			{Sel: ".PCC", Desc: "PCC uses pool inhibition but is treated as full",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.4",
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.6",
-				}},
-			{Sel: "#PCCP", Desc: "no topo",
-				Params: params.Params{
-					"Layer.TRC.NoTopo": "true", // true def
-				}},
-			{Sel: "#SMAP", Desc: "no topo",
-				Params: params.Params{
-					"Layer.TRC.NoTopo": "true", // true def
-				}},
-			{Sel: "#VL", Desc: "VL uses pool inhib",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.0", // some weaker global inhib
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.6", // weaker
-				}},
-			{Sel: "#M1", Desc: "noise!",
-				Params: params.Params{
-					"Layer.Act.Noise.Dist": "Gaussian",
-					"Layer.Act.Noise.Var":  "0.01",
-					"Layer.Act.Noise.Type": "GeNoise",
-					"Layer.Inhib.Pool.Gi":  "1.8", // reg
-				}},
-			{Sel: "#SMA", Desc: "noise!",
-				Params: params.Params{
-					"Layer.Act.Noise.Dist": "Gaussian",
-					"Layer.Act.Noise.Var":  "0.01",
-					"Layer.Act.Noise.Type": "GeNoise",
-				}},
-
-			//////////////////////////////////////////////////////////
-			// Prjns
-
-			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
-				Params: params.Params{
-					"Prjn.Learn.Norm.On":     "true",
-					"Prjn.Learn.Momentum.On": "true",
-					"Prjn.Learn.WtBal.On":    "true",
-				}},
-			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.1",
-				}},
-			{Sel: ".CTBack", Desc: "deep top-down -- stronger",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.5",
-				}},
-			{Sel: ".Lateral", Desc: "default for lateral",
-				Params: params.Params{
-					"Prjn.WtInit.Sym":  "false",
-					"Prjn.WtScale.Rel": "0.02", // .02 > .05 == .01 > .1  -- very minor diffs on TE cat
-					"Prjn.WtInit.Mean": "0.5",
-					"Prjn.WtInit.Var":  "0",
-				}},
-			{Sel: ".CTFmSuper", Desc: "CT from main super -- fixed one2one",
-				Params: params.Params{
-					"Prjn.WtInit.Mean": "0.8", // 0.8 better for wwi3d, 0.5 default
-					"Prjn.WtScale.Rel": "1",
-				}},
-			{Sel: ".CTSelf", Desc: "CT to CT",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.5",
-				}},
-			{Sel: ".FwdToPulv", Desc: "feedforward to pulvinar directly",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.1",
-				}},
-		},
-		"Sim": &params.Sheet{ // sim params apply to sim object
-			{Sel: "Sim", Desc: "best params always finish in this time",
-				Params: params.Params{
-					"Sim.MaxEpcs": "500",
-				}},
-		},
-	}},
-	{Name: "NoMomentum", Desc: "no momentum or normalization", Sheets: params.Sheets{
-		"Network": &params.Sheet{
-			{Sel: "Prjn", Desc: "no norm or momentum",
-				Params: params.Params{
-					"Prjn.Learn.Norm.On":     "false",
-					"Prjn.Learn.Momentum.On": "false",
-				}},
-		},
-	}},
-	{Name: "WtBalOn", Desc: "try with weight bal on", Sheets: params.Sheets{
-		"Network": &params.Sheet{
-			{Sel: "Prjn", Desc: "weight bal on",
-				Params: params.Params{
-					"Prjn.Learn.WtBal.On": "true",
-				}},
-		},
-	}},
-}
+// see params_def.go for default params
 
 // Sim encapsulates the entire simulation model, and we define all the
 // functionality as methods on this struct.  This structure keeps all relevant
@@ -384,7 +237,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1 := net.AddLayer2D("M1", 8, 8, emer.Hidden)
 	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target) // Action
 
-	mstd, mstdct, mstdp := net.AddDeep4D("MSTd", 1, 6, 7, 7) // full field optic flow
+	mstd, mstdct, mstdp := net.AddDeep2D("MSTd", 8, 8) // full field optic flow
 	mstdp.Shape().SetShape([]int{1, 6, ev.PopSize, 1}, nil, nil)
 	mstdp.(*deep.TRCLayer).Drivers.Add("V2Pd")
 
@@ -395,7 +248,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	s1vp.Drivers.Add("S1V")
 
 	cipl, ciplct, ciplp := net.AddDeep2D("cIPL", 8, 8)
-	ciplp.Shape().SetShape([]int{7, 7}, nil, nil)
+	ciplp.Shape().SetShape([]int{8, 8}, nil, nil)
 	ciplp.(*deep.TRCLayer).Drivers.Add("MSTd")
 	// note: has Layer.TRC.NoTopo set to true in params by default
 
@@ -408,9 +261,13 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	smap.Shape().SetShape([]int{8, 8}, nil, nil)
 	smap.(*deep.TRCLayer).Drivers.Add("M1")
 
-	// mt, mtct, mtp := net.AddDeep4D("MT", 4, 8, 4, 4)
-	// mtp.Shape().SetShape([]int{4, 8, 1, ss.TrainEnv.NFOVRays}, nil, nil)
-	// mtp.(*deep.TRCLayer).Drivers.Add("V2Pd")
+	it, itct, itp := net.AddDeep2D("IT", 7, 7)
+	itp.Shape().SetShape(v1f.Shape().Shp, nil, nil)
+	itp.(*deep.TRCLayer).Drivers.Add("V1F")
+
+	lip, lipct, lipp := net.AddDeep4D("LIP", 1, fsz, 5, 5)
+	lipp.Shape().SetShape(v2fd.Shape().Shp, nil, nil)
+	lipp.(*deep.TRCLayer).Drivers.Add("V2Fd")
 
 	m1.SetClass("M1")
 	vl.SetClass("M1")
@@ -431,6 +288,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	smact.SetClass("SMA")
 	smap.SetClass("SMA")
 
+	it.SetClass("IT")
+	itct.SetClass("IT")
+	itp.SetClass("IT")
+
+	lip.SetClass("LIP")
+	lipct.SetClass("LIP")
+	lipp.SetClass("LIP")
+
 	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "V2Pd", YAlign: relpos.Front, Space: 4})
 	v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "V1F", XAlign: relpos.Left, Space: 4})
 
@@ -444,31 +309,40 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Ins", YAlign: relpos.Front, Space: 8})
 
 	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "V2Pd", XAlign: relpos.Left, YAlign: relpos.Front})
-	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTd", XAlign: relpos.Left, Space: 2})
-	mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTdCT", XAlign: relpos.Left, Space: 2})
+	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTd", XAlign: relpos.Left, Space: 4})
+	mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "MSTdCT", XAlign: relpos.Left, Space: 4})
 
-	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MSTd", YAlign: relpos.Front, Space: 2})
-	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "cIPL", XAlign: relpos.Left, Space: 2})
-	ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "cIPLCT", XAlign: relpos.Left, Space: 2})
+	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "MSTd", YAlign: relpos.Front, Space: 4})
+	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "cIPL", XAlign: relpos.Left, Space: 4})
+	ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "cIPLCT", XAlign: relpos.Left, Space: 4})
 
 	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "cIPL", YAlign: relpos.Front, Space: 6})
-	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCC", XAlign: relpos.Left, Space: 2})
-	pccp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCCCT", XAlign: relpos.Left, Space: 2})
+	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCC", XAlign: relpos.Left, Space: 4})
+	pccp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "PCCCT", XAlign: relpos.Left, Space: 4})
 
 	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "PCC", YAlign: relpos.Front, Space: 6})
-	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left, Space: 2})
-	smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 2})
+	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMA", XAlign: relpos.Left, Space: 4})
+	smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 4})
 
 	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "SMA", YAlign: relpos.Front, Space: 2})
+
+	it.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "V2Pd", XAlign: relpos.Left, Space: 4})
+	itct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "IT", XAlign: relpos.Left, Space: 4})
+	itp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "ITCT", XAlign: relpos.Left, Space: 4})
+
+	lip.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "V2Fd", YAlign: relpos.Front, Space: 4})
+	lipct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "LIP", XAlign: relpos.Left, Space: 4})
+	lipp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "LIPCT", XAlign: relpos.Left, Space: 4})
 
 	full := prjn.NewFull()
 	sameu := prjn.NewPoolSameUnit()
 	sameu.SelfCon = false
+	p1to1 := prjn.NewPoolOneToOne()
 
 	////////////////////
 	// basic super cons
 
-	net.ConnectLayers(v2pd, mstd, ss.Prjn4x4Skp2, emer.Forward)
+	net.ConnectLayers(v2pd, mstd, full, emer.Forward)
 
 	// MStd <-> CIPl
 	net.ConnectLayers(mstd, cipl, full, emer.Forward)
@@ -487,6 +361,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.BidirConnectLayers(m1, vl, full)
 
+	net.ConnectLayers(v1f, it, full, emer.Forward)
+	net.ConnectLayers(v2fd, lip, p1to1, emer.Forward)
+
 	////////////////////
 	// to MSTd
 
@@ -495,11 +372,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(sma, mstd, full, emer.Back)
 	net.ConnectLayers(s1v, mstd, full, emer.Back)
 
-	net.ConnectCtxtToCT(mstdct, mstdct, ss.Prjn3x3Skp1).SetClass("CTSelf")
+	net.ConnectCtxtToCT(mstdct, mstdct, full).SetClass("CTSelf")
 
 	// MSTdCT top-down depth
 	net.ConnectLayers(ciplct, mstdct, full, emer.Back).SetClass("CTBack")
 	net.ConnectLayers(pccct, mstdct, full, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
 
 	// // S1 vestibular
 	// nt.ConnectLayers(mstdct, s1vp, full, emer.Forward)
@@ -520,7 +398,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectCtxtToCT(ciplct, ciplct, full).SetClass("CTSelf")
 
 	net.ConnectLayers(pccct, ciplct, full, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(smact, ciplct, full, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(smact, ciplct, full, emer.Back).SetClass("CTBack")
 
 	// net.ConnectLayers(mstdct, ciplp, ss.Prjn4x4Skp2, emer.Forward).SetClass("FwdToPulv")
 
@@ -556,6 +434,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// to SMA
 
+	net.ConnectLayers(it, sma, full, emer.Forward)
+	net.ConnectLayers(lip, sma, full, emer.Forward)
 	net.ConnectLayers(cipl, sma, full, emer.Forward) // todo: forward??
 	net.ConnectLayers(vl, sma, full, emer.Back)
 
@@ -578,6 +458,23 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.ConnectLayers(smact, vl, full, emer.Forward)
 	net.ConnectLayers(sma, vl, full, emer.Forward)
+
+	////////////////////
+	// to IT
+
+	net.ConnectLayers(sma, it, full, emer.Back)
+
+	net.ConnectCtxtToCT(itct, itct, full).SetClass("CTSelf")
+	net.ConnectCtxtToCT(lipct, itp, p1to1).SetClass("CTSelf")
+
+	////////////////////
+	// to LIP
+
+	net.ConnectLayers(sma, lip, full, emer.Back)
+
+	net.ConnectCtxtToCT(lipct, lipct, full).SetClass("CTBack")
+
+	net.ConnectLayers(smact, lipct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
 
 	ss.PulvLays = make([]string, 0, 10)
 	ss.HidLays = make([]string, 0, 10)
@@ -1256,8 +1153,8 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	// order of params: on, fixMin, min, fixMax, max
 	plt.SetColParams("Run", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("Epoch", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
-	plt.SetColParams("ActMatch", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
-	plt.SetColParams("CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("ActMatch", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	for _, lnm := range ss.PulvLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
@@ -1776,7 +1673,7 @@ func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) {
 }
 
 func (ss *Sim) UpdateWorldGui() {
-	if ss.WorldWin == nil {
+	if ss.WorldWin == nil || !ss.TrainEnv.Disp {
 		return
 	}
 

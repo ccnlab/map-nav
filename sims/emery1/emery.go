@@ -28,6 +28,7 @@ import (
 	"github.com/emer/etable/etensor"
 	"github.com/emer/etable/etview"
 	"github.com/emer/etable/metric"
+	"github.com/emer/etable/split"
 	"github.com/emer/leabra/deep"
 	"github.com/emer/leabra/leabra"
 	"github.com/goki/gi/gi"
@@ -63,10 +64,10 @@ type Sim struct {
 	PosAFs           actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields for position target"`
 	TrnEpcLog        *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TrnTrlLog        *etable.Table     `view:"no-inline" desc:"training trial-level log data"`
+	TrnErrStats      *etable.Table     `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TstEpcLog        *etable.Table     `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog        *etable.Table     `view:"no-inline" desc:"testing trial-level log data"`
 	TstErrLog        *etable.Table     `view:"no-inline" desc:"log of all test trials where errors were made"`
-	TstErrStats      *etable.Table     `view:"no-inline" desc:"stats on test trials where errors were made"`
 	TstCycLog        *etable.Table     `view:"no-inline" desc:"testing cycle-level log data"`
 	RunLog           *etable.Table     `view:"no-inline" desc:"summary log of each run"`
 	RunStats         *etable.Table     `view:"no-inline" desc:"aggregate stats on all runs"`
@@ -367,7 +368,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// to MSTd
 
-	net.ConnectLayers(mstd, mstd, sameu, emer.Lateral)
+	// net.ConnectLayers(mstd, mstd, sameu, emer.Lateral)
 
 	net.ConnectLayers(sma, mstd, full, emer.Back)
 	net.ConnectLayers(s1v, mstd, full, emer.Back)
@@ -1114,6 +1115,23 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 		dt.SetCellFloat(lnm+"_Hog", row, hog)
 	}
 
+	trl := ss.TrnTrlLog
+	trlix := etable.NewIdxView(trl)
+	// trlix.Filter(func(et *etable.Table, row int) bool {
+	// 	return et.CellFloat("ActMatch", row) > 0 // only correct trials
+	// })
+	gpsp := split.GroupBy(trlix, []string{"GenAction"})
+	split.Agg(gpsp, "ActMatch", agg.AggMean)
+	ss.TrnErrStats = gpsp.AggsToTable(etable.ColNameOnly)
+	trl.SetNumRows(0)
+
+	for _, lnm := range ss.TrainEnv.Acts {
+		rw := ss.TrnErrStats.RowsByString("GenAction", lnm, etable.Equals, etable.UseCase)
+		if len(rw) > 0 {
+			dt.SetCellFloat(lnm+"Cor", row, ss.TrnErrStats.CellFloat("ActMatch", rw[0]))
+		}
+	}
+
 	// note: essential to use Go version of update when called from another goroutine
 	ss.TrnEpcPlot.GoUpdate()
 	if ss.TrnEpcFile != nil {
@@ -1143,6 +1161,10 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 		sch = append(sch, etable.Column{lnm + "_Dead", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_Hog", etensor.FLOAT64, nil, nil})
 	}
+	for _, lnm := range ss.TrainEnv.Acts {
+		sch = append(sch, etable.Column{lnm + "Cor", etensor.FLOAT64, nil, nil})
+	}
+
 	dt.SetFromSchema(sch, 0)
 }
 
@@ -1162,6 +1184,9 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	for _, lnm := range ss.HidLays {
 		plt.SetColParams(lnm+"_Dead", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 		plt.SetColParams(lnm+"_Hog", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	}
+	for _, lnm := range ss.TrainEnv.Acts {
+		plt.SetColParams(lnm+"Cor", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
 
 	return plt

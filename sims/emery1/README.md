@@ -50,8 +50,6 @@ This environment thus supports a rich, extensible, ecologically-based framework 
 
 # TODO
 
-* record body state levels -- key performance measure..
-
 * add gradual transition schedule to self-control during training..
 
 * S1SP broken?

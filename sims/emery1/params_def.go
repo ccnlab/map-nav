@@ -17,27 +17,17 @@ var ParamSets = params.Sets{
 					"Layer.Learn.AvgL.Gain": "2.5",
 					"Layer.Act.Gbar.L":      "0.2",
 				}},
-			{Sel: ".BurstTRC", Desc: "standard weight is .3 here for larger distributed reps. no learn",
+			{Sel: ".Hidden", Desc: "noise!",
 				Params: params.Params{
-					"Prjn.WtInit.Mean": "0.3",
-					"Prjn.WtInit.Var":  "0",
-					"Prjn.Learn.Learn": "false",
-				}},
-			{Sel: ".BurstCtxt", Desc: "no weight balance on deep context prjns -- makes a diff!",
-				Params: params.Params{
-					"Prjn.Learn.WtBal.On": "false",
+					"Layer.Act.Noise.Dist": "Gaussian",
+					"Layer.Act.Noise.Var":  "0.005", // 0.005 > 0.01 probably
+					"Layer.Act.Noise.Type": "GeNoise",
 				}},
 			{Sel: "#V2Pd", Desc: "depth input layers use pool inhibition, weaker global?",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.2", // some weaker global inhib
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.8",
-				}},
-			{Sel: "#S1S", Desc: "S1 uses pool inhib",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.0", // some weaker global inhib
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.4", // weaker
 				}},
 			{Sel: "#S1V", Desc: "S1V regular",
 				Params: params.Params{
@@ -75,6 +65,13 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.6",
 				}},
+			{Sel: ".S1S", Desc: "lower inhib, higher act",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi":    "1.0", // some weaker global inhib
+					"Layer.Inhib.Pool.On":     "true",
+					"Layer.Inhib.Pool.Gi":     "1.2", // weaker
+					"Layer.Inhib.ActAvg.Init": "0.5",
+				}},
 			{Sel: "#M1", Desc: "noise!",
 				Params: params.Params{
 					"Layer.Act.Noise.Dist": "Gaussian",
@@ -104,9 +101,11 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.Norm.On":     "true",
-					"Prjn.Learn.Momentum.On": "true",
-					"Prjn.Learn.WtBal.On":    "true",
+					"Prjn.Learn.Norm.On":       "true",
+					"Prjn.Learn.Momentum.On":   "true",
+					"Prjn.Learn.Momentum.MTau": "10", // 10 > 20
+					"Prjn.Learn.WtBal.On":      "true",
+					"Prjn.Learn.Lrate":         "0.04", // critical for lrate sched
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
@@ -114,7 +113,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".CTBack", Desc: "deep top-down -- stronger",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.5",
+					"Prjn.WtScale.Rel": "0.2", // 0.2 > 0.5
 				}},
 			{Sel: ".Lateral", Desc: "default for lateral",
 				Params: params.Params{
@@ -126,15 +125,31 @@ var ParamSets = params.Sets{
 			{Sel: ".CTFmSuper", Desc: "CT from main super -- fixed one2one",
 				Params: params.Params{
 					"Prjn.WtInit.Mean": "0.5", // 0.8 better for wwi3d, 0.5 default
-					"Prjn.WtScale.Rel": "0.5",
+					"Prjn.WtScale.Rel": "0.5", // 0.5 > 0.2
 				}},
 			{Sel: ".CTSelf", Desc: "CT to CT",
 				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.5",
+					"Prjn.WtScale.Rel": "0.5", // 0.5 > 0.2
 				}},
 			{Sel: ".FwdToPulv", Desc: "feedforward to pulvinar directly",
 				Params: params.Params{
 					"Prjn.WtScale.Rel": "0.1",
+				}},
+			{Sel: ".FmPulv", Desc: "default for pulvinar",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "0.1", // .1 > .2
+				}},
+			{Sel: "#ITToITCT", Desc: "IT likes stronger FmSuper",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "1", // 0.5 > 0.2
+				}},
+			{Sel: "#LIPToLIPCT", Desc: "LIP likes stronger FmSuper",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "1", // 0.5 > 0.2
+				}},
+			{Sel: "#LIPCTToLIPCT", Desc: "LIP likes stronger CTSelf",
+				Params: params.Params{
+					"Prjn.WtScale.Rel": "1", // 0.5 > 0.2
 				}},
 		},
 		"Sim": &params.Sheet{ // sim params apply to sim object

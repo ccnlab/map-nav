@@ -22,6 +22,7 @@ import (
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
+	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/agg"
 	"github.com/emer/etable/eplot"
 	"github.com/emer/etable/etable"
@@ -40,11 +41,24 @@ import (
 	"github.com/goki/mat32"
 )
 
-// this is the stub main for gogi that calls our actual mainrun function, at end of file
 func main() {
-	gimain.Main(func() {
-		mainrun()
-	})
+	TheSim.New() // note: not running Config here -- done in CmdArgs for mpi / nogui
+	if len(os.Args) > 1 {
+		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
+	} else {
+		TheSim.Config()      // for GUI case, config then run..
+		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
+			guirun()
+		})
+	}
+}
+
+func guirun() {
+	TheSim.Init()
+	win := TheSim.ConfigGui()
+	fwin := TheSim.ConfigWorldGui()
+	fwin.GoStartEventLoop()
+	win.StartEventLoop()
 }
 
 // LogPrec is precision for saving float values in logs
@@ -60,6 +74,7 @@ const LogPrec = 4
 type Sim struct {
 	Net              *deep.Network     `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	PctCortex        float64           `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax     float64           `desc:"maximum PctCortex, when running on the schedule"`
 	ARFs             actrf.RFs         `view:"no-inline" desc:"activation-based receptive fields"`
 	TrnEpcLog        *etable.Table     `view:"no-inline" desc:"training epoch-level log data"`
 	TrnTrlLog        *etable.Table     `view:"no-inline" desc:"training trial-level log data"`
@@ -131,12 +146,18 @@ type Sim struct {
 	PopVals       []float32                   `view:"-" desc:"tmp pop code values"`
 	ValsTsrs      map[string]*etensor.Float32 `view:"-" desc:"for holding layer values"`
 	SaveWts       bool                        `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
+	SaveARFs      bool                        `view:"-" desc:"for command-line run only, auto-save receptive field data"`
 	NoGui         bool                        `view:"-" desc:"if true, runing in no GUI mode"`
 	LogSetParams  bool                        `view:"-" desc:"if true, print message for all params that are set"`
 	IsRunning     bool                        `view:"-" desc:"true if sim is running"`
 	StopNow       bool                        `view:"-" desc:"flag to stop running"`
 	NeedsNewRun   bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
 	RndSeed       int64                       `view:"-" desc:"the current random seed"`
+	UseMPI        bool                        `view:"-" desc:"if true, use MPI to distribute computation across nodes"`
+	SaveProcLog   bool                        `view:"-" desc:"if true, save logs per processor"`
+	Comm          *mpi.Comm                   `view:"-" desc:"mpi communicator"`
+	AllDWts       []float32                   `view:"-" desc:"buffer of all dwt weight changes -- for mpi sharing"`
+	SumDWts       []float32                   `view:"-" desc:"buffer of MPI summed dwt weight changes"`
 }
 
 // this registers this Sim Type and gives it properties that e.g.,
@@ -161,10 +182,16 @@ func (ss *Sim) New() {
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.Quarter // leabra.AlphaCycle
 	ss.TestUpdt = leabra.Cycle
-	ss.TestInterval = 500
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 	ss.ARFLayers = []string{"cIPL", "PCC", "PCCCT", "SMA", "SMACT"}
+	ss.Defaults()
 	ss.NewPrjns()
+}
+
+// Defaults set default param values
+func (ss *Sim) Defaults() {
+	ss.PctCortexMax = 0.9
+	ss.TestInterval = 50000
 }
 
 // NewPrjns creates new projections
@@ -263,7 +290,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	mstdp.(*deep.TRCLayer).Drivers.Add("V2Pd")
 
 	// special soma pulvinars
-	s1sp := deep.AddTRCLayer2D(net.AsLeabra(), "S1SP", 2, 4)
+	s1sp := deep.AddTRCLayer4D(net.AsLeabra(), "S1SP", 1, 4, 2, 1)
 	s1sp.Drivers.Add("S1S")
 	s1vp := deep.AddTRCLayer2D(net.AsLeabra(), "S1VP", ev.PopSize, 1)
 	s1vp.Drivers.Add("S1V")
@@ -271,12 +298,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	cipl, ciplct, ciplp := net.AddDeep2D("cIPL", 8, 8)
 	ciplp.Shape().SetShape([]int{8, 8}, nil, nil)
 	ciplp.(*deep.TRCLayer).Drivers.Add("MSTd")
-	// note: has Layer.TRC.NoTopo set to true in params by default
 
 	pcc, pccct, pccp := net.AddDeep2D("PCC", 8, 8)
 	pccp.Shape().SetShape([]int{8, 8}, nil, nil)
 	pccp.(*deep.TRCLayer).Drivers.Add("cIPL")
-	// note: has Layer.TRC.NoTopo set to true in params by default
+	// todo: also try sma driver
 
 	sma, smact, smap := net.AddDeep2D("SMA", 8, 8)
 	smap.Shape().SetShape([]int{8, 8}, nil, nil)
@@ -292,6 +318,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	m1.SetClass("M1")
 	vl.SetClass("M1")
+
+	s1s.SetClass("S1S")
+	s1sp.SetClass("S1S")
 
 	mstd.SetClass("MSTd")
 	mstdct.SetClass("MSTd")
@@ -393,7 +422,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(sma, mstd, full, emer.Back)
 	net.ConnectLayers(s1v, mstd, full, emer.Back)
 
-	net.ConnectCtxtToCT(mstdct, mstdct, full).SetClass("CTSelf")
+	net.ConnectCtxtToCT(mstdct, mstdct, full).SetClass("CTSelf") // important!
 
 	// MSTdCT top-down depth
 	net.ConnectLayers(ciplct, mstdct, full, emer.Back).SetClass("CTBack")
@@ -458,6 +487,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(it, sma, full, emer.Forward)
 	net.ConnectLayers(lip, sma, full, emer.Forward)
 	net.ConnectLayers(cipl, sma, full, emer.Forward) // todo: forward??
+	net.ConnectLayers(s1s, sma, full, emer.Forward)
 	net.ConnectLayers(vl, sma, full, emer.Back)
 
 	net.ConnectCtxtToCT(smact, smact, full).SetClass("CTSelf")
@@ -484,18 +514,24 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// to IT
 
 	net.ConnectLayers(sma, it, full, emer.Back)
+	// net.ConnectLayers(pcc, it, full, emer.Back) // not useful
 
 	net.ConnectCtxtToCT(itct, itct, full).SetClass("CTSelf")
-	net.ConnectCtxtToCT(lipct, itp, p1to1).SetClass("CTSelf")
+	net.ConnectCtxtToCT(lipct, itp, p1to1).SetClass("CTSelf") // attention
+
+	net.ConnectLayers(smact, itct, full, emer.Back).SetClass("CTBack") // needs to know how moving..
+	// net.ConnectLayers(pccct, itct, full, emer.Back).SetClass("CTBack")
 
 	////////////////////
 	// to LIP
 
 	net.ConnectLayers(sma, lip, full, emer.Back)
+	// net.ConnectLayers(pcc, lip, full, emer.Back) // not useful
 
 	net.ConnectCtxtToCT(lipct, lipct, full).SetClass("CTBack")
 
 	net.ConnectLayers(smact, lipct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
+	// net.ConnectLayers(pccct, lipct, full, emer.Back).SetClass("CTBack")
 
 	ss.PulvLays = make([]string, 0, 10)
 	ss.HidLays = make([]string, 0, 10)
@@ -743,13 +779,14 @@ func (ss *Sim) TrainTrial() {
 	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
 	if chg {
 		ss.LogTrnEpc(ss.TrnEpcLog)
+		ss.TrainSched(epc)
 		ss.TrainEnv.Event.Cur = 0
 		if ss.ViewOn && ss.TrainUpdt > leabra.AlphaCycle {
 			ss.UpdateView(true)
 		}
-		if epc%ss.TestInterval == 0 { // note: epc is *next* so won't trigger first time
-			ss.TestAll()
-		}
+		// if epc%ss.TestInterval == 0 { // note: epc is *next* so won't trigger first time
+		// 	ss.TestAll()
+		// }
 		if epc >= ss.MaxEpcs {
 			// done with training..
 			ss.RunEnd()
@@ -777,12 +814,16 @@ func (ss *Sim) RunEnd() {
 		fmt.Printf("Saving Weights to: %v\n", fnm)
 		ss.Net.SaveWtsJSON(gi.FileName(fnm))
 	}
+	if ss.SaveARFs {
+		ss.SaveAllARFs()
+	}
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
 func (ss *Sim) NewRun() {
 	run := ss.TrainEnv.Run.Cur
+	ss.PctCortex = 0
 	ss.TrainEnv.Init(run)
 	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
@@ -891,6 +932,14 @@ func (ss *Sim) UpdtARFs() {
 	}
 }
 
+// SaveAllARFs saves all ARFs to files
+func (ss *Sim) SaveAllARFs() {
+	for _, paf := range ss.ARFs.RFs {
+		fnm := ss.LogFileName(paf.Name)
+		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	}
+}
+
 // TrialStats computes the trial-level statistics and adds them to the epoch accumulators if
 // accum is true.  Note that we're accumulating stats here on the Sim side so the
 // core algorithm side remains as simple as possible, and doesn't need to worry about
@@ -930,6 +979,31 @@ func (ss *Sim) TrainRun() {
 		}
 	}
 	ss.Stopped()
+}
+
+// TrainSched implements the learning rate schedule etc.
+func (ss *Sim) TrainSched(epc int) {
+	if epc > 1 && epc%10 == 0 {
+		ss.PctCortex = float64(epc) / 100
+		if ss.PctCortex > ss.PctCortexMax {
+			ss.PctCortex = ss.PctCortexMax
+		} else {
+			fmt.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, epc)
+		}
+	}
+	switch epc {
+	case 50:
+		ss.ARFs.Reset() // now sufficiently learned to start recording..
+	case 150:
+		ss.Net.LrateMult(0.5)
+		fmt.Printf("dropped lrate 0.5 at epoch: %d\n", epc)
+	case 250:
+		ss.Net.LrateMult(0.2)
+		fmt.Printf("dropped lrate 0.2 at epoch: %d\n", epc)
+	case 350:
+		ss.Net.LrateMult(0.1)
+		fmt.Printf("dropped lrate 0.1 at epoch: %d\n", epc)
+	}
 }
 
 // Train runs the full training from this point onward
@@ -1106,7 +1180,7 @@ func (ss *Sim) WeightsFileName() string {
 
 // LogFileName returns default log file name
 func (ss *Sim) LogFileName(lognm string) string {
-	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".csv"
+	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
 }
 
 //////////////////////////////////////////////
@@ -2090,16 +2164,35 @@ func (ss *Sim) CmdArgs() {
 	var nogui bool
 	var saveEpcLog bool
 	var saveRunLog bool
+	var note string
 	flag.StringVar(&ss.ParamSet, "params", "", "ParamSet name to use -- must be valid name as listed in compiled-in params or loaded params")
 	flag.StringVar(&ss.Tag, "tag", "", "extra tag to add to file names saved from this run")
-	flag.IntVar(&ss.MaxRuns, "runs", 10, "number of runs to do (note that MaxEpcs is in paramset)")
+	flag.StringVar(&note, "note", "", "user note -- describe the run params etc")
+	flag.IntVar(&ss.MaxRuns, "runs", 1, "number of runs to do (note that MaxEpcs is in paramset)")
 	flag.BoolVar(&ss.LogSetParams, "setparams", false, "if true, print a record of each parameter that is set")
 	flag.BoolVar(&ss.SaveWts, "wts", false, "if true, save final weights after each run")
+	flag.BoolVar(&ss.SaveARFs, "arfs", false, "if true, save final arfs after each run")
 	flag.BoolVar(&saveEpcLog, "epclog", true, "if true, save train epoch log to file")
 	flag.BoolVar(&saveRunLog, "runlog", true, "if true, save run epoch log to file")
 	flag.BoolVar(&nogui, "nogui", true, "if not passing any other args and want to run nogui, use nogui")
+	flag.BoolVar(&ss.UseMPI, "mpi", false, "if set, use MPI for distributed computation")
 	flag.Parse()
 	ss.Init()
+
+	if ss.UseMPI {
+		ss.MPIInit()
+	}
+
+	// key for Config and Init to be after MPIInit
+	ss.Config()
+	ss.Init()
+
+	if note != "" {
+		mpi.Printf("note: %s\n", note)
+	}
+	if ss.ParamSet != "" {
+		mpi.Printf("Using ParamSet: %s\n", ss.ParamSet)
+	}
 
 	if ss.ParamSet != "" {
 		fmt.Printf("Using ParamSet: %s\n", ss.ParamSet)
@@ -2136,18 +2229,49 @@ func (ss *Sim) CmdArgs() {
 	ss.Train()
 }
 
-func mainrun() {
-	TheSim.New()
-	TheSim.Config()
+////////////////////////////////////////////////////////////////////
+//  MPI code
 
-	if len(os.Args) > 1 {
-		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
+// MPIInit initializes MPI
+func (ss *Sim) MPIInit() {
+	mpi.Init()
+	var err error
+	ss.Comm, err = mpi.NewComm(nil) // use all procs
+	if err != nil {
+		log.Println(err)
+		ss.UseMPI = false
 	} else {
-		// gi.Update2DTrace = true
-		TheSim.Init()
-		win := TheSim.ConfigGui()
-		fwin := TheSim.ConfigWorldGui()
-		fwin.GoStartEventLoop()
-		win.StartEventLoop()
+		mpi.Printf("MPI running on %d procs\n", mpi.WorldSize())
 	}
+}
+
+// MPIFinalize finalizes MPI
+func (ss *Sim) MPIFinalize() {
+	if ss.UseMPI {
+		mpi.Finalize()
+	}
+}
+
+// CollectDWts collects the weight changes from all synapses into AllDWts
+func (ss *Sim) CollectDWts(net *leabra.Network) {
+	made := net.CollectDWts(&ss.AllDWts, 78163328) // plug in number from printout below, to avoid realloc
+	if made {
+		mpi.Printf("MPI: AllDWts len: %d\n", len(ss.AllDWts)) // put this number in above make
+	}
+}
+
+// MPIWtFmDWt updates weights from weight changes, using MPI to integrate
+// DWt changes across parallel nodes, each of which are learning on different
+// sequences of inputs.
+func (ss *Sim) MPIWtFmDWt() {
+	if ss.UseMPI {
+		ss.CollectDWts(&ss.Net.Network)
+		ndw := len(ss.AllDWts)
+		if len(ss.SumDWts) != ndw {
+			ss.SumDWts = make([]float32, ndw)
+		}
+		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
+		ss.Net.SetDWts(ss.SumDWts)
+	}
+	ss.Net.WtFmDWt()
 }

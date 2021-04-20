@@ -11,7 +11,9 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/emer/axon/axon"
@@ -190,7 +192,7 @@ func (ss *Sim) New() {
 
 // Defaults set default param values
 func (ss *Sim) Defaults() {
-	ss.PctCortexMax = 0.9
+	ss.PctCortexMax = 0.7 // for good rfs
 	ss.TestInterval = 50000
 }
 
@@ -944,9 +946,31 @@ func (ss *Sim) UpdtARFs() {
 
 // SaveAllARFs saves all ARFs to files
 func (ss *Sim) SaveAllARFs() {
+	ss.ARFs.Avg()
+	ss.ARFs.Norm()
 	for _, paf := range ss.ARFs.RFs {
 		fnm := ss.LogFileName(paf.Name)
 		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	}
+}
+
+// OpenAllARFs open all ARFs from directory of given path
+func (ss *Sim) OpenAllARFs(path gi.FileName) {
+	ss.ARFs.Avg()
+	ss.ARFs.Norm()
+	ap := string(path)
+	if strings.HasSuffix(ap, ".tsv") {
+		ap, _ = filepath.Split(ap)
+	}
+	vp := ss.Win.Viewport
+	for _, paf := range ss.ARFs.RFs {
+		fnm := filepath.Join(ap, ss.LogFileName(paf.Name))
+		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
 	}
 }
 
@@ -2033,6 +2057,12 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		}
 	})
 
+	tbar.AddAction(gi.ActOpts{Label: "Open ARFs", Icon: "file-open", Tooltip: "Open saved ARF .tsv files -- select a path or specific file in path", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(ss, "OpenAllARFs", vp)
+	})
+
 	tbar.AddAction(gi.ActOpts{Label: "Test Trial", Icon: "step-fwd", Tooltip: "Runs the next testing trial.", UpdateFunc: func(act *gi.Action) {
 		act.SetActiveStateUpdt(!ss.IsRunning)
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
@@ -2163,6 +2193,15 @@ var SimProps = ki.Props{
 			"Args": ki.PropSlice{
 				{"File Name", ki.Props{
 					"ext": ".wts,.wts.gz",
+				}},
+			},
+		}},
+		{"OpenAllARFs", ki.Props{
+			"desc": "open all Activation-based Receptive Fields from selected path (can select a file too)",
+			"icon": "file-open",
+			"Args": ki.PropSlice{
+				{"Path", ki.Props{
+					"ext": ".tsv",
 				}},
 			},
 		}},

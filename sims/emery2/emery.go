@@ -74,39 +74,42 @@ const LogPrec = 4
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net              *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	PctCortex        float64         `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
-	PctCortexMax     float64         `desc:"maximum PctCortex, when running on the schedule"`
-	ARFs             actrf.RFs       `view:"no-inline" desc:"activation-based receptive fields"`
-	TrnEpcLog        *etable.Table   `view:"no-inline" desc:"training epoch-level log data"`
-	TrnTrlLog        *etable.Table   `view:"no-inline" desc:"training trial-level log data"`
-	TrnErrStats      *etable.Table   `view:"no-inline" desc:"stats on train trials where errors were made"`
-	TrnAggStats      *etable.Table   `view:"no-inline" desc:"stats on all train trials"`
-	TstEpcLog        *etable.Table   `view:"no-inline" desc:"testing epoch-level log data"`
-	TstTrlLog        *etable.Table   `view:"no-inline" desc:"testing trial-level log data"`
-	TstErrLog        *etable.Table   `view:"no-inline" desc:"log of all test trials where errors were made"`
-	TstCycLog        *etable.Table   `view:"no-inline" desc:"testing cycle-level log data"`
-	RunLog           *etable.Table   `view:"no-inline" desc:"summary log of each run"`
-	RunStats         *etable.Table   `view:"no-inline" desc:"aggregate stats on all runs"`
-	Params           params.Sets     `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet         string          `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	Tag              string          `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
-	Prjn4x4Skp2      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x4Skp2Recip *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn3x3Skp1      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
-	Prjn4x4Skp4      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
-	Prjn4x4Skp4Recip *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
-	MaxRuns          int             `desc:"maximum number of model runs to perform"`
-	MaxEpcs          int             `desc:"maximum number of epochs to run per model run"`
-	NZeroStop        int             `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
-	TrainEnv         FWorld          `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time             axon.Time       `desc:"axon timing parameters and state"`
-	ViewOn           bool            `desc:"whether to update the network view while running"`
-	TrainUpdt        axon.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt         axon.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
-	TestInterval     int             `desc:"how often to run through all the test patterns, in terms of training epochs"`
-	LayStatNms       []string        `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	ARFLayers        []string        `desc:"names of layers to compute position activation fields on"`
+	Net              *deep.Network                 `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
+	ARFs             actrf.RFs                     `view:"no-inline" desc:"activation-based receptive fields"`
+	TrnEpcLog        *etable.Table                 `view:"no-inline" desc:"training epoch-level log data"`
+	TrnTrlLog        *etable.Table                 `view:"no-inline" desc:"training trial-level log data"`
+	TrnErrStats      *etable.Table                 `view:"no-inline" desc:"stats on train trials where errors were made"`
+	TrnAggStats      *etable.Table                 `view:"no-inline" desc:"stats on all train trials"`
+	TstEpcLog        *etable.Table                 `view:"no-inline" desc:"testing epoch-level log data"`
+	TstTrlLog        *etable.Table                 `view:"no-inline" desc:"testing trial-level log data"`
+	TstErrLog        *etable.Table                 `view:"no-inline" desc:"log of all test trials where errors were made"`
+	TstCycLog        *etable.Table                 `view:"no-inline" desc:"testing cycle-level log data"`
+	RunLog           *etable.Table                 `view:"no-inline" desc:"summary log of each run"`
+	RunStats         *etable.Table                 `view:"no-inline" desc:"aggregate stats on all runs"`
+	Params           params.Sets                   `view:"no-inline" desc:"full collection of param sets"`
+	ParamSet         string                        `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
+	Tag              string                        `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Prjn4x4Skp2      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x4Skp2Recip *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn3x3Skp1      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Prjn4x4Skp4      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	Prjn4x4Skp4Recip *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
+	MaxRuns          int                           `desc:"maximum number of model runs to perform"`
+	MaxEpcs          int                           `desc:"maximum number of epochs to run per model run"`
+	NZeroStop        int                           `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
+	TrainEnv         FWorld                        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time             axon.Time                     `desc:"axon timing parameters and state"`
+	ViewOn           bool                          `desc:"whether to update the network view while running"`
+	TrainUpdt        axon.TimeScales               `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
+	TestUpdt         axon.TimeScales               `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
+	TestInterval     int                           `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	LayStatNms       []string                      `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	ARFLayers        []string                      `desc:"names of layers to compute position activation fields on"`
+	SpikeRecLays     []string                      `desc:"names of layers to record spikes of during testing"`
+	SpikeRasters     map[string]*etensor.Float32   `desc:"spike raster data for different layers"`
+	SpikeRastGrids   map[string]*etview.TensorGrid `desc:"spike raster plots for different layers"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -186,13 +189,14 @@ func (ss *Sim) New() {
 	ss.TestUpdt = axon.Cycle
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 	ss.ARFLayers = []string{"cIPL", "PCC", "PCCCT", "SMA", "SMACT"}
+	ss.SpikeRecLays = []string{"cIPL", "PCC", "SMA"}
 	ss.Defaults()
 	ss.NewPrjns()
 }
 
 // Defaults set default param values
 func (ss *Sim) Defaults() {
-	ss.PctCortexMax = 0.7 // for good rfs
+	ss.PctCortexMax = 0.5 // for good rfs
 	ss.TestInterval = 50000
 }
 
@@ -588,9 +592,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 // Initialize network weights including scales
 func (ss *Sim) InitWts(net *deep.Network) {
-	net.InitTopoScales() //  sets all wt scales
-	net.InitWts()
 	net.LrateMult(1) // restore initial learning rate value
+	net.InitWts()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -666,7 +669,10 @@ func (ss *Sim) AlphaCyc(train bool) {
 			ss.Net.Cycle(&ss.Time)
 			if !train {
 				ss.LogTstCyc(ss.TstCycLog, ss.Time.Cycle)
+			} else if !ss.NoGui {
+				ss.RecordSpikes(ss.Time.Cycle)
 			}
+
 			ss.Time.CycleInc()
 			if ss.ViewOn {
 				switch viewUpdt {
@@ -1189,6 +1195,67 @@ func (ss *Sim) ValsTsr(name string) *etensor.Float32 {
 		ss.ValsTsrs[name] = tsr
 	}
 	return tsr
+}
+
+// ConfigSpikeRasts
+func (ss *Sim) ConfigSpikeRasts() {
+	ncy := ss.Time.CycPerQtr * 4
+	for _, lnm := range ss.SpikeRecLays {
+		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
+		sr := ss.SpikeRastTsr(lnm)
+		sr.SetShape([]int{ly.Shp.Len(), ncy}, nil, []string{"Nrn", "Cyc"})
+	}
+}
+
+// SpikeRastTsr gets spike raster tensor of given name, creating if not yet made
+func (ss *Sim) SpikeRastTsr(name string) *etensor.Float32 {
+	if ss.SpikeRasters == nil {
+		ss.SpikeRasters = make(map[string]*etensor.Float32)
+	}
+	tsr, ok := ss.SpikeRasters[name]
+	if !ok {
+		tsr = &etensor.Float32{}
+		ss.SpikeRasters[name] = tsr
+	}
+	return tsr
+}
+
+// SpikeRastGrid gets spike raster grid of given name, creating if not yet made
+func (ss *Sim) SpikeRastGrid(name string) *etview.TensorGrid {
+	if ss.SpikeRastGrids == nil {
+		ss.SpikeRastGrids = make(map[string]*etview.TensorGrid)
+	}
+	tsr, ok := ss.SpikeRastGrids[name]
+	if !ok {
+		tsr = &etview.TensorGrid{}
+		ss.SpikeRastGrids[name] = tsr
+	}
+	return tsr
+}
+
+// SetSpikeRastCol sets column of given spike raster from data
+func (ss *Sim) SetSpikeRastCol(sr, vl *etensor.Float32, col int) {
+	for ni, v := range vl.Values {
+		sr.Set([]int{ni, col}, v)
+	}
+}
+
+// ConfigSpikeGrid configures the spike grid
+func (ss *Sim) ConfigSpikeGrid(tg *etview.TensorGrid, sr *etensor.Float32) {
+	tg.SetStretchMax()
+	sr.SetMetaData("grid-fill", "1")
+	tg.SetTensor(sr)
+}
+
+// RecordSpikes
+func (ss *Sim) RecordSpikes(cyc int) {
+	for _, lnm := range ss.SpikeRecLays {
+		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
+		tv := ss.ValsTsr(lnm)
+		ly.UnitValsTensor(tv, "Spike")
+		sr := ss.SpikeRastTsr(lnm)
+		ss.SetSpikeRastCol(sr, tv, cyc)
+	}
 }
 
 // RunName returns a name for this run that combines Tag and Params -- add this to
@@ -1969,6 +2036,20 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TrnTrlPlot").(*eplot.Plot2D)
 	ss.TrnTrlPlot = ss.ConfigTrnTrlPlot(plt, ss.TrnTrlLog)
 
+	stb := tv.AddNewTab(gi.KiT_Layout, "Spike Rasters").(*gi.Layout)
+	stb.Lay = gi.LayoutVert
+	stb.SetStretchMax()
+	ss.ConfigSpikeRasts()
+	for _, lnm := range ss.SpikeRecLays {
+		sr := ss.SpikeRastTsr(lnm)
+		tg := ss.SpikeRastGrid(lnm)
+		tg.SetName(lnm + "Spikes")
+		gi.AddNewLabel(stb, lnm, lnm+":")
+		stb.AddChild(tg)
+		gi.AddNewSpace(stb, lnm+"_spc")
+		ss.ConfigSpikeGrid(tg, sr)
+	}
+
 	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TstTrlPlot").(*eplot.Plot2D)
 	ss.TstTrlPlot = ss.ConfigTstTrlPlot(plt, ss.TstTrlLog)
 
@@ -2303,10 +2384,7 @@ func (ss *Sim) MPIFinalize() {
 
 // CollectDWts collects the weight changes from all synapses into AllDWts
 func (ss *Sim) CollectDWts(net *axon.Network) {
-	made := net.CollectDWts(&ss.AllDWts, 78163328) // plug in number from printout below, to avoid realloc
-	if made {
-		mpi.Printf("MPI: AllDWts len: %d\n", len(ss.AllDWts)) // put this number in above make
-	}
+	net.CollectDWts(&ss.AllDWts)
 }
 
 // MPIWtFmDWt updates weights from weight changes, using MPI to integrate
@@ -2320,7 +2398,7 @@ func (ss *Sim) MPIWtFmDWt() {
 			ss.SumDWts = make([]float32, ndw)
 		}
 		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
-		ss.Net.SetDWts(ss.SumDWts)
+		ss.Net.SetDWts(ss.SumDWts, mpi.WorldSize())
 	}
 	ss.Net.WtFmDWt()
 }

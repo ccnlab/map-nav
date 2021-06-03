@@ -13,7 +13,6 @@ import (
 	"math/rand"
 	"os"
 
-	"github.com/chewxy/math32"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/evec"
@@ -427,7 +426,7 @@ func (ev *FWorld) ScanDepth() {
 	_ = nmat
 	idx := 0
 	hang := ev.FOV / 2
-	maxld := math32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
+	maxld := mat32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
 	for ang := hang; ang >= -hang; ang -= ev.AngInc {
 		v := AngVec(ang + ev.Angle)
 		op := ev.PosF
@@ -456,7 +455,7 @@ func (ev *FWorld) ScanDepth() {
 		ev.Depths[idx] = depth
 		ev.ViewMats[idx] = vmat
 		if depth > 0 {
-			ev.DepthLogs[idx] = math32.Log(1+depth) / maxld
+			ev.DepthLogs[idx] = mat32.Log(1+depth) / maxld
 		} else {
 			ev.DepthLogs[idx] = 1
 		}
@@ -468,7 +467,7 @@ func (ev *FWorld) ScanDepth() {
 func (ev *FWorld) ScanFovea() {
 	nmat := len(ev.Mats)
 	idx := 0
-	maxld := math32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
+	maxld := mat32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
 	for fi := -ev.FoveaSize; fi <= ev.FoveaSize; fi++ {
 		ang := -fi * ev.FoveaAngInc
 		v := AngVec(ang + ev.Angle)
@@ -498,7 +497,7 @@ func (ev *FWorld) ScanFovea() {
 		ev.FovDepths[idx] = depth
 		ev.FovMats[idx] = vmat
 		if depth > 0 {
-			ev.FovDepthLogs[idx] = math32.Log(1+depth) / maxld
+			ev.FovDepthLogs[idx] = mat32.Log(1+depth) / maxld
 		} else {
 			ev.FovDepthLogs[idx] = 1
 		}

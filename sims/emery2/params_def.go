@@ -20,6 +20,7 @@ var ParamSets = params.Sets{
 					"Layer.Act.Decay.Act":                "0.0", // todo: explore
 					"Layer.Act.Decay.Glong":              "0.0",
 					"Layer.Act.Dt.TrlAvgTau":             "20",    // 20 > higher for objrec, lvis
+					"Layer.Learn.ActAvg.MinLrn":          "0.02",  // in lvis: sig improves "top5" hogging in pca strength
 					"Layer.Learn.TrgAvgAct.ErrLrate":     "0.01",  // 0.01 lvis
 					"Layer.Learn.TrgAvgAct.SynScaleRate": "0.005", // 0.005 lvis
 					"Layer.Learn.TrgAvgAct.TrgRange.Min": "0.5",   // .5 best for Lvis, .2 - 2.0 best for objrec
@@ -40,18 +41,20 @@ var ParamSets = params.Sets{
 					"Layer.Act.Noise.Var":        "0.005",   // 0.005 > 0.01 probably
 					"Layer.Act.Noise.Type":       "NoNoise", // probably not needed!
 				}},
-			{Sel: ".CT", Desc: "",
+			{Sel: ".CT", Desc: "corticothalamic context",
 				Params: params.Params{
-					"Layer.CtxtGeGain":      "0.2",
-					"Layer.Inhib.Layer.Gi":  "1.1",
-					"Layer.Inhib.Pool.Gi":   "1.1",
-					"Layer.Inhib.Pool.On":   "true", // independent pathways
-					"Layer.Inhib.Layer.On":  "false",
-					"Layer.Act.KNa.On":      "true",
-					"Layer.Act.NMDA.Gbar":   "0.03", // larger not better
-					"Layer.Act.GABAB.Gbar":  "0.2",
-					"Layer.Act.Decay.Act":   "0.0", // todo: explore
-					"Layer.Act.Decay.Glong": "0.0",
+					"Layer.Inhib.ActAvg.Init": "0.06",
+					"Layer.Inhib.ActAvg.Targ": "0.06",
+					"Layer.CtxtGeGain":        "0.2", // .2 > .1 > .3
+					"Layer.Inhib.Layer.Gi":    "1.1",
+					"Layer.Inhib.Pool.Gi":     "1.1",
+					"Layer.Inhib.Pool.On":     "true", // independent pathways
+					"Layer.Inhib.Layer.On":    "false",
+					"Layer.Act.KNa.On":        "true",
+					"Layer.Act.NMDA.Gbar":     "0.03", // larger not better
+					"Layer.Act.GABAB.Gbar":    "0.2",
+					"Layer.Act.Decay.Act":     "0.0", // todo: explore
+					"Layer.Act.Decay.Glong":   "0.0",
 				}},
 			{Sel: "TRCLayer", Desc: "",
 				Params: params.Params{

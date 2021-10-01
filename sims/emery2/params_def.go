@@ -19,7 +19,6 @@ var ParamSets = params.Sets{
 					"Layer.Act.Gbar.L":                   "0.2",
 					"Layer.Act.Decay.Act":                "0.0", // todo: explore
 					"Layer.Act.Decay.Glong":              "0.0",
-					"Layer.Act.Dt.TrlAvgTau":             "20",    // 20 > higher for objrec, lvis
 					"Layer.Learn.ActAvg.MinLrn":          "0.02",  // in lvis: sig improves "top5" hogging in pca strength
 					"Layer.Learn.TrgAvgAct.ErrLrate":     "0.01",  // 0.01 lvis
 					"Layer.Learn.TrgAvgAct.SynScaleRate": "0.005", // 0.005 lvis
@@ -185,7 +184,7 @@ var ParamSets = params.Sets{
 					"Prjn.SWt.Init.Var":     "0.0",
 					"Prjn.SWt.Init.Mean":    "0.1",
 					"Prjn.SWt.Adapt.On":     "false",
-					"Prjn.PrjnScale.Init":   "0.1", // .1 = .2, slower blowup
+					"Prjn.PrjnScale.Abs":    "0.1", // .1 = .2, slower blowup
 					"Prjn.PrjnScale.Adapt":  "false",
 					"Prjn.IncGain":          "1", // .5 def
 				}},

@@ -88,6 +88,8 @@ type Sim struct {
 	TstCycLog        *etable.Table                 `view:"no-inline" desc:"testing cycle-level log data"`
 	RunLog           *etable.Table                 `view:"no-inline" desc:"summary log of each run"`
 	RunStats         *etable.Table                 `view:"no-inline" desc:"aggregate stats on all runs"`
+	MinusCycles      int                           `desc:"number of minus-phase cycles"`
+	PlusCycles       int                           `desc:"number of plus-phase cycles"`
 	ErrLrMod         axon.LrateMod                 `view:"inline" desc:"learning rate modulation as function of error"`
 	Params           params.Sets                   `view:"no-inline" desc:"full collection of param sets"`
 	ParamSet         string                        `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
@@ -186,14 +188,19 @@ func (ss *Sim) New() {
 	ss.TstCycLog = &etable.Table{}
 	ss.RunLog = &etable.Table{}
 	ss.RunStats = &etable.Table{}
+
+	ss.Time.Defaults()
+	ss.MinusCycles = 150
+	ss.PlusCycles = 50
+
 	ss.ErrLrMod.Defaults()
 	ss.ErrLrMod.Base = 0.05 // 0.05 >= .01, .1 -- hard to tell
 	ss.ErrLrMod.Range.Set(0.2, 0.8)
 	ss.Params = ParamSets
 	ss.RndSeed = 1
 	ss.ViewOn = true
-	ss.TrainUpdt = axon.Quarter // axon.AlphaCycle
-	ss.TestUpdt = axon.Quarter
+	ss.TrainUpdt = axon.AlphaCycle
+	ss.TestUpdt = axon.GammaCycle
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 	ss.ARFLayers = []string{"MSTd", "MSTdCT", "cIPL", "cIPLCT", "PCC", "PCCCT", "SMA", "SMACT"}
 	ss.SpikeRecLays = []string{"cIPL", "PCC", "SMA"}
@@ -633,6 +640,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		log.Println(err)
 		return
 	}
+	if !ss.NoGui {
+		sr := net.SizeReport()
+		mpi.Printf("%s", sr)
+	}
 	ss.InitWts(net)
 }
 
@@ -682,15 +693,34 @@ func (ss *Sim) UpdateView(train bool) {
 	ss.UpdateWorldGui()
 }
 
+func (ss *Sim) UpdateViewTime(train bool, viewUpdt axon.TimeScales) {
+	switch viewUpdt {
+	case axon.Cycle:
+		ss.UpdateView(train)
+	case axon.FastSpike:
+		if ss.Time.Cycle%10 == 0 {
+			ss.UpdateView(train)
+		}
+	case axon.GammaCycle:
+		if ss.Time.Cycle%25 == 0 {
+			ss.UpdateView(train)
+		}
+	case axon.AlphaCycle:
+		if ss.Time.Cycle%100 == 0 {
+			ss.UpdateView(train)
+		}
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // 	    Running the Network, starting bottom-up..
 
-// AlphaCyc runs one alpha-cycle (100 msec, 4 quarters)			 of processing.
+// ThetaCyc runs one alpha-cycle (100 msec, 4 quarters)			 of processing.
 // External inputs must have already been applied prior to calling,
 // using ApplyExt method on relevant layers (see TrainTrial, TestTrial).
 // If train is true, then learning DWt or WtFmDWt calls are made.
-// Handles netview updating within scope of AlphaCycle
-func (ss *Sim) AlphaCyc(train bool) {
+// Handles netview updating within scope of ThetaCycle
+func (ss *Sim) ThetaCyc(train bool) {
 	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
 	viewUpdt := ss.TrainUpdt
 	if !train {
@@ -707,53 +737,68 @@ func (ss *Sim) AlphaCyc(train bool) {
 
 	ev := &ss.TrainEnv
 
-	ss.Net.AlphaCycInit()
-	ss.Time.AlphaCycStart()
-	for qtr := 0; qtr < 4; qtr++ {
-		for cyc := 0; cyc < ss.Time.CycPerQtr; cyc++ {
-			ss.Net.Cycle(&ss.Time)
-			if !ss.NoGui {
-				ss.LogTstCyc(ss.TstCycLog, ss.Time.Cycle)
-				ss.RecordSpikes(ss.Time.Cycle)
-			}
+	minusCyc := ss.MinusCycles
+	plusCyc := ss.PlusCycles
 
-			ss.Time.CycleInc()
-			if ss.ViewOn {
-				switch viewUpdt {
-				case axon.Cycle:
-					ss.UpdateView(train)
-				case axon.FastSpike:
-					if (cyc+1)%10 == 0 {
-						ss.UpdateView(train)
-					}
-				}
-			}
+	ss.Net.NewState()
+	ss.Time.NewState()
+
+	for cyc := 0; cyc < minusCyc; cyc++ { // do the minus phase
+		ss.Net.Cycle(&ss.Time)
+		ss.LogTstCyc(ss.TstCycLog, ss.Time.Cycle)
+		if !ss.NoGui {
+			ss.RecordSpikes(ss.Time.Cycle)
 		}
-		ss.Net.QuarterFinal(&ss.Time)
-		ss.Time.QuarterInc()
-		if qtr == 2 {
-			ss.TakeAction(ss.Net, ev)
+		ss.Time.CycleInc()
+		switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
+		case 75:
+			ss.Net.ActSt1(&ss.Time)
+			// if erand.BoolProb(float64(ss.PAlphaPlus), -1) {
+			// 	ss.Net.TargToExt()
+			// 	ss.Time.PlusPhase = true
+			// }
+		case 100:
+			ss.Net.ActSt2(&ss.Time)
+			ss.Net.ClearTargExt()
+			ss.Time.PlusPhase = false
+		}
+
+		if cyc == minusCyc-1 { // do before view update
+			ss.Net.MinusPhase(&ss.Time)
 		}
 		if ss.ViewOn {
-			switch {
-			case viewUpdt <= axon.Quarter:
-				ss.UpdateView(train)
-			case viewUpdt == axon.Phase:
-				if qtr >= 2 {
-					ss.UpdateView(train)
-				}
-			}
+			ss.UpdateViewTime(train, viewUpdt)
+		}
+	}
+	ss.Time.NewPhase()
+	ss.TakeAction(ss.Net, ev)
+	if viewUpdt == axon.Phase {
+		ss.UpdateView(train)
+	}
+	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
+		ss.Net.Cycle(&ss.Time)
+		ss.LogTstCyc(ss.TstCycLog, ss.Time.Cycle)
+		if !ss.NoGui {
+			ss.RecordSpikes(ss.Time.Cycle)
+		}
+		ss.Time.CycleInc()
+
+		if cyc == plusCyc-1 { // do before view update
+			ss.Net.PlusPhase(&ss.Time)
+		}
+		if ss.ViewOn {
+			ss.UpdateViewTime(train, viewUpdt)
 		}
 	}
 
 	ss.TrialStats(train) // need stats for lrmod
 
 	if train {
-		vlerr := ss.TrlCosDiffTRC[len(ss.TrlCosDiffTRC)-1] // modulate learning by action error
-		ss.ErrLrMod.LrateMod(ss.Net.AsAxon(), float32(1-vlerr))
+		// vlerr := ss.TrlCosDiffTRC[len(ss.TrlCosDiffTRC)-1] // modulate learning by action error
+		// ss.ErrLrMod.LrateMod(ss.Net.AsAxon(), float32(1-vlerr))
 		ss.Net.DWt()
 	}
-	if ss.ViewOn && viewUpdt == axon.AlphaCycle {
+	if viewUpdt == axon.Phase || viewUpdt == axon.AlphaCycle || viewUpdt == axon.ThetaCycle {
 		ss.UpdateView(train)
 	}
 	if !ss.NoGui {
@@ -847,7 +892,7 @@ func (ss *Sim) TrainTrial() {
 		ss.LogTrnEpc(ss.TrnEpcLog)
 		ss.TrainSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > axon.AlphaCycle {
+		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.MaxEpcs {
@@ -865,7 +910,7 @@ func (ss *Sim) TrainTrial() {
 	}
 
 	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
-	ss.AlphaCyc(true) // train
+	ss.ThetaCyc(true) // train
 	// ss.TrialStats(true) // now in alphacyc
 	ss.LogTrnTrl(ss.TrnTrlLog)
 }
@@ -1146,7 +1191,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 		ss.LogTstEpc(ss.TstEpcLog)
 		ss.TrainSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > axon.AlphaCycle {
+		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.TestEpcs {
@@ -1163,7 +1208,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 	}
 
 	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
-	ss.AlphaCyc(false) // train
+	ss.ThetaCyc(false) // train
 	// ss.TrialStats(true) // now in alphacyc
 	ss.LogTstTrl(ss.TstTrlLog)
 }
@@ -1260,7 +1305,7 @@ func (ss *Sim) ValsTsr(name string) *etensor.Float32 {
 
 // ConfigSpikeRasts
 func (ss *Sim) ConfigSpikeRasts() {
-	ncy := ss.Time.TotalCycles()
+	ncy := ss.MinusCycles + ss.PlusCycles
 	for _, lnm := range ss.SpikeRecLays {
 		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
 		sr := ss.SpikeRastTsr(lnm)

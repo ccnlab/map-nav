@@ -32,9 +32,9 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.AdaptGi": "true", // enforce for these guys
 					"Layer.Inhib.Layer.Gi":       "1.1",
 					"Layer.Inhib.Pool.Gi":        "1.1",
-					"Layer.Inhib.Pool.On":        "true", // independent pathways
-					"Layer.Inhib.Layer.On":       "false",
-					"Layer.Act.Decay.Act":        "0.0", // todo: explore
+					"Layer.Inhib.Pool.On":        "true",
+					"Layer.Inhib.Layer.On":       "true", // full layer
+					"Layer.Act.Decay.Act":        "0.0",  // todo: explore
 					"Layer.Act.Decay.Glong":      "0.0",
 					"Layer.Act.Noise.Dist":       "Gaussian",
 					"Layer.Act.Noise.Var":        "0.005",   // 0.005 > 0.01 probably
@@ -47,8 +47,8 @@ var ParamSets = params.Sets{
 					"Layer.CtxtGeGain":        "0.2", // .2 > .1 > .3
 					"Layer.Inhib.Layer.Gi":    "1.1",
 					"Layer.Inhib.Pool.Gi":     "1.1",
-					"Layer.Inhib.Pool.On":     "true", // independent pathways
-					"Layer.Inhib.Layer.On":    "false",
+					"Layer.Inhib.Pool.On":     "true",
+					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Act.KNa.On":        "true",
 					"Layer.Act.NMDA.Gbar":     "0.03", // larger not better
 					"Layer.Act.GABAB.Gbar":    "0.2",
@@ -57,7 +57,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "TRCLayer", Desc: "",
 				Params: params.Params{
-					"Layer.TRC.DriveScale":  "0.05",
+					"Layer.TRC.DriveScale":  "0.15",  // .05 default
 					"Layer.Act.GABAB.Gbar":  "0.005", // 0.005 > 0.01 > 0.002 -- sensitive
 					"Layer.Act.NMDA.Gbar":   "0.1",   // 0.1 > .05 > .2
 					"Layer.Act.Decay.Act":   "0.5",
@@ -147,6 +147,12 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.1",
 				}},
+			{Sel: "#ITCT", Desc: "reg",
+				Params: params.Params{
+					"Layer.Inhib.Layer.Gi": "1.1",
+					"Layer.Inhib.Layer.On": "true",
+					"Layer.Inhib.Pool.On":  "true",
+				}},
 			{Sel: ".LIP", Desc: "reg",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi": "1.1",
@@ -154,6 +160,11 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Pool.On":  "true",
 					"Layer.Inhib.Pool.Gi":  "1.1",
 				}},
+			// {Sel: ".MSTd", Desc: "corticothalamic context",
+			// 	Params: params.Params{
+			// 		"Layer.Inhib.Pool.On":  "false",
+			// 		"Layer.Inhib.Layer.On": "true",
+			// 	}},
 
 			//////////////////////////////////////////////////////////
 			// Prjns
@@ -183,6 +194,7 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Lrate.Base": "0.0001", // .0001 > .001 -- slower better!
 					"Prjn.SWt.Init.Var":     "0.0",
 					"Prjn.SWt.Init.Mean":    "0.1",
+					"Prjn.SWt.Init.Sym":     "false",
 					"Prjn.SWt.Adapt.On":     "false",
 					"Prjn.PrjnScale.Abs":    "0.1", // .1 = .2, slower blowup
 					"Prjn.PrjnScale.Adapt":  "false",

@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strings"
 
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
@@ -250,7 +251,11 @@ func (ev *FWorld) Validate() error {
 }
 
 func (ev *FWorld) State(element string) etensor.Tensor {
-	return ev.CurStates[element]
+	if strings.HasPrefix(element, "Prev") {
+		element = element[4:]
+		return ev.CurStates[element] // cur for prediction, Next for encoder
+	}
+	return ev.NextStates[element]
 }
 
 // String returns the current state as a string
@@ -601,7 +606,9 @@ func (ev *FWorld) RefreshWorld() {
 }
 
 // TakeAct takes the action, updates state
-func (ev *FWorld) TakeAct(act int) {
+func (ev *FWorld) TakeAct() {
+	act := ev.ActGen()
+	ev.Act = act
 	as := ""
 	if act >= len(ev.Acts) || act < 0 {
 		as = "Stay"
@@ -789,6 +796,7 @@ func (ev *FWorld) CopyNextToCur() {
 func (ev *FWorld) Step() bool {
 	ev.Epoch.Same() // good idea to just reset all non-inner-most counters at start
 	ev.CopyNextToCur()
+	ev.TakeAct()
 	ev.Tick.Incr()
 	ev.Event.Incr()
 	ev.RefreshWorld()
@@ -799,13 +807,6 @@ func (ev *FWorld) Step() bool {
 }
 
 func (ev *FWorld) Action(action string, nop etensor.Tensor) {
-	a, ok := ev.ActMap[action]
-	if !ok {
-		fmt.Printf("Action not recognized: %s\n", action)
-		return
-	}
-	ev.Act = a
-	ev.TakeAct(ev.Act)
 }
 
 func (ev *FWorld) Counter(scale env.TimeScales) (cur, prv int, chg bool) {

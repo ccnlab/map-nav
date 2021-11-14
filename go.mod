@@ -3,7 +3,7 @@ module github.com/ccnlab/map-nav
 go 1.15
 
 require (
-	github.com/emer/axon v1.2.90
+	github.com/emer/axon v1.2.91
 	github.com/emer/emergent v1.1.40
 	github.com/emer/empi v1.0.12
 	github.com/emer/etable v1.0.38

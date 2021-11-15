@@ -107,8 +107,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".MSTd", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.025",
-					"Layer.Inhib.ActAvg.Targ": "0.025",
+					"Layer.Inhib.ActAvg.Init": "0.03",
+					"Layer.Inhib.ActAvg.Targ": "0.03",
 					"Layer.Inhib.Layer.Gi":    "1.1", // 1.1 > 1.0
 					"Layer.Inhib.Pool.Gi":     "1.1",
 					"Layer.Inhib.Pool.FFEx":   "0.0", //
@@ -123,8 +123,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".Depth", Desc: "depth layers use pool inhibition only",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.07",
-					"Layer.Inhib.ActAvg.Targ": "0.07",
+					"Layer.Inhib.ActAvg.Init": "0.08",
+					"Layer.Inhib.ActAvg.Targ": "0.08",
 					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Inhib.Pool.On":     "false",
 					"Layer.Inhib.Layer.Gi":    "0.8",

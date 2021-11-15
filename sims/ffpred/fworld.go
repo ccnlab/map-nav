@@ -188,8 +188,12 @@ func (ev *FWorld) ConfigImpl() {
 
 	fsz := 1 + 2*ev.FoveaSize
 	fd := &etensor.Float32{}
-	fd.SetShape([]int{1, fsz, ev.DepthSize, 1}, nil, []string{"1", "Angle", "Pop", "1"})
+	fd.SetShape([]int{ev.DepthPools, fsz, ev.DepthSize / ev.DepthPools, 1}, nil, []string{"Pools", "Angle", "Pop", "1"})
 	ev.NextStates["FovDepth"] = fd
+
+	fd = &etensor.Float32{}
+	fd.SetShape([]int{1, fsz, ev.DepthSize, 1}, nil, []string{"1", "Angle", "Pop", "1"})
+	ev.NextStates["FovDepthRender"] = fd
 
 	fv := &etensor.Float32{}
 	fv.SetShape([]int{1, fsz, ev.PatSize.Y, ev.PatSize.X}, nil, []string{"1", "Angle", "Y", "X"})
@@ -712,10 +716,18 @@ func (ev *FWorld) RenderView() {
 
 	fsz := 1 + 2*ev.FoveaSize
 	fd := ev.NextStates["FovDepth"]
+	fdr := ev.NextStates["FovDepthRender"]
 	fv := ev.NextStates["Fovea"]
 	for i := 0; i < fsz; i++ {
-		sv := fd.SubSpace([]int{0, i}).(*etensor.Float32)
+		sv := fdr.SubSpace([]int{0, i}).(*etensor.Float32)
 		ev.DepthCode.Encode(&sv.Values, ev.FovDepthLogs[i], ev.DepthSize, false)
+		for dp := 0; dp < ev.DepthPools; dp++ {
+			for pi := 0; pi < np; pi++ {
+				ri := dp*np + pi
+				fd.Set([]int{dp, i, pi, 0}, sv.Values[ri])
+			}
+		}
+
 		fm := ev.FovMats[i]
 		if fm < len(ev.Mats) {
 			sv := fv.SubSpace([]int{0, i}).(*etensor.Float32)

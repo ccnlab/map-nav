@@ -221,6 +221,10 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.PrjnScale.Rel": "0.2", // 0.2 > 0.5
 				}},
+			{Sel: ".ActToCT", Desc: "weaker",
+				Params: params.Params{
+					"Prjn.PrjnScale.Rel": "0.2",
+				}},
 			{Sel: ".Inhib", Desc: "inhibitory projection",
 				Params: params.Params{
 					"Prjn.Learn.Learn":      "true",  // learned decorrel is good
@@ -261,10 +265,6 @@ var ParamSets = params.Sets{
 			{Sel: ".FwdToPulv", Desc: "feedforward to pulvinar directly",
 				Params: params.Params{
 					"Prjn.PrjnScale.Rel": "0.1",
-				}},
-			{Sel: "#ActToMSTdCT", Desc: "weaker",
-				Params: params.Params{
-					"Prjn.PrjnScale.Rel": "0.2",
 				}},
 			{Sel: "#ITToITCT", Desc: "IT likes stronger FmSuper",
 				Params: params.Params{

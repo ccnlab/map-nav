@@ -95,6 +95,7 @@ type Sim struct {
 	RunStats         *etable.Table                 `view:"no-inline" desc:"aggregate stats on all runs"`
 	MinusCycles      int                           `desc:"number of minus-phase cycles"`
 	PlusCycles       int                           `desc:"number of plus-phase cycles"`
+	AllLaysOnEpc     int                           `desc:"epoch to turn all layers on -- start with some toggled off (TE etc)"`
 	ErrLrMod         axon.LrateMod                 `view:"inline" desc:"learning rate modulation as function of error"`
 	Params           params.Sets                   `view:"no-inline" desc:"full collection of param sets"`
 	ParamSet         string                        `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
@@ -117,6 +118,7 @@ type Sim struct {
 	TestUpdt         axon.TimeScales               `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval     int                           `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	CosDifActs       []string                      `view:"-" desc:"actions to track CosDif performance by"`
+	InitOffNms       []string                      `desc:"names of layers to turn off initially"`
 	LayStatNms       []string                      `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
 	ARFLayers        []string                      `desc:"names of layers to compute position activation fields on"`
 	SpikeRecLays     []string                      `desc:"names of layers to record spikes of during testing"`
@@ -202,6 +204,7 @@ func (ss *Sim) New() {
 	ss.MinusCycles = 150
 	ss.PlusCycles = 50
 	ss.RepsInterval = 10
+	ss.AllLaysOnEpc = 2
 
 	ss.ErrLrMod.Defaults()
 	ss.ErrLrMod.Base = 0.05 // 0.05 >= .01, .1 -- hard to tell
@@ -212,8 +215,9 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = axon.AlphaCycle
 	ss.TestUpdt = axon.GammaCycle
 	ss.CosDifActs = []string{"Forward", "Left", "Right"}
+	ss.InitOffNms = []string{"MSTdP", "cIPLCT", "cIPLP", "PCCCT"}
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
-	ss.ARFLayers = []string{"MSTd", "MSTdCT", "cIPL", "cIPLCT", "PCC", "PCCCT", "SMA", "SMACT"}
+	ss.ARFLayers = []string{"MSTd", "cIPL", "PCC", "SMA"}
 	ss.SpikeRecLays = []string{"cIPL", "PCC", "SMA"}
 	ss.Defaults()
 	ss.NewPrjns()
@@ -318,6 +322,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sameu.SelfCon = false
 	p1to1 := prjn.NewPoolOneToOne()
 
+	rndcut := prjn.NewUnifRnd()
+	rndcut.PCon = 0.1
+	_ = rndcut
+
 	var parprjn prjn.Pattern
 	parprjn = full
 
@@ -348,19 +356,22 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
 	ins.SetClass("Ins")
 
-	m1 := net.AddLayer4D("M1", 2, 2, 7, 7, emer.Hidden)
+	m1 := net.AddLayer2D("M1", 10, 10, emer.Hidden)
 	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target)  // Action
 	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
 
-	mstd, mstdct := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8) // full field optic flow
-	mstdct.RecvPrjns().SendName(mstd.Name()).SetPattern(p1to1)
+	m1p := net.AddTRCLayer2D("M1P", 10, 10)
+	m1p.Driver = "M1"
+
+	mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8)
+	mstdct.RecvPrjns().SendName(mstd.Name()).SetPattern(p1to1)          // todo: try ss.Prjn3x3Skp1 orig: p1to1
 	net.ConnectLayers(mstdct, v2wdp, ss.Prjn4x4Skp2Recip, emer.Forward) // ss.Prjn3x3Skp1
 	net.ConnectLayers(v2wdp, mstd, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(v2wdp, mstdct, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjn4x4Skp2).SetClass("CTFmSuper")
 	// net.ConnectCtxtToCT(mstdct, mstdct, parprjn).SetClass("CTSelf") // important!
 
-	cipl, ciplct := deep.AddSuperCT4D(net.AsAxon(), "cIPL", 3, 3, 8, 8)
+	cipl, ciplct, ciplp := deep.AddSuperCTTRC4D(net.AsAxon(), "cIPL", 3, 3, 8, 8)
 	ciplct.RecvPrjns().SendName(cipl.Name()).SetPattern(full)
 	// net.ConnectLayers(ciplct, v2wdp, full, emer.Forward)
 	// net.ConnectLayers(v2wdp, cipl, full, emer.Back).SetClass("FmPulv")
@@ -374,11 +385,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// net.ConnectLayers(v2wdp, pccct, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(pccct, pccct, parprjn).SetClass("CTSelf")
 
-	sma, smact := net.AddSuperCT4D("SMA", 2, 2, 7, 7)
-	smact.RecvPrjns().SendName(sma.Name()).SetPattern(parprjn)
+	sma, smact := net.AddSuperCT2D("SMA", 10, 10)
+	smact.RecvPrjns().SendName(sma.Name()).SetPattern(full)
 	// net.ConnectCtxtToCT(smact, smact, parprjn).SetClass("CTSelf")
+	net.ConnectLayers(smact, m1p, full, emer.Forward)
+	net.ConnectLayers(m1p, sma, full, emer.Back).SetClass("FmPulv")
+	net.ConnectLayers(m1p, smact, full, emer.Back).SetClass("FmPulv")
 
-	it, itct := net.AddSuperCT4D("IT", 2, 2, 7, 7)
+	it, itct := net.AddSuperCT2D("IT", 10, 10)
 	itct.RecvPrjns().SendName(it.Name()).SetPattern(parprjn)
 	net.ConnectLayers(itct, v1fp, full, emer.Forward)
 	net.ConnectLayers(v1fp, itct, full, emer.Back).SetClass("FmPulv")
@@ -397,12 +411,15 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1.SetClass("M1")
 	vl.SetClass("M1")
 	act.SetClass("M1")
+	m1p.SetClass("M1")
 
 	mstd.SetClass("MSTd")
 	mstdct.SetClass("MSTd")
+	mstdp.SetClass("MSTd")
 
 	cipl.SetClass("cIPL")
 	ciplct.SetClass("cIPL")
+	ciplp.SetClass("cIPL")
 
 	pcc.SetClass("PCC")
 	pccct.SetClass("PCC")
@@ -426,10 +443,21 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(cipl, mstd, ss.Prjn4x4Skp2Recip, emer.Back)
 	net.ConnectLayers(ciplct, mstdct, ss.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
 
+	net.ConnectLayers(mstdp, ciplct, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
+	net.ConnectLayers(mstdp, cipl, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
+	net.ConnectLayers(ciplct, mstdp, ss.Prjn4x4Skp2Recip, emer.Forward)
+
+	net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(sma, mstd, full, emer.Back)
+
 	// CIPl <-> PCC
 	net.ConnectLayers(cipl, pcc, parprjn, emer.Forward).SetClass("SuperFwd")
 	net.ConnectLayers(pcc, cipl, parprjn, emer.Back)
 	net.ConnectLayers(pccct, ciplct, parprjn, emer.Back).SetClass("CTBack")
+
+	net.ConnectLayers(ciplp, pccct, parprjn, emer.Back).SetClass("FmPulv")
+	net.ConnectLayers(ciplp, pcc, parprjn, emer.Back).SetClass("FmPulv")
+	net.ConnectLayers(pccct, ciplp, parprjn, emer.Forward)
 
 	// PCC <-> SMA
 	net.ConnectLayers(pcc, sma, parprjn, emer.Forward).SetClass("SuperFwd")
@@ -458,12 +486,19 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// net.ConnectLayers(smact, mstdct, parprjn, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
 
 	// ActToCT are used temporarily to endure prediction is properly contextualized
-	net.ConnectCtxtToCT(act, mstdct, full).SetClass("ActToCT")
-	net.ConnectCtxtToCT(act, ciplct, full).SetClass("ActToCT")
-	net.ConnectCtxtToCT(act, smact, full).SetClass("ActToCT")
-	net.ConnectCtxtToCT(act, pccct, full).SetClass("ActToCT")
-	net.ConnectCtxtToCT(act, itct, full).SetClass("ActToCT")
-	net.ConnectCtxtToCT(act, lipct, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, mstdct, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, ciplct, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, smact, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, pccct, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, itct, full).SetClass("ActToCT")
+	// net.ConnectCtxtToCT(act, lipct, full).SetClass("ActToCT")
+
+	net.ConnectCtxtToCT(m1p, mstdct, full).SetClass("FmPulv")
+	net.ConnectCtxtToCT(m1p, ciplct, full).SetClass("FmPulv")
+	net.ConnectCtxtToCT(m1p, smact, full).SetClass("FmPulv")
+	net.ConnectCtxtToCT(m1p, pccct, full).SetClass("FmPulv")
+	net.ConnectCtxtToCT(m1p, itct, full).SetClass("FmPulv")
+	net.ConnectCtxtToCT(m1p, lipct, full).SetClass("FmPulv")
 
 	// // S1 vestibular
 	// nt.ConnectLayers(mstdct, s1vp, full, emer.Forward)
@@ -476,10 +511,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// to cIPL
 
-	net.ConnectLayers(sma, cipl, parprjn, emer.Back)
+	// net.ConnectLayers(sma, cipl, parprjn, emer.Back)
 	net.ConnectLayers(s1s, cipl, full, emer.Back)
 	net.ConnectLayers(s1v, cipl, full, emer.Back)
-	net.ConnectLayers(vl, cipl, full, emer.Back) // todo: m1?
+	// net.ConnectLayers(vl, cipl, full, emer.Back) // todo: m1?
 
 	net.ConnectLayers(pccct, ciplct, parprjn, emer.Back).SetClass("CTBack")
 	net.ConnectLayers(smact, ciplct, parprjn, emer.Back).SetClass("CTBack")
@@ -499,7 +534,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.ConnectLayers(s1s, pcc, full, emer.Forward)
 	net.ConnectLayers(s1v, pcc, full, emer.Forward)
-	net.ConnectLayers(vl, pcc, full, emer.Back)
+	// net.ConnectLayers(vl, pcc, full, emer.Back)
 
 	net.ConnectLayers(smact, pccct, parprjn, emer.Back).SetClass("CTBack")
 
@@ -518,11 +553,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.ConnectLayers(it, sma, full, emer.Forward)
 	net.ConnectLayers(lip, sma, full, emer.Forward)
-	net.ConnectLayers(cipl, sma, parprjn, emer.Forward) // todo: forward??
 	net.ConnectLayers(s1s, sma, full, emer.Forward)
-	net.ConnectLayers(vl, sma, full, emer.Back)
 
-	net.ConnectLayers(vl, smact, full, emer.Back)
+	// net.ConnectLayers(vl, sma, full, emer.Back)
+	// net.ConnectLayers(cipl, sma, parprjn, emer.Forward) // todo: forward??
+	// net.ConnectLayers(vl, smact, full, emer.Back)
 
 	// S1 vestibular
 	net.ConnectLayers(smact, s1vp, full, emer.Forward)
@@ -561,15 +596,25 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// lateral inhibition
 
-	// net.LateralConnectLayerPrjn(mstd, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	net.LateralConnectLayerPrjn(mstd, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	net.LateralConnectLayerPrjn(mstdct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	net.LateralConnectLayerPrjn(cipl, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	net.LateralConnectLayerPrjn(ciplct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	net.LateralConnectLayerPrjn(pcc, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	net.LateralConnectLayerPrjn(pccct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(sma, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(smact, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(m1, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	net.LateralConnectLayerPrjn(sma, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	net.LateralConnectLayerPrjn(smact, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	net.LateralConnectLayerPrjn(m1, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+
+	////////////////////
+	// Shortcuts
+
+	net.ConnectLayers(v2wd, cipl, rndcut, emer.Forward).SetClass("V1SC")
+	net.ConnectLayers(v2wd, ciplct, rndcut, emer.Forward).SetClass("V1SC")
+	net.ConnectLayers(v2wd, pcc, rndcut, emer.Forward).SetClass("V1SC")
+	net.ConnectLayers(v2wd, pccct, rndcut, emer.Forward).SetClass("V1SC")
+	net.ConnectLayers(v2wd, sma, rndcut, emer.Forward).SetClass("V1SC")
+	net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
 
 	//////////////////////////////////////
 	// position
@@ -599,10 +644,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: v2wd.Name(), XAlign: relpos.Left, YAlign: relpos.Front})
 	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstd.Name(), XAlign: relpos.Left, Space: 10})
+	mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstdct.Name(), XAlign: relpos.Left, Space: 10})
 
 	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: 4})
 	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: cipl.Name(), XAlign: relpos.Left, Space: 10})
-	// ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: ciplct.Name(), XAlign: relpos.Left, Space: 4})
+	ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: ciplct.Name(), XAlign: relpos.Left, Space: 10})
 
 	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: cipl.Name(), YAlign: relpos.Front, Space: 6})
 	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: pcc.Name(), XAlign: relpos.Left, Space: 10})
@@ -612,7 +658,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: sma.Name(), XAlign: relpos.Left, Space: 10})
 	// smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 4})
 
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: 2})
+	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: 10})
+	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: 10})
 
 	//////////////////////////////////////
 	// collect
@@ -669,6 +716,19 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 func (ss *Sim) InitWts(net *deep.Network) {
 	net.InitWts()
 	// net.InitTopoSWts() //  sets all wt scales
+
+	// ss.ToggleLaysOff(true)
+}
+
+func (ss *Sim) ToggleLaysOff(off bool) {
+	for _, lnm := range ss.InitOffNms {
+		lyi := ss.Net.LayerByName(lnm)
+		if lyi == nil {
+			fmt.Printf("layer not found: %s\n", lnm)
+			continue
+		}
+		lyi.SetOff(off)
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -907,7 +967,7 @@ func (ss *Sim) TrainTrial() {
 	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
 	if chg {
 		ss.LogTrnEpc(ss.TrnEpcLog)
-		ss.TrainSched(epc)
+		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
 		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
 			ss.UpdateView(true)
@@ -915,7 +975,7 @@ func (ss *Sim) TrainTrial() {
 		if epc >= ss.MaxEpcs {
 			// done with training..
 			if ss.SaveARFs {
-				ss.TestAll() // todo: renable later
+				ss.TestAll()
 			}
 			ss.RunEnd()
 			if ss.TrainEnv.Run.Incr() { // we are done!
@@ -1119,9 +1179,9 @@ func (ss *Sim) TrainRun() {
 	ss.Stopped()
 }
 
-// TrainSched implements the learning rate schedule etc.
-func (ss *Sim) TrainSched(epc int) {
-	if false && epc > 1 && epc%10 == 0 {
+// EpochSched implements the learning rate schedule etc.
+func (ss *Sim) EpochSched(epc int) {
+	if epc > 1 && epc%10 == 0 {
 		ss.PctCortex = float64(epc) / 100
 		if ss.PctCortex > ss.PctCortexMax {
 			ss.PctCortex = ss.PctCortexMax
@@ -1130,8 +1190,9 @@ func (ss *Sim) TrainSched(epc int) {
 		}
 	}
 	switch epc {
-	// case 50:
-	// 	ss.ARFs.Reset() // now sufficiently learned to start recording..
+	// case ss.AllLaysOnEpc:
+	// 	ss.ToggleLaysOff(false) // on
+	// 	mpi.Printf("toggled layers on at epoch: %d\n", epc)
 	case 150:
 		ss.Net.LrateSched(0.5)
 		fmt.Printf("dropped lrate 0.5 at epoch: %d\n", epc)
@@ -1195,7 +1256,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
 	if chg {
 		ss.LogTstEpc(ss.TstEpcLog)
-		ss.TrainSched(epc)
+		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
 		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
 			ss.UpdateView(true)
@@ -1615,7 +1676,6 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 		dt.SetCellFloat(lnm+"_Hog", row, hog)
 		dt.SetCellFloat(lnm+"_MaxGeM", row, float64(ly.ActAvg.AvgMaxGeM))
 		dt.SetCellFloat(lnm+"_ActAvg", row, float64(ly.ActAvg.ActMAvg))
-		dt.SetCellFloat(lnm+"_GiMult", row, float64(ly.ActAvg.GiMult))
 	}
 
 	for _, lnm := range ss.InputLays {
@@ -1707,7 +1767,6 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 		sch = append(sch, etable.Column{lnm + "_Hog", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_MaxGeM", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_ActAvg", etensor.FLOAT64, nil, nil})
-		sch = append(sch, etable.Column{lnm + "_GiMult", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_PCA_NStrong", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_PCA_Top5", etensor.FLOAT64, nil, nil})
 		sch = append(sch, etable.Column{lnm + "_PCA_Next5", etensor.FLOAT64, nil, nil})
@@ -1749,7 +1808,6 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 		plt.SetColParams(lnm+"_Hog", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 		plt.SetColParams(lnm+"_MaxGeM", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 1)
 		plt.SetColParams(lnm+"_ActAvg", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, .25)
-		plt.SetColParams(lnm+"_GiMult", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 1)
 	}
 	for _, lnm := range ss.InputLays {
 		plt.SetColParams(lnm+"_ActAvg", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, .25)
@@ -2122,8 +2180,8 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 // 		Gui
 
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
-	// nv.Scene().Camera.Pose.Pos.Set(0, 1.5, 3.0) // more "head on" than default which is more "top down"
-	// nv.Scene().Camera.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
+	nv.Scene().Camera.Pose.Pos.Set(0, 2.2, 1.9)
+	nv.Scene().Camera.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
 }
 
 // ConfigWorldGui configures all the world view GUI elements

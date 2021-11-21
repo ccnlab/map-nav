@@ -349,7 +349,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	s1s.SetClass("S1S")
 	s1sp.SetClass("S1S")
 
-	s1v, s1vp := net.AddInputTRC2D("S1V", ev.PopSize, 1) // Vestibular
+	s1v, s1vp := net.AddInputTRC4D("S1V", 1, 2, ev.PopSize, 1) // Vestibular
 	s1v.SetClass("S1V")
 	s1vp.SetClass("S1V")
 
@@ -364,8 +364,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1p.Driver = "M1"
 
 	mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8)
-	mstdct.RecvPrjns().SendName(mstd.Name()).SetPattern(p1to1)          // todo: try ss.Prjn3x3Skp1 orig: p1to1
-	net.ConnectLayers(mstdct, v2wdp, ss.Prjn4x4Skp2Recip, emer.Forward) // ss.Prjn3x3Skp1
+	mstdct.RecvPrjns().SendName(mstd.Name()).SetPattern(p1to1)                                // todo: try ss.Prjn3x3Skp1 orig: p1to1
+	net.ConnectLayers(mstdct, v2wdp, ss.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv2") // 3 is too high
 	net.ConnectLayers(v2wdp, mstd, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(v2wdp, mstdct, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjn4x4Skp2).SetClass("CTFmSuper")
@@ -373,14 +373,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	cipl, ciplct, ciplp := deep.AddSuperCTTRC4D(net.AsAxon(), "cIPL", 3, 3, 8, 8)
 	ciplct.RecvPrjns().SendName(cipl.Name()).SetPattern(full)
-	// net.ConnectLayers(ciplct, v2wdp, full, emer.Forward)
+	// net.ConnectLayers(ciplct, v2wdp, full, emer.Forward).SetClass("ToPulv1")
 	// net.ConnectLayers(v2wdp, cipl, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectLayers(v2wdp, ciplct, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(ciplct, ciplct, parprjn).SetClass("CTSelf")
 
 	pcc, pccct := deep.AddSuperCT4D(net.AsAxon(), "PCC", 2, 2, 7, 7)
 	pccct.RecvPrjns().SendName(pcc.Name()).SetPattern(parprjn)
-	// net.ConnectLayers(pccct, v2wdp, full, emer.Forward)
+	// net.ConnectLayers(pccct, v2wdp, full, emer.Forward).SetClass("ToPulv1")
 	// net.ConnectLayers(v2wdp, pcc, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectLayers(v2wdp, pccct, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(pccct, pccct, parprjn).SetClass("CTSelf")
@@ -388,25 +388,27 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sma, smact := net.AddSuperCT2D("SMA", 10, 10)
 	smact.RecvPrjns().SendName(sma.Name()).SetPattern(full)
 	// net.ConnectCtxtToCT(smact, smact, parprjn).SetClass("CTSelf")
-	net.ConnectLayers(smact, m1p, full, emer.Forward)
+	net.ConnectLayers(smact, m1p, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(m1p, sma, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(m1p, smact, full, emer.Back).SetClass("FmPulv")
 
 	it, itct := net.AddSuperCT2D("IT", 10, 10)
 	itct.RecvPrjns().SendName(it.Name()).SetPattern(parprjn)
-	net.ConnectLayers(itct, v1fp, full, emer.Forward)
+	net.ConnectLayers(itct, v1fp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(v1fp, itct, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(v1fp, it, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(itct, itct, p1to1).SetClass("CTSelf")
 
 	lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8)
 	lipct.RecvPrjns().SendName(lip.Name()).SetPattern(full)
-	net.ConnectLayers(lipct, v2fdp, ss.Prjn4x3Skp2Recip, emer.Forward)
+	net.ConnectLayers(lipct, v2fdp, ss.Prjn4x3Skp2Recip, emer.Forward).SetClass("CTToPulv3")
 	net.ConnectLayers(v2fdp, lipct, ss.Prjn4x3Skp2, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(v2fdp, lip, ss.Prjn4x3Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectCtxtToCT(lipct, lipct, full).SetClass("CTBack")
+	// net.ConnectCtxtToCT(lipct, lipct, full).SetClass("CTSelf")
 
-	net.ConnectCtxtToCT(lipct, v1fp, p1to1).SetClass("CTSelf") // attention
+	// todo: LIP fovea is not topo organized for left, middle right positions -- groups are depth organized
+	// not enough resolution to really map that out here.
+	net.ConnectLayers(lipct, v1fp, full, emer.Back).SetClass("ToPulv1") // attention
 
 	m1.SetClass("M1")
 	vl.SetClass("M1")
@@ -445,7 +447,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.ConnectLayers(mstdp, ciplct, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(mstdp, cipl, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(ciplct, mstdp, ss.Prjn4x4Skp2Recip, emer.Forward)
+	net.ConnectLayers(ciplct, mstdp, ss.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv3")
 
 	net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack")
 	net.ConnectLayers(sma, mstd, full, emer.Back)
@@ -457,7 +459,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	net.ConnectLayers(ciplp, pccct, parprjn, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(ciplp, pcc, parprjn, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(pccct, ciplp, parprjn, emer.Forward)
+	net.ConnectLayers(pccct, ciplp, parprjn, emer.Forward).SetClass("CTToPulv2")
 
 	// PCC <-> SMA
 	net.ConnectLayers(pcc, sma, parprjn, emer.Forward).SetClass("SuperFwd")
@@ -524,8 +526,10 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// todo: try S -> CT leak back -- useful in wwi3d
 	// todo: try higher CT -> v2wdp  -- useful in wwi3d
 
+	// todo: S1Vp should be head direction too.
+
 	// S1 vestibular
-	net.ConnectLayers(ciplct, s1vp, full, emer.Forward)
+	net.ConnectLayers(ciplct, s1vp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(s1vp, ciplct, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(s1vp, cipl, full, emer.Back).SetClass("FmPulv")
 
@@ -539,12 +543,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(smact, pccct, parprjn, emer.Back).SetClass("CTBack")
 
 	// S1 vestibular
-	net.ConnectLayers(pccct, s1vp, full, emer.Forward)
+	net.ConnectLayers(pccct, s1vp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(s1vp, pccct, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(s1vp, pcc, full, emer.Back).SetClass("FmPulv")
 
 	// S1 soma
-	net.ConnectLayers(pccct, s1sp, full, emer.Forward)
+	net.ConnectLayers(pccct, s1sp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(s1sp, pccct, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(s1sp, pcc, full, emer.Back).SetClass("FmPulv")
 
@@ -560,12 +564,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// net.ConnectLayers(vl, smact, full, emer.Back)
 
 	// S1 vestibular
-	net.ConnectLayers(smact, s1vp, full, emer.Forward)
+	net.ConnectLayers(smact, s1vp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(s1vp, smact, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(s1vp, sma, full, emer.Back).SetClass("FmPulv")
 
 	// S1 soma
-	net.ConnectLayers(smact, s1sp, full, emer.Forward)
+	net.ConnectLayers(smact, s1sp, full, emer.Forward).SetClass("CTToPulv")
 	net.ConnectLayers(s1sp, smact, full, emer.Back).SetClass("FmPulv")
 	net.ConnectLayers(s1sp, sma, full, emer.Back).SetClass("FmPulv")
 
@@ -888,14 +892,16 @@ func (ss *Sim) ThetaCyc(train bool) {
 func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) {
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	nact := ss.DecodeAct(ly, ev)
-	gact := ev.ActGen()
+	gact, urgency := ev.ActGen()
 	ss.NetAction = ev.Acts[nact]
 	ss.GenAction = ev.Acts[gact]
 	ss.ActMatch = 0
 	if nact == gact {
 		ss.ActMatch = 1
 	}
-	if erand.BoolProb(ss.PctCortex, -1) {
+	if erand.BoolProb(float64(urgency), -1) {
+		ss.ActAction = ss.GenAction
+	} else if erand.BoolProb(ss.PctCortex, -1) {
 		ss.ActAction = ss.NetAction
 	} else {
 		ss.ActAction = ss.GenAction
@@ -973,6 +979,9 @@ func (ss *Sim) TrainTrial() {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.MaxEpcs {
+			if ss.SaveWts { // doing this earlier
+				ss.SaveWeights()
+			}
 			// done with training..
 			if ss.SaveARFs {
 				ss.TestAll()
@@ -1000,11 +1009,9 @@ func (ss *Sim) TrainTrial() {
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
 func (ss *Sim) RunEnd() {
 	ss.LogRun(ss.RunLog)
-	if ss.SaveWts {
-		fnm := ss.WeightsFileName()
-		fmt.Printf("Saving Weights to: %v\n", fnm)
-		ss.Net.SaveWtsJSON(gi.FileName(fnm))
-	}
+	// if ss.SaveWts { // doing this earlier
+	// 	ss.SaveWeights()
+	// }
 	if ss.SaveARFs {
 		ss.SaveAllARFs()
 	}
@@ -1119,6 +1126,7 @@ func (ss *Sim) SaveAllARFs() {
 
 // OpenAllARFs open all ARFs from directory of given path
 func (ss *Sim) OpenAllARFs(path gi.FileName) {
+	ss.UpdtARFs()
 	ss.ARFs.Avg()
 	ss.ARFs.Norm()
 	ap := string(path)
@@ -1238,8 +1246,10 @@ func (ss *Sim) Stopped() {
 
 // SaveWeights saves the network weights -- when called with giv.CallMethod
 // it will auto-prompt for filename
-func (ss *Sim) SaveWeights(filename gi.FileName) {
-	ss.Net.SaveWtsJSON(filename)
+func (ss *Sim) SaveWeights() {
+	fnm := ss.WeightsFileName()
+	fmt.Printf("Saving Weights to: %v\n", fnm)
+	ss.Net.SaveWtsJSON(gi.FileName(fnm))
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////

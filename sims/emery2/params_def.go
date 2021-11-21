@@ -75,7 +75,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".Fovea", Desc: "fovea has both",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.11",
+					"Layer.Inhib.ActAvg.Init": "0.15",
 					"Layer.Inhib.Layer.On":    "true", // layer too
 					"Layer.Inhib.Layer.Gi":    "1",
 					"Layer.Inhib.Pool.On":     "true",
@@ -151,8 +151,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#cIPLP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "0.8", // 0.8 > 0.9
-					"Layer.Inhib.Pool.Gi":  "0.8",
+					"Layer.Inhib.Layer.Gi": "0.9",
+					"Layer.Inhib.Pool.Gi":  "0.9",
 				}},
 			{Sel: ".SMA", Desc: "",
 				Params: params.Params{
@@ -178,7 +178,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#VL", Desc: "VL regular inhib",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":   "1",
+					"Layer.Inhib.Layer.Gi":   "0.8",
 					"Layer.Inhib.Pool.FFEx":  "0.0",
 					"Layer.Inhib.Layer.FFEx": "0.0",
 				}},
@@ -193,8 +193,7 @@ var ParamSets = params.Sets{
 			{Sel: "#M1P", Desc: "m1 pulvinar",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.12",
-					"Layer.Inhib.Layer.Gi":    "1.2",  // reg
-					"Layer.TRC.DriveScale":    "0.05", // .1
+					"Layer.Inhib.Layer.Gi":    "1.0", // weaker pulv
 				}},
 			{Sel: ".IT", Desc: "reg",
 				Params: params.Params{
@@ -210,10 +209,11 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".LIP", Desc: "reg",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.1",
-					"Layer.Inhib.Layer.On": "true",
-					"Layer.Inhib.Pool.On":  "true",
-					"Layer.Inhib.Pool.Gi":  "1.1",
+					"Layer.Inhib.ActAvg.Init": "0.06",
+					"Layer.Inhib.Layer.Gi":    "1.1",
+					"Layer.Inhib.Layer.On":    "true",
+					"Layer.Inhib.Pool.On":     "true",
+					"Layer.Inhib.Pool.Gi":     "1.1",
 				}},
 
 			//////////////////////////////////////////////////////////
@@ -276,6 +276,26 @@ var ParamSets = params.Sets{
 			{Sel: ".CTSelf", Desc: "CT to CT",
 				Params: params.Params{
 					"Prjn.PrjnScale.Rel": "0.5", // 0.5 > 0.2
+				}},
+			{Sel: ".CTToPulv", Desc: "basic main CT to pulivnar -- needs to be stronger -- cons are weak somehow",
+				Params: params.Params{
+					"Prjn.PrjnScale.Abs": "1.5",
+					"Prjn.PrjnScale.Rel": "1",
+				}},
+			{Sel: ".CTToPulv3", Desc: "even stronger abs",
+				Params: params.Params{
+					"Prjn.PrjnScale.Abs": "3",
+					"Prjn.PrjnScale.Rel": "1",
+				}},
+			{Sel: ".ToPulv1", Desc: "weaker higher-level pulvinar prjn",
+				Params: params.Params{
+					"Prjn.PrjnScale.Abs": "1.5",
+					"Prjn.PrjnScale.Rel": "0.1",
+				}},
+			{Sel: ".ToPulv2", Desc: "weaker higher-level pulvinar prjn",
+				Params: params.Params{
+					"Prjn.PrjnScale.Abs": "1.5",
+					"Prjn.PrjnScale.Rel": "0.2",
 				}},
 			{Sel: ".FwdToPulv", Desc: "feedforward to pulvinar directly",
 				Params: params.Params{

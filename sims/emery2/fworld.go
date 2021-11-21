@@ -27,41 +27,46 @@ import (
 
 // FWorld is a flat-world grid-based environment
 type FWorld struct {
-	Nm          string                      `desc:"name of this environment"`
-	Dsc         string                      `desc:"description of this environment"`
-	Disp        bool                        `desc:"update display -- turn off to make it faster"`
-	Size        evec.Vec2i                  `desc:"size of 2D world"`
-	PatSize     evec.Vec2i                  `desc:"size of patterns for mats, acts"`
-	World       *etensor.Int                `view:"no-inline" desc:"2D grid world, each cell is a material (mat)"`
-	Mats        []string                    `desc:"list of materials in the world, 0 = empty.  Any superpositions of states (e.g., CoveredFood) need to be discretely encoded, can be transformed through action rules"`
-	MatMap      map[string]int              `desc:"map of material name to index stored in world cell"`
-	BarrierIdx  int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
-	Pats        map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
-	Acts        []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
-	ActMap      map[string]int              `desc:"action map of action names to indexes"`
-	Inters      []string                    `desc:"list of interoceptive body states, represented as pop codes"`
-	InterMap    map[string]int              `desc:"map of interoceptive state names to indexes"`
-	Params      map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
-	FOV         int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of AngInc"`
-	AngInc      int                         `desc:"angle increment for rotation, in degrees -- defaults to 15"`
-	NRotAngles  int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
-	NFOVRays    int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
-	ShowRays    bool                        `desc:"for debugging only: show the main depth rays as they are traced out from point"`
-	ShowFovRays bool                        `desc:"for debugging only: show the fovea rays as they are traced out from point"`
-	TraceActGen bool                        `desc:"for debugging, print out a trace of the action generation logic"`
-	FoveaSize   int                         `desc:"number of items on each size of the fovea, in addition to center (0 or more)"`
-	FoveaAngInc int                         `desc:"scan angle for fovea"`
-	PopSize     int                         `inactive:"+" desc:"number of units in population codes"`
-	PopCode     popcode.OneD                `desc:"generic population code values, in normalized units"`
-	DepthSize   int                         `inactive:"+" desc:"number of units in depth population codes"`
-	DepthPools  int                         `inactive:"+" desc:"number of pools to divide DepthSize into"`
-	DepthCode   popcode.OneD                `desc:"population code for depth, in normalized units"`
+	Nm           string                      `desc:"name of this environment"`
+	Dsc          string                      `desc:"description of this environment"`
+	Disp         bool                        `desc:"update display -- turn off to make it faster"`
+	Size         evec.Vec2i                  `desc:"size of 2D world"`
+	PatSize      evec.Vec2i                  `desc:"size of patterns for mats, acts"`
+	World        *etensor.Int                `view:"no-inline" desc:"2D grid world, each cell is a material (mat)"`
+	Mats         []string                    `desc:"list of materials in the world, 0 = empty.  Any superpositions of states (e.g., CoveredFood) need to be discretely encoded, can be transformed through action rules"`
+	MatMap       map[string]int              `desc:"map of material name to index stored in world cell"`
+	BarrierIdx   int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
+	Pats         map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
+	Acts         []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
+	ActMap       map[string]int              `desc:"action map of action names to indexes"`
+	Inters       []string                    `desc:"list of interoceptive body states, represented as pop codes"`
+	InterMap     map[string]int              `desc:"map of interoceptive state names to indexes"`
+	Params       map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
+	FOV          int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of AngInc"`
+	AngInc       int                         `desc:"angle increment for rotation, in degrees -- defaults to 15"`
+	NRotAngles   int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
+	NFOVRays     int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
+	WallUrgency  float32                     `desc:"urgency when right against a wall"`
+	EatUrgency   float32                     `desc:"urgency for eating and drinking"`
+	CloseUrgency float32                     `desc:"urgency for being close to food / water"`
+	ShowRays     bool                        `desc:"for debugging only: show the main depth rays as they are traced out from point"`
+	ShowFovRays  bool                        `desc:"for debugging only: show the fovea rays as they are traced out from point"`
+	TraceActGen  bool                        `desc:"for debugging, print out a trace of the action generation logic"`
+	FoveaSize    int                         `desc:"number of items on each size of the fovea, in addition to center (0 or more)"`
+	FoveaAngInc  int                         `desc:"scan angle for fovea"`
+	PopSize      int                         `inactive:"+" desc:"number of units in population codes"`
+	PopCode      popcode.OneD                `desc:"generic population code values, in normalized units"`
+	DepthSize    int                         `inactive:"+" desc:"number of units in depth population codes"`
+	DepthPools   int                         `inactive:"+" desc:"number of pools to divide DepthSize into"`
+	DepthCode    popcode.OneD                `desc:"population code for depth, in normalized units"`
+	AngCode      popcode.Ring                `desc:"angle population code values, in normalized units"`
 
 	// current state below (params above)
 	PosF          mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
 	PosI          evec.Vec2i                  `inactive:"+" desc:"current location of agent, integer"`
 	Angle         int                         `inactive:"+" desc:"current angle, in degrees"`
 	RotAng        int                         `inactive:"+" desc:"angle that we just rotated -- drives vestibular"`
+	Urgency       float32                     `inactive:"+" desc:"for ActGen, level of urgency for following the generated action"`
 	Act           int                         `inactive:"+" desc:"last action taken"`
 	Depths        []float32                   `desc:"depth for each angle (NFOVRays), raw"`
 	DepthLogs     []float32                   `desc:"depth for each angle (NFOVRays), normalized log"`
@@ -119,6 +124,9 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.FOV = 180
 	ev.FoveaSize = 1
 	ev.FoveaAngInc = 5
+	ev.WallUrgency = .9
+	ev.EatUrgency = .8
+	ev.CloseUrgency = .5
 	ev.PopSize = 16
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
@@ -126,6 +134,8 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.DepthPools = 8
 	ev.DepthCode.Defaults()
 	ev.DepthCode.SetRange(0.1, 1, 0.05)
+	ev.AngCode.Defaults()
+	ev.AngCode.SetRange(0, 1, 0.1)
 
 	// debugging options:
 	ev.ShowRays = false
@@ -203,7 +213,7 @@ func (ev *FWorld) ConfigImpl() {
 	ev.NextStates["ProxSoma"] = ps
 
 	vs := &etensor.Float32{}
-	vs.SetShape([]int{ev.PopSize, 1}, nil, []string{"Pop", "1"})
+	vs.SetShape([]int{1, 2, ev.PopSize, 1}, nil, []string{"1", "RotAng", "Pop", "1"})
 	ev.NextStates["Vestibular"] = vs
 
 	is := &etensor.Float32{}
@@ -698,7 +708,7 @@ func (ev *FWorld) RenderView() {
 	np := ev.DepthSize / ev.DepthPools
 	for i := 0; i < ev.NFOVRays; i++ {
 		sv := dvr.SubSpace([]int{0, i}).(*etensor.Float32)
-		ev.DepthCode.Encode(&sv.Values, ev.DepthLogs[i], ev.DepthSize, false)
+		ev.DepthCode.Encode(&sv.Values, ev.DepthLogs[i], ev.DepthSize, popcode.Set)
 		for dp := 0; dp < ev.DepthPools; dp++ {
 			for pi := 0; pi < np; pi++ {
 				ri := dp*np + pi
@@ -713,7 +723,7 @@ func (ev *FWorld) RenderView() {
 	fv := ev.NextStates["Fovea"]
 	for i := 0; i < fsz; i++ {
 		sv := fdr.SubSpace([]int{0, i}).(*etensor.Float32)
-		ev.DepthCode.Encode(&sv.Values, ev.FovDepthLogs[i], ev.DepthSize, false)
+		ev.DepthCode.Encode(&sv.Values, ev.FovDepthLogs[i], ev.DepthSize, popcode.Set)
 		for dp := 0; dp < ev.DepthPools; dp++ {
 			for pi := 0; pi < np; pi++ {
 				ri := dp*np + pi
@@ -752,15 +762,20 @@ func (ev *FWorld) RenderInters() {
 	for k, v := range ev.InterStates {
 		idx := ev.InterMap[k]
 		sv := is.SubSpace([]int{0, idx}).(*etensor.Float32)
-		ev.PopCode.Encode(&sv.Values, v, ev.PopSize, false)
+		ev.PopCode.Encode(&sv.Values, v, ev.PopSize, popcode.Set)
 	}
 }
 
-// RenderVestib renders vestibular state
+// RenderVestibular renders vestibular state
 func (ev *FWorld) RenderVestibular() {
 	vs := ev.NextStates["Vestibular"]
-	nv := 0.5*(float32(-ev.RotAng)/15) + 0.5
-	ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
+	sv := vs.SubSpace([]int{0, 0}).(*etensor.Float32)
+	nv := 0.5*(float32(-ev.RotAng)/15.0) + 0.5
+	ev.PopCode.Encode(&sv.Values, nv, ev.PopSize, popcode.Set)
+
+	sv = vs.SubSpace([]int{0, 1}).(*etensor.Float32)
+	nv = (float32(ev.Angle) / 360.0)
+	ev.AngCode.Encode(&sv.Values, nv, ev.PopSize)
 }
 
 // RenderAction renders action pattern
@@ -999,7 +1014,10 @@ func (ev *FWorld) ActGenTrace(desc string, act int) {
 
 // ActGen generates an action for current situation based on simple
 // coded heuristics -- i.e., what subcortical evolutionary instincts provide.
-func (ev *FWorld) ActGen() int {
+// Also returns the urgency score as a probability -- if urgency is 1
+// then the generated action should definitely be used.  The default is 0,
+// which is the baseline.
+func (ev *FWorld) ActGen() (int, float32) {
 	wall := ev.MatMap["Wall"]
 	food := ev.MatMap["Food"]
 	water := ev.MatMap["Water"]
@@ -1068,7 +1086,7 @@ func (ev *FWorld) ActGen() int {
 		lpow := math.Exp(ldf * smaxpow)
 		rlp = float64(lpow / (rpow + lpow))
 	}
-	rlact := left
+	rlact := left // right or left
 	if erand.BoolProb(rlp, -1) {
 		rlact = right
 	}
@@ -1078,6 +1096,12 @@ func (ev *FWorld) ActGen() int {
 	lastact := ev.Act
 	frnd := rand.Float32()
 
+	farDist := float32(10)
+	farTurnP := float32(0.2)
+	rndExpSame := float32(0.33)
+	rndExpTurn := float32(0.33)
+
+	urgency := float32(0)
 	act := ev.ActMap["Forward"] // default
 	switch {
 	case frmat == wall:
@@ -1088,37 +1112,45 @@ func (ev *FWorld) ActGen() int {
 			act = rlact
 			ev.ActGenTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
 		}
+		urgency = ev.WallUrgency
 	case frmat == food:
 		act = ev.ActMap["Eat"]
 		ev.ActGenTrace("at food", act)
+		urgency = ev.EatUrgency
 	case frmat == water:
 		act = ev.ActMap["Drink"]
 		ev.ActGenTrace("at water", act)
-	case fwt > wwt:
+		urgency = ev.EatUrgency
+	case fwt > wwt: // food more than water
 		wts := fmt.Sprintf("fwt: %g > wwt: %g, dist: %g", fwt, wwt, fdp)
-		if fdp > 20 { // far away
-			if frnd < 0.2 {
+		if fdp > farDist { // far away
+			urgency = 0
+			if frnd < farTurnP {
 				act = rlact
 				ev.ActGenTrace(fmt.Sprintf("far food in view (%s), explore, rlp: %s, turn", wts, rlps), act)
 			} else {
 				ev.ActGenTrace("far food in view "+wts, act)
 			}
 		} else {
+			urgency = ev.CloseUrgency
 			ev.ActGenTrace("close food in view "+wts, act)
 		}
-	case wwt > fwt:
+	case wwt > fwt: // water more than food
 		wts := fmt.Sprintf("wwt: %g > fwt: %g, dist: %g", wwt, fwt, wdp)
-		if wdp > 20 { // far away
-			if frnd < 0.2 {
+		if wdp > farDist { // far away
+			urgency = 0
+			if frnd < farTurnP {
 				act = rlact
 				ev.ActGenTrace(fmt.Sprintf("far water in view (%s), explore, rlp: %s, turn", wts, rlps), act)
 			} else {
 				ev.ActGenTrace("far water in view "+wts, act)
 			}
 		} else {
+			urgency = ev.CloseUrgency
 			ev.ActGenTrace("close water in view "+wts, act)
 		}
 	case fovdp < 4 && fovnonwall == 0: // close to wall
+		urgency = ev.CloseUrgency
 		if lastact == left || lastact == right {
 			act = lastact // keep going
 			ev.ActGenTrace("close to: "+fovmats+" keep turning", act)
@@ -1127,20 +1159,19 @@ func (ev *FWorld) ActGen() int {
 			ev.ActGenTrace(fmt.Sprintf("close to: %s rlp: %s, turn", fovmats, rlps), act)
 		}
 	default: // random explore -- nothing obvious
+		urgency = 0
 		switch {
-		case frnd < 0.25 && lastact < eat:
+		case frnd < rndExpSame && lastact < eat:
 			act = lastact // continue
 			ev.ActGenTrace("looking at: "+fovmats+" repeat last act", act)
-		case frnd < 0.4:
-			act = left
-			ev.ActGenTrace("looking at: "+fovmats+" turn", act)
-		case frnd < 0.55:
-			act = right
+		case frnd < rndExpSame+rndExpTurn:
+			act = rlact
 			ev.ActGenTrace("looking at: "+fovmats+" turn", act)
 		default:
 			ev.ActGenTrace("looking at: "+fovmats+" go", act)
 		}
 	}
 
-	return act
+	ev.Urgency = urgency
+	return act, urgency
 }

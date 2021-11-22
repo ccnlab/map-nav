@@ -146,8 +146,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#MSTdP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "0.8", // 0.8 > 0.9
-					"Layer.Inhib.Pool.Gi":  "0.8",
+					"Layer.Inhib.Layer.Gi": "0.9", // 0.8 > 0.9
+					"Layer.Inhib.Pool.Gi":  "0.9",
 				}},
 			{Sel: "#cIPLP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
@@ -266,8 +266,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".SuperFwd", Desc: "standard superficial forward prjns -- not to output",
 				Params: params.Params{
-					"Prjn.Com.PFail":      "0.0", //
-					"Prjn.Com.PFailWtMax": "1.0", // 0.8 default
+					"Prjn.Com.PFail":    "0.2",   // noise..
+					"Prjn.Com.PFailSWt": "false", // try
 				}},
 			{Sel: ".FmPulv", Desc: "default for pulvinar",
 				Params: params.Params{

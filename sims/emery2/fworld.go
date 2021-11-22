@@ -18,6 +18,7 @@ import (
 	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
+	"github.com/emer/etable/metric"
 	"github.com/goki/gi/gi"
 	"github.com/goki/ki/ints"
 	"github.com/goki/ki/ki"
@@ -37,6 +38,7 @@ type FWorld struct {
 	MatMap       map[string]int              `desc:"map of material name to index stored in world cell"`
 	BarrierIdx   int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
 	Pats         map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
+	ActPats      map[string]*etensor.Float32 `desc:"patterns for each action -- for decoding"`
 	Acts         []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
 	ActMap       map[string]int              `desc:"action map of action names to indexes"`
 	Inters       []string                    `desc:"list of interoceptive body states, represented as pop codes"`
@@ -49,6 +51,7 @@ type FWorld struct {
 	WallUrgency  float32                     `desc:"urgency when right against a wall"`
 	EatUrgency   float32                     `desc:"urgency for eating and drinking"`
 	CloseUrgency float32                     `desc:"urgency for being close to food / water"`
+	FwdMargin    float32                     `desc:"forward action must be this factor larger than 2nd best option to be selected"`
 	ShowRays     bool                        `desc:"for debugging only: show the main depth rays as they are traced out from point"`
 	ShowFovRays  bool                        `desc:"for debugging only: show the fovea rays as they are traced out from point"`
 	TraceActGen  bool                        `desc:"for debugging, print out a trace of the action generation logic"`
@@ -101,7 +104,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.Dsc = "Example world with basic food / water / eat / drink actions"
 	ev.Mats = []string{"Empty", "Wall", "Food", "Water", "FoodWas", "WaterWas"}
 	ev.BarrierIdx = 1
-	ev.Acts = []string{"Stay", "Left", "Right", "Forward", "Backward", "Eat", "Drink"}
+	ev.Acts = []string{"Forward", "Left", "Right", "Eat", "Drink"} // "Stay", "Backward",
 	ev.Inters = []string{"Energy", "Hydra", "BumpPain", "FoodRew", "WaterRew"}
 
 	ev.Params = make(map[string]float32)
@@ -127,6 +130,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.WallUrgency = .9
 	ev.EatUrgency = .8
 	ev.CloseUrgency = .5
+	ev.FwdMargin = 2
 	ev.PopSize = 16
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
@@ -155,6 +159,7 @@ func (ev *FWorld) Config(ntrls int) {
 // ConfigPats configures the bit pattern representations of mats and acts
 func (ev *FWorld) ConfigPats() {
 	ev.Pats = make(map[string]*etensor.Float32)
+	ev.ActPats = make(map[string]*etensor.Float32)
 	for _, m := range ev.Mats {
 		t := &etensor.Float32{}
 		t.SetShape([]int{ev.PatSize.Y, ev.PatSize.X}, nil, []string{"Y", "X"})
@@ -166,6 +171,9 @@ func (ev *FWorld) ConfigPats() {
 		ev.Pats[a] = t
 	}
 	ev.OpenPats("pats.json") // hand crafted..
+	for _, a := range ev.Acts {
+		ev.ActPats[a] = ev.Pats[a]
+	}
 }
 
 // ConfigImpl does the automatic parts of configuration
@@ -612,6 +620,32 @@ func (ev *FWorld) RefreshWorld() {
 			delete(ev.RefreshEvents, t)
 		}
 	}
+}
+
+// DecodeAct decodes action from given tensor of activation states
+// Forward is only selected if it is 2x larger than other options
+func (ev *FWorld) DecodeAct(vt *etensor.Float32) int {
+	cnm := ""
+	var dst, fdst float32
+	for nm, pat := range ev.ActPats {
+		d := metric.Correlation32(vt.Values, pat.Values)
+		if nm == "Forward" {
+			fdst = d
+		} else {
+			if cnm == "" || d > dst {
+				cnm = nm
+				dst = d
+			}
+		}
+	}
+	if fdst > ev.FwdMargin*dst { // only if x bigger
+		cnm = "Forward"
+	}
+	act, ok := ev.ActMap[cnm]
+	if !ok {
+		act = rand.Intn(len(ev.Acts))
+	}
+	return act
 }
 
 // TakeAct takes the action, updates state

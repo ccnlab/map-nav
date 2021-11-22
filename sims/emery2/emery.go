@@ -225,7 +225,7 @@ func (ss *Sim) New() {
 
 // Defaults set default param values
 func (ss *Sim) Defaults() {
-	ss.PctCortexMax = 0.5 // for good rfs
+	ss.PctCortexMax = 0.9 // 0.5 before
 	ss.TestInterval = 50000
 }
 
@@ -281,7 +281,7 @@ func (ss *Sim) ConfigEnv() {
 		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 100
+		ss.MaxEpcs = 200
 		ss.TestEpcs = 500
 	}
 
@@ -761,7 +761,7 @@ func (ss *Sim) NewRndSeed() {
 // and add a few tabs at the end to allow for expansion..
 func (ss *Sim) Counters(train bool) string {
 	// if train {
-	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
 	// } else {
 	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
 	// }
@@ -816,6 +816,8 @@ func (ss *Sim) ThetaCyc(train bool) {
 	// counters are being dealt with.
 	if train {
 		ss.Net.WtFmDWt()
+	} else {
+		ss.Net.SynFail()
 	}
 
 	ev := &ss.TrainEnv
@@ -920,20 +922,7 @@ func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) {
 func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int {
 	vt := ss.ValsTsr("VL")
 	ly.UnitValsTensor(vt, "ActM")
-
-	cnm := ""
-	dst := float32(0)
-	for nm, pat := range ev.Pats {
-		d := metric.Correlation32(vt.Values, pat.Values)
-		if cnm == "" || d > dst {
-			cnm = nm
-			dst = d
-		}
-	}
-	act, ok := ev.ActMap[cnm]
-	if !ok {
-		act = rand.Intn(len(ev.Acts))
-	}
+	act := ev.DecodeAct(vt)
 	return act
 }
 
@@ -1272,15 +1261,8 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.TestEpcs {
-			// done with training..
-			ss.RunEnd()
-			if ss.TrainEnv.Run.Incr() { // we are done!
-				ss.StopNow = true
-				return
-			} else {
-				ss.NeedsNewRun = true
-				return
-			}
+			ss.StopNow = true
+			return
 		}
 	}
 

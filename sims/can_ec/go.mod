@@ -1,4 +1,4 @@
-module github.com/zycyc/attractorEC
+module github.com/ccnlab/map-nav/tree/master/sims/can_ec
 
 go 1.17
 

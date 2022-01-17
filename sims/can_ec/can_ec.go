@@ -16,13 +16,16 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/goki/gi/gist"
+
+	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/edge"
 	"github.com/emer/emergent/efuns"
-
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/evec"
@@ -129,6 +132,7 @@ type Sim struct {
 	CorticalInput    *etable.Table    `view:"no-inline" desc:"input patterns generated"`
 	OrientationInput *etable.Table    `view:"no-inline" desc:"input patterns generated"`
 	Probes           *etable.Table    `view:"no-inline" desc:"probe inputs"`
+	ARFs             actrf.RFs        `view:"no-inline" desc:"activation-based receptive fields"`
 	TrnTrlLog        *etable.Table    `view:"no-inline" desc:"training trial-level log data"`
 	TrnEpcLog        *etable.Table    `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog        *etable.Table    `view:"no-inline" desc:"testing epoch-level log data"`
@@ -137,25 +141,38 @@ type Sim struct {
 	RunStats         *etable.Table    `view:"no-inline" desc:"aggregate stats on all runs"`
 	Params           params.Sets      `view:"no-inline" desc:"full collection of param sets"`
 	ParamSet         string           `view:"-" desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set -- can use multiple names separated by spaces (don't put spaces in ParamSet names!)"`
+	Tag              string           `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
 	EConWts          *etensor.Float32 `view:"-" desc:"weights from input to EC layer"`
 	ECoffWts         *etensor.Float32 `view:"-" desc:"weights from input to EC layer"`
 	ECWts            *etensor.Float32 `view:"no-inline" desc:"net on - off weights from input to EC layer"`
 	MaxRuns          int              `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int              `desc:"maximum number of epochs to run per model run"`
 	//MaxTrls           int               `desc:"maximum number of training trials per epoch"`
-	NZeroStop  int               `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
-	TrainEnv   env.FixedTable    `desc:"Training environment -- visual images"`
+	NZeroStop int `desc:"if a positive number, training will stop after this many epochs with zero SSE"`
+	//TrainEnv   env.FixedTable    `desc:"Training environment -- visual images"`
 	TestEnv    env.FixedTable    `desc:"Testing environment -- manages iterating over testing"`
 	Time       leabra.Time       `desc:"leabra timing parameters and state"`
 	ViewOn     bool              `desc:"whether to update the network view while running"`
 	TrainUpdt  leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
 	TestUpdt   leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	LayStatNms []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	ARFLayers  []string          `desc:"names of layers to compute position activation fields on"`
+	TrainEnv   XYHDEnv           `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 
 	// statistics: note use float64 as that is best for etable.Table
+	RFMaps    map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
+	ActAction string                      `inactive:"+" desc:"action generated & taken"`
+
+	// internal state - view:"-"
 	Win         *gi.Window                  `view:"-" desc:"main GUI window"`
 	NetView     *netview.NetView            `view:"-" desc:"the network viewer"`
 	ToolBar     *gi.ToolBar                 `view:"-" desc:"the master toolbar"`
+	WorldWin    *gi.Window                  `view:"-" desc:"XYHDEnv GUI window"`
+	WorldTabs   *gi.TabView                 `view:"-" desc:"XYHDEnv TabView"`
+	MatColors   []string                    `desc:"color strings in material order"`
+	Trace       *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
+	TraceView   *etview.TensorGrid          `desc:"view of the activity trace"`
+	WorldView   *etview.TensorGrid          `desc:"view of the world"`
 	CurImgGrid  *etview.TensorGrid          `view:"-" desc:"the current image grid view"`
 	WtsGrid     *etview.TensorGrid          `view:"-" desc:"the weights grid view"`
 	TrnTrlPlot  *eplot.Plot2D               `view:"-" desc:"the training trial plot"`
@@ -169,6 +186,7 @@ type Sim struct {
 	IsRunning   bool                        `view:"-" desc:"true if sim is running"`
 	StopNow     bool                        `view:"-" desc:"flag to stop running"`
 	NeedsNewRun bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
+	SaveARFs    bool                        `view:"-" desc:"for command-line run only, auto-save receptive field data"`
 	RndSeed     int64                       `view:"-" desc:"the current random seed"`
 }
 
@@ -227,15 +245,16 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.Cycle
 	ss.TestUpdt = leabra.Cycle
 	ss.LayStatNms = []string{"EC"}
+	ss.ARFLayers = []string{"EC"}
 
 	ss.Entorhinal.Defaults()
 	ss.Pat.Defaults()
 }
 
 func (ec *EcParams) Defaults() {
-	ec.ECSize.Set(50, 50)
-	ec.InputSize.Set(2, 2)
-	ec.OrientationSize.Set(2, 2)
+	ec.ECSize.Set(16, 16)
+	ec.InputSize.Set(16, 16)
+	ec.OrientationSize.Set(16, 1)
 	ec.InputPctAct = 0.25
 	ec.OrientationPctAct = 0.25
 
@@ -289,11 +308,12 @@ func (ss *Sim) ConfigEnv() {
 	//ss.TrainEnv.Defaults()
 	//ss.TrainEnv.ImageFiles = []string{"v1rf_img1.jpg", "v1rf_img2.jpg", "v1rf_img3.jpg", "v1rf_img4.jpg"}
 	//ss.TrainEnv.OpenImagesAsset()
-	ss.TrainEnv.Table = etable.NewIdxView(ss.OrientationInput)
-	ss.TrainEnv.Validate()
+	//ss.TrainEnv.Table = etable.NewIdxView(ss.OrientationInput)
+
 	ss.TrainEnv.Run.Max = ss.MaxRuns // note: we are not setting epoch max -- do that manually
 	//ss.TrainEnv.Trial.Max = ss.MaxTrls
 
+	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
 	ss.TestEnv.Nm = "TestEnv"
 	ss.TestEnv.Dsc = "testing (probe) params and state"
 	ss.TestEnv.Table = etable.NewIdxView(ss.Probes)
@@ -301,12 +321,34 @@ func (ss *Sim) ConfigEnv() {
 	ss.TestEnv.Validate()
 
 	ss.TrainEnv.Init(0)
+	ss.TrainEnv.Validate()
 	ss.TestEnv.Init(0)
+
+	ss.ConfigRFMaps()
+}
+
+func (ss *Sim) ConfigRFMaps() {
+	ss.RFMaps = make(map[string]*etensor.Float32)
+	mt := &etensor.Float32{}
+	mt.CopyShapeFrom(ss.TrainEnv.World)
+	ss.RFMaps["Pos"] = mt
+
+	mt = &etensor.Float32{}
+	mt.SetShape([]int{len(ss.TrainEnv.Acts)}, nil, nil)
+	ss.RFMaps["Act"] = mt
+
+	mt = &etensor.Float32{}
+	mt.SetShape([]int{ss.TrainEnv.NRotAngles}, nil, nil)
+	ss.RFMaps["Ang"] = mt
+
+	mt = &etensor.Float32{}
+	mt.SetShape([]int{3}, nil, nil)
+	ss.RFMaps["Rot"] = mt
 }
 
 func (ss *Sim) ConfigNet(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
-	net.InitName(net, "attractorEC")
+	net.InitName(net, "can_ec")
 	input := net.AddLayer2D("Input", ecParam.InputSize.Y, ecParam.InputSize.X, emer.Input)
 	orientation := net.AddLayer2D("Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)
 	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden) // 4D EC
@@ -314,6 +356,7 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 
 	full := prjn.NewFull()
 	net.ConnectLayers(input, ec, full, emer.Forward)
+	net.ConnectLayers(orientation, ec, full, emer.Forward)
 
 	// 2D EC
 	//excit := prjn.NewCircle()
@@ -356,9 +399,10 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	// inhib.GaussInPool.On = false
 	// inhib.TopoRange.Min = 0.8
 
-	oriePrjn := prjn.NewPoolSameUnit()
-	orie := net.ConnectLayers(orientation, ec, oriePrjn, emer.Forward)
-	orie.SetClass("OrientationForward")
+	// original orientation to ec prjn
+	//oriePrjn := prjn.NewPoolSameUnit()
+	//orie := net.ConnectLayers(orientation, ec, oriePrjn, emer.Forward)
+	//orie.SetClass("OrientationForward")
 
 	rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
 	rec.SetClass("ExciteLateral")
@@ -519,7 +563,8 @@ func (ss *Sim) NewRndSeed() {
 // and add a few tabs at the end to allow for expansion..
 func (ss *Sim) Counters(train bool) string {
 	if train {
-		return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tTrial:\t%d\tCycle:\t%d\tName:\t%s\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Trial.Cur, ss.Time.Cycle, ss.TrainEnv.TrialName.Cur)
+		//return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tTrial:\t%d\tCycle:\t%d\tName:\t%s\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Trial.Cur, ss.Time.Cycle, ss.TrainEnv.TrialName.Cur)
+		return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction)
 	} else {
 		return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tTrial:\t%d\tCycle:\t%d\tName:\t%s\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Trial.Cur, ss.Time.Cycle, ss.TestEnv.TrialName.Cur)
 	}
@@ -531,6 +576,7 @@ func (ss *Sim) UpdateView(train bool) {
 		// note: essential to use Go version of update when called from another goroutine
 		ss.NetView.GoUpdate() // note: using counters is significantly slower..
 	}
+	ss.UpdateWorldGui()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -556,26 +602,16 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
+	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
+	ec.Act.Clamp.Hard = false
+
+	ev := &ss.TrainEnv
+	ss.TakeAction(ss.Net, ev) // zycyc: ??
+
 	ss.Net.AlphaCycInit(train)
 	ss.Time.AlphaCycStart()
 
-	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	ec.Act.Clamp.Hard = false
-	// Input pattern to stabilize grid sheet
-	//for qtr := 0; qtr < 4; qtr++ {
-	for qtr := 0; qtr < 10; qtr++ {
-		//if qtr == 15 {
-		//
-		//	ss.Net.InitExt()
-		//
-		//
-		//	ss.TrainEnv.Table = etable.NewIdxView(ss.OrientationInput)
-		//
-		//	// set names after updating epochs to get correct names for the next env
-		//	ss.TrainEnv.SetTrialName()
-		//	ss.TrainEnv.SetGroupName()
-		//	ss.ApplyInputs(&ss.TrainEnv)
-		//}
+	for qtr := 0; qtr < 4; qtr++ {
 		for cyc := 0; cyc < ss.Time.CycPerQtr; cyc++ {
 			ss.Net.Cycle(&ss.Time)
 			ss.Time.CycleInc()
@@ -614,6 +650,17 @@ func (ss *Sim) AlphaCyc(train bool) {
 	}
 }
 
+// TakeAction takes action for this step, using either decoded cortical
+// or reflexive subcortical action from env.
+func (ss *Sim) TakeAction(net *leabra.Network, ev *XYHDEnv) {
+
+	gact := ev.ActGen()
+	ss.ActAction = ev.Acts[gact]
+	ev.Action(ss.ActAction, nil)
+
+	// fmt.Printf("action: %s\n", ev.Acts[act])
+}
+
 // ApplyInputs applies input patterns from given environment.
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
@@ -622,10 +669,18 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	lays := []string{"Input", "Orientation"}
-	for _, lnm := range lays {
+	states := []string{"Position", "Angle"}
+	lays := []string{"Input", "Orientation"} // zycyc: input: 16*16; orientation: 1*16 ring????
+
+	for i, lnm := range lays {
+		lyi := ss.Net.LayerByName(lnm)
+		if lyi == nil {
+			continue
+		}
 		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
-		pats := en.State(ly.Nm)
+		pats := en.State(states[i])
+
+		//pats := en.State(ly.Nm)
 		if pats != nil {
 			ly.ApplyExt(pats)
 		}
@@ -652,6 +707,9 @@ func (ss *Sim) TrainTrial() {
 
 		if epc >= ss.MaxEpcs {
 			// done with training..
+			if ss.SaveARFs {
+				ss.TestAll()
+			}
 			ss.RunEnd()
 			if ss.TrainEnv.Run.Incr() { // we are done!
 				ss.StopNow = true
@@ -675,13 +733,16 @@ func (ss *Sim) TrainTrial() {
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
 func (ss *Sim) RunEnd() {
 	ss.LogRun(ss.RunLog)
+	if ss.SaveARFs {
+		ss.SaveAllARFs()
+	}
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
 func (ss *Sim) NewRun() {
 	run := ss.TrainEnv.Run.Cur
-	ss.TrainEnv.Table = etable.NewIdxView(ss.OrientationInput)
+	//ss.TrainEnv.Table = etable.NewIdxView(ss.OrientationInput)
 	ss.TrainEnv.Init(run)
 	ss.TestEnv.Init(run)
 	ss.Time.Reset()
@@ -788,39 +849,121 @@ func (ss *Sim) SaveWts(filename gi.FileName) {
 //	// ss.Net.OpenWtsJSON("v1rf_rec05.wts.gz")
 //}
 
-func (ss *Sim) ECRFs() {
-	onVals := ss.EConWts.Values
-	//offVals := ss.ECoffWts.Values
-	netVals := ss.ECWts.Values
-	on := ss.Net.LayerByName("Input").(leabra.LeabraLayer).AsLeabra() // zycyc: ??
-	//off := ss.Net.LayerByName("LGNoff").(leabra.LeabraLayer).AsLeabra()
-	isz := on.Shape().Len()
-	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	ysz := ec.Shape().Dim(0)
-	xsz := ec.Shape().Dim(1)
-	for y := 0; y < ysz; y++ {
-		for x := 0; x < xsz; x++ {
-			ui := (y*xsz + x)
-			ust := ui * isz
-			onvls := onVals[ust : ust+isz]
-			//offvls := offVals[ust : ust+isz]
-			netvls := netVals[ust : ust+isz]
-			on.SendPrjnVals(&onvls, "Wt", ec, ui, "")
-			//off.SendPrjnVals(&offvls, "Wt", ec, ui, "")
-			for ui := 0; ui < isz; ui++ {
-				//netvls[ui] = 1.5 * (onvls[ui] - offvls[ui])
-				netvls[ui] = 1.5 * (onvls[ui]) // zycyc: not sure what this is ??
-			}
-		}
-	}
-	if ss.WtsGrid != nil {
-		ss.WtsGrid.UpdateSig()
-	}
-}
+//func (ss *Sim) ECRFs() {
+//	onVals := ss.EConWts.Values
+//	//offVals := ss.ECoffWts.Values
+//	netVals := ss.ECWts.Values
+//	on := ss.Net.LayerByName("Input").(leabra.LeabraLayer).AsLeabra() // zycyc: ??
+//	//off := ss.Net.LayerByName("LGNoff").(leabra.LeabraLayer).AsLeabra()
+//	isz := on.Shape().Len()
+//	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
+//	ysz := ec.Shape().Dim(0)
+//	xsz := ec.Shape().Dim(1)
+//	for y := 0; y < ysz; y++ {
+//		for x := 0; x < xsz; x++ {
+//			ui := (y*xsz + x)
+//			ust := ui * isz
+//			onvls := onVals[ust : ust+isz]
+//			//offvls := offVals[ust : ust+isz]
+//			netvls := netVals[ust : ust+isz]
+//			on.SendPrjnVals(&onvls, "Wt", ec, ui, "")
+//			//off.SendPrjnVals(&offvls, "Wt", ec, ui, "")
+//			for ui := 0; ui < isz; ui++ {
+//				//netvls[ui] = 1.5 * (onvls[ui] - offvls[ui])
+//				netvls[ui] = 1.5 * (onvls[ui]) // zycyc: not sure what this is ??
+//			}
+//		}
+//	}
+//	if ss.WtsGrid != nil {
+//		ss.WtsGrid.UpdateSig()
+//	}
+//}
 
 func (ss *Sim) ConfigWts(dt *etensor.Float32) {
 	dt.SetShape([]int{14, 14, 12, 12}, nil, nil)
 	dt.SetMetaData("grid-fill", "1")
+}
+
+// SetAFMetaData
+func (ss *Sim) SetAFMetaData(af etensor.Tensor) {
+	af.SetMetaData("min", "0")
+	af.SetMetaData("colormap", "Viridis") // "JetMuted")
+	af.SetMetaData("grid-fill", "1")
+}
+
+// UpdtARFs updates position activation rf's
+func (ss *Sim) UpdtARFs() {
+	for nm, mt := range ss.RFMaps {
+		mt.SetZeros()
+		switch nm {
+		case "Pos":
+			mt.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, 1)
+		case "Act":
+			mt.Set1D(ss.TrainEnv.Act, 1)
+		case "Ang":
+			mt.Set1D(ss.TrainEnv.Angle/15, 1)
+		case "Rot":
+			mt.Set1D(1+ss.TrainEnv.RotAng/15, 1)
+		}
+	}
+
+	naf := len(ss.ARFLayers) * len(ss.RFMaps)
+	if len(ss.ARFs.RFs) != naf {
+		for _, lnm := range ss.ARFLayers {
+			ly := ss.Net.LayerByName(lnm)
+			if ly == nil {
+				continue
+			}
+			vt := ss.ValsTsr(lnm)
+			ly.UnitValsTensor(vt, "ActM")
+			for nm, mt := range ss.RFMaps {
+				af := ss.ARFs.AddRF(lnm+"_"+nm, vt, mt)
+				ss.SetAFMetaData(&af.NormRF)
+			}
+		}
+	}
+	for _, lnm := range ss.ARFLayers {
+		ly := ss.Net.LayerByName(lnm)
+		if ly == nil {
+			continue
+		}
+		vt := ss.ValsTsr(lnm)
+		ly.UnitValsTensor(vt, "ActM")
+		for nm, mt := range ss.RFMaps {
+			ss.ARFs.Add(lnm+"_"+nm, vt, mt, 0.01) // thr prevent weird artifacts
+		}
+	}
+}
+
+// SaveAllARFs saves all ARFs to files
+func (ss *Sim) SaveAllARFs() {
+	ss.ARFs.Avg()
+	ss.ARFs.Norm()
+	for _, paf := range ss.ARFs.RFs {
+		fnm := ss.LogFileName(paf.Name)
+		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	}
+}
+
+// OpenAllARFs open all ARFs from directory of given path
+func (ss *Sim) OpenAllARFs(path gi.FileName) {
+	ss.UpdtARFs()
+	ss.ARFs.Avg()
+	ss.ARFs.Norm()
+	ap := string(path)
+	if strings.HasSuffix(ap, ".tsv") {
+		ap, _ = filepath.Split(ap)
+	}
+	vp := ss.Win.Viewport
+	for _, paf := range ss.ARFs.RFs {
+		fnm := filepath.Join(ap, ss.LogFileName(paf.Name))
+		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -880,6 +1023,14 @@ func (ss *Sim) RunTestAll() {
 
 /////////////////////////////////////////////////////////////////////////
 //   Params setting
+
+// ParamsName returns name of current set of parameters
+func (ss *Sim) ParamsName() string {
+	if ss.ParamSet == "" {
+		return "Base"
+	}
+	return ss.ParamSet
+}
 
 // SetParams sets the params for "Base" and then current ParamSet.
 // If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
@@ -1049,6 +1200,32 @@ func (ss *Sim) ValsTsr(name string) *etensor.Float32 {
 	return tsr
 }
 
+// RunName returns a name for this run that combines Tag and Params -- add this to
+// any file names that are saved.
+func (ss *Sim) RunName() string {
+	if ss.Tag != "" {
+		return ss.Tag + "_" + ss.ParamsName()
+	} else {
+		return ss.ParamsName()
+	}
+}
+
+// RunEpochName returns a string with the run and epoch numbers with leading zeros, suitable
+// for using in weights file names.  Uses 3, 5 digits for each.
+func (ss *Sim) RunEpochName(run, epc int) string {
+	return fmt.Sprintf("%03d_%05d", run, epc)
+}
+
+// WeightsFileName returns default current weights file name
+func (ss *Sim) WeightsFileName() string {
+	return ss.Net.Nm + "_" + ss.RunName() + "_" + ss.RunEpochName(ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur) + ".wts.gz"
+}
+
+// LogFileName returns default log file name
+func (ss *Sim) LogFileName(lognm string) string {
+	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
+}
+
 //////////////////////////////////////////////
 //  TrnTrlLog
 
@@ -1064,10 +1241,16 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	}
 	dt.SetNumRows(row + 1)
 
+	env := &ss.TrainEnv
+
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
 	dt.SetCellFloat("Trial", row, float64(trl))
-	dt.SetCellString("TrialName", row, ss.TrainEnv.TrialName.Cur)
+	dt.SetCellFloat("Event", row, float64(env.Event.Cur))
+	dt.SetCellFloat("X", row, float64(env.PosI.X))
+	dt.SetCellFloat("Y", row, float64(env.PosI.Y))
+	dt.SetCellString("ActAction", row, ss.ActAction)
+	//dt.SetCellString("TrialName", row, ss.TrainEnv.TrialName.Cur)
 	for _, lnm := range ss.LayStatNms {
 		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
 		tsr := ss.ValsTsr(lnm)
@@ -1135,7 +1318,7 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	epc := ss.TrainEnv.Epoch.Prv // this is triggered by increment so use previous value
 	// nt := float64(ss.TrainEnv.Trial.Max)
 
-	ss.ECRFs()
+	//ss.ECRFs()
 
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
@@ -1314,7 +1497,7 @@ func (ss *Sim) LogRun(dt *etable.Table) {
 	epcix.Idxs = epcix.Idxs[epcix.Len()-nlast-1:]
 
 	// params := ss.Params.Name
-	params := "params"
+	params := ss.RunName() // includes tag
 
 	dt.SetCellFloat("Run", row, float64(run))
 	dt.SetCellString("Params", row, params)
@@ -1368,15 +1551,199 @@ func (ss *Sim) ConfigNetView(nv *netview.NetView) {
 	// cam.Pose.Quat.SetFromAxisAngle(mat32.Vec3{-1, 0, 0}, 0.4077744)
 }
 
+// ConfigWorldGui configures all the world view GUI elements
+func (ss *Sim) ConfigWorldGui() *gi.Window {
+	// order: Empty, wall, food, water, foodwas, waterwas
+	ss.MatColors = []string{"lightgrey", "black", "orange", "blue", "brown", "navy"}
+
+	ss.Trace = ss.TrainEnv.World.Clone().(*etensor.Int)
+
+	width := 1600
+	height := 1200
+
+	win := gi.NewMainWindow("xyhdenv", "XY and Head Direction Environment", width, height)
+	ss.WorldWin = win
+
+	vp := win.WinViewport2D()
+	updt := vp.UpdateStart()
+
+	mfr := win.SetMainFrame()
+
+	tbar := gi.AddNewToolBar(mfr, "tbar")
+	tbar.SetStretchMaxWidth()
+
+	split := gi.AddNewSplitView(mfr, "split")
+	split.Dim = mat32.X
+	split.SetStretchMax()
+
+	sv := giv.AddNewStructView(split, "sv")
+	sv.SetStruct(&ss.TrainEnv)
+
+	tv := gi.AddNewTabView(split, "tv")
+	ss.WorldTabs = tv
+
+	tg := tv.AddNewTab(etview.KiT_TensorGrid, "Trace").(*etview.TensorGrid)
+	ss.TraceView = tg
+	tg.SetTensor(ss.Trace)
+	ss.ConfigWorldView(tg)
+
+	wg := tv.AddNewTab(etview.KiT_TensorGrid, "World").(*etview.TensorGrid)
+	ss.WorldView = wg
+	wg.SetTensor(ss.TrainEnv.World)
+	ss.ConfigWorldView(wg)
+
+	split.SetSplits(.3, .7)
+
+	tbar.AddAction(gi.ActOpts{Label: "Init", Icon: "reset", Tooltip: "Init env.", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.Init()
+		vp.SetFullReRender()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Left", Icon: "wedge-left", Tooltip: "Rotate Left", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.Left()
+		vp.SetFullReRender()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Right", Icon: "wedge-right", Tooltip: "Rotate Right", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.Right()
+		vp.SetFullReRender()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Forward", Icon: "wedge-up", Tooltip: "Step Forward", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.Forward()
+		vp.SetFullReRender()
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Backward", Icon: "wedge-down", Tooltip: "Step Backward", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.Backward()
+		vp.SetFullReRender()
+	})
+
+	tbar.AddSeparator("sep-file")
+
+	tbar.AddAction(gi.ActOpts{Label: "Open World", Icon: "file-open", Tooltip: "Open World from .tsv file", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(&ss.TrainEnv, "OpenWorld", vp)
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Save World", Icon: "file-save", Tooltip: "Save World to .tsv file", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(&ss.TrainEnv, "SaveWorld", vp)
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Open Pats", Icon: "file-open", Tooltip: "Open bit patterns from .json file", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(&ss.TrainEnv, "OpenPats", vp)
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Save Pats", Icon: "file-save", Tooltip: "Save bit patterns to .json file", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(&ss.TrainEnv, "SavePats", vp)
+	})
+
+	vp.UpdateEndNoSig(updt)
+
+	// main menu
+	appnm := gi.AppName()
+	mmen := win.MainMenu
+	mmen.ConfigMenus([]string{appnm, "File", "Edit", "Window"})
+
+	amen := win.MainMenu.ChildByName(appnm, 0).(*gi.Action)
+	amen.Menu.AddAppMenu(win)
+
+	emen := win.MainMenu.ChildByName("Edit", 1).(*gi.Action)
+	emen.Menu.AddCopyCutPaste(win)
+
+	win.MainMenuUpdated()
+	return win
+}
+
+func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) {
+	cnm := "XYHDEnvColors"
+	cm, ok := giv.AvailColorMaps[cnm]
+	if !ok {
+		cm = &giv.ColorMap{}
+		cm.Name = cnm
+		cm.Indexed = true
+		nc := len(ss.TrainEnv.Mats)
+		cm.Colors = make([]gist.Color, nc+ss.TrainEnv.NRotAngles)
+		cm.NoColor = gist.Black
+		for i, cnm := range ss.MatColors {
+			cm.Colors[i].SetString(cnm, nil)
+		}
+		ch := giv.AvailColorMaps["ColdHot"]
+		for i := 0; i < ss.TrainEnv.NRotAngles; i++ {
+			nv := float64(i) / float64(ss.TrainEnv.NRotAngles-1)
+			cm.Colors[nc+i] = ch.Map(nv) // color map of rotation
+		}
+		giv.AvailColorMaps[cnm] = cm
+	}
+	tg.Disp.Defaults()
+	tg.Disp.ColorMap = giv.ColorMapName(cnm)
+	tg.Disp.GridFill = 1
+	tg.SetStretchMax()
+}
+
+func (ss *Sim) UpdateWorldGui() {
+	if ss.WorldWin == nil || !ss.TrainEnv.Disp {
+		return
+	}
+
+	if ss.TrainEnv.Scene.Chg { // something important happened, refresh
+		ss.Trace.CopyFrom(ss.TrainEnv.World)
+	}
+
+	nc := len(ss.TrainEnv.Mats)
+	ss.Trace.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, nc+ss.TrainEnv.Angle/ss.TrainEnv.AngInc)
+
+	updt := ss.WorldTabs.UpdateStart()
+	ss.TraceView.UpdateSig()
+	ss.WorldTabs.UpdateEnd(updt)
+}
+
+func (ss *Sim) Left() {
+	ss.TrainEnv.Action("Left", nil)
+	ss.UpdateWorldGui()
+}
+
+func (ss *Sim) Right() {
+	ss.TrainEnv.Action("Right", nil)
+	ss.UpdateWorldGui()
+}
+
+func (ss *Sim) Forward() {
+	ss.TrainEnv.Action("Forward", nil)
+	ss.UpdateWorldGui()
+}
+
+func (ss *Sim) Backward() {
+	ss.TrainEnv.Action("Backward", nil)
+	ss.UpdateWorldGui()
+}
+
 // ConfigGui configures the GoGi gui interface for this simulation,
 func (ss *Sim) ConfigGui() *gi.Window {
 	width := 1600
 	height := 1200
 
-	gi.SetAppName("attractorEC")
+	gi.SetAppName("can_ec")
 	gi.SetAppAbout(`Alan testing out EC`)
 
-	win := gi.NewMainWindow("attractorEC", "EC Receptive Fields", width, height)
+	win := gi.NewMainWindow("can_ec", "EC Receptive Fields", width, height)
 	ss.Win = win
 
 	vp := win.WinViewport2D()
@@ -1500,11 +1867,33 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	//	ss.OpenRec05Wts()
 	//})
 
-	tbar.AddAction(gi.ActOpts{Label: "EC RFs", Icon: "file-image", Tooltip: "Update the EC Receptive Field (Weights) plot in EC RFs tab.", UpdateFunc: func(act *gi.Action) {
+	tbar.AddAction(gi.ActOpts{Label: "Reset ARFs", Icon: "reset", Tooltip: "reset current position activation rfs accumulation data", UpdateFunc: func(act *gi.Action) {
 		act.SetActiveStateUpdt(!ss.IsRunning)
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.ECRFs()
+		ss.ARFs.Reset()
 	})
+
+	tbar.AddAction(gi.ActOpts{Label: "View ARFs", Icon: "file-image", Tooltip: "compute activation rfs and view them.", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		ss.ARFs.Avg()
+		ss.ARFs.Norm()
+		for _, paf := range ss.ARFs.RFs {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
+	})
+
+	tbar.AddAction(gi.ActOpts{Label: "Open ARFs", Icon: "file-open", Tooltip: "Open saved ARF .tsv files -- select a path or specific file in path", UpdateFunc: func(act *gi.Action) {
+		act.SetActiveStateUpdt(!ss.IsRunning)
+	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+		giv.CallMethod(ss, "OpenAllARFs", vp)
+	})
+
+	//tbar.AddAction(gi.ActOpts{Label: "EC RFs", Icon: "file-image", Tooltip: "Update the EC Receptive Field (Weights) plot in EC RFs tab.", UpdateFunc: func(act *gi.Action) {
+	//	act.SetActiveStateUpdt(!ss.IsRunning)
+	//}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
+	//	ss.ECRFs()
+	//})
 
 	tbar.AddSeparator("test")
 
@@ -1571,7 +1960,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	tbar.AddAction(gi.ActOpts{Label: "README", Icon: "file-markdown", Tooltip: "Opens your browser on the README file that contains instructions for how to run this model."}, win.This(),
 		func(recv, send ki.Ki, sig int64, data interface{}) {
-			gi.OpenURL("https://github.com/zycyc/attractorEC/README.md")
+			gi.OpenURL("https://github.com/ccnlab/map-nav/tree/master/sims/can_ec/README.md")
 		})
 
 	vp.UpdateEndNoSig(updt)
@@ -1658,14 +2047,24 @@ var SimProps = ki.Props{
 				}},
 			},
 		}},
+		{"OpenAllARFs", ki.Props{
+			"desc": "open all Activation-based Receptive Fields from selected path (can select a file too)",
+			"icon": "file-open",
+			"Args": ki.PropSlice{
+				{"Path", ki.Props{
+					"ext": ".tsv",
+				}},
+			},
+		}},
 	},
 }
 
 func mainrun() {
 	TheSim.New()
 	TheSim.Config()
-
 	TheSim.Init()
 	win := TheSim.ConfigGui()
+	fwin := TheSim.ConfigWorldGui()
+	fwin.GoStartEventLoop()
 	win.StartEventLoop()
 }

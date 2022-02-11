@@ -22,6 +22,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/emer/etable/agg"
+	"github.com/emer/etable/split"
+
 	"github.com/emer/empi/mpi"
 
 	"github.com/goki/gi/gist"
@@ -88,23 +91,23 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.XCal.LLrn":    "1",
 					"Prjn.Learn.WtSig.Gain":   "1", // key: more graded weights
 					"Prjn.Learn.Learn":        "false",
-					"Prjn.WtInit.Mean":        "0.5",
-					"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
+					//"Prjn.WtInit.Mean":        "0.5",
+					//"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
 				}},
 			{Sel: "Layer", Desc: "needs some special inhibition and learning params",
 				Params: params.Params{
-					"Layer.Learn.AvgL.Gain":   "1", // this is critical! much lower
-					"Layer.Learn.AvgL.Min":    "0.01",
-					"Layer.Learn.AvgL.Init":   "0.2",
+					//"Layer.Learn.AvgL.Gain":   "1", // this is critical! much lower
+					//"Layer.Learn.AvgL.Min":    "0.01",
+					//"Layer.Learn.AvgL.Init":   "0.2",
 					"Layer.Inhib.Layer.Gi":    "1.8", // more active..
 					"Layer.Inhib.Layer.FBTau": "3",
 					"Layer.Inhib.ActAvg.Init": "0.2",
 					"Layer.Act.Gbar.L":        "0.1",
 					"Layer.Act.Dt.GTau":       "3", // slower = more noise integration -- otherwise fails sometimes
-					"Layer.Act.Noise.Dist":    "Gaussian",
-					"Layer.Act.Noise.Var":     "0.004", // 0.002 fails to converge sometimes, .005 a bit noisy
-					"Layer.Act.Noise.Type":    "GeNoise",
-					"Layer.Act.Noise.Fixed":   "false",
+					//"Layer.Act.Noise.Dist":    "Gaussian",
+					//"Layer.Act.Noise.Var":     "0.004", // 0.002 fails to converge sometimes, .005 a bit noisy
+					//"Layer.Act.Noise.Type":    "GeNoise",
+					//"Layer.Act.Noise.Fixed":   "false",
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
@@ -112,6 +115,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".ExciteLateral", Desc: "lateral excitatory connection",
 				Params: params.Params{
+					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
@@ -119,6 +123,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".InhibLateral", Desc: "lateral inhibitory connection",
 				Params: params.Params{
+					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
@@ -139,33 +144,37 @@ var ParamSets = params.Sets{
 			{Sel: "#Out_Position", Desc: "Initial position, don't decay",
 				Params: params.Params{
 					"Layer.Act.Init.Decay": "0",
+					"Layer.Inhib.Layer.Gi": "2.3",
 				}},
 			{Sel: "#Orientation", Desc: "Initial position, don't decay",
 				Params: params.Params{
 					"Layer.Act.Init.Decay": "0",
+					"Layer.Inhib.Layer.Gi": "2.3",
 				}},
-
 			{Sel: "#ECToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
+					"Prjn.WtInit.Sym":  "false",
 				}},
 			{Sel: "#ECToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
+					"Prjn.WtInit.Sym":  "false",
 				}},
 			{Sel: "#Out_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
+					"Prjn.WtScale.Rel": "1",
 				}},
 			{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
+					"Prjn.WtScale.Rel": "1",
 				}},
-
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
@@ -175,6 +184,20 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
+				}},
+			{Sel: "#Out_PositionToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+				}},
+			{Sel: "#OrientationToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "false",
+					"Prjn.WtInit.Var":  "0",
+					"Prjn.WtInit.Mean": "0.8",
+					"Prjn.WtScale.Rel": "0.1", // zycyc experiment
 				}},
 		},
 	}},
@@ -198,6 +221,7 @@ type Sim struct {
 	Probes           *etable.Table    `view:"no-inline" desc:"probe inputs"`
 	ARFs             actrf.RFs        `view:"no-inline" desc:"activation-based receptive fields"`
 	TrnTrlLog        *etable.Table    `view:"no-inline" desc:"training trial-level log data"`
+	TrnErrStats      *etable.Table    `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TrnEpcLog        *etable.Table    `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog        *etable.Table    `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog        *etable.Table    `view:"no-inline" desc:"testing trial-level log data"`
@@ -214,17 +238,23 @@ type Sim struct {
 	TestEpcs         int              `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
 	//MaxTrls           int               `desc:"maximum number of training trials per epoch"`
 	//TrainEnv   env.FixedTable    `desc:"Training environment -- visual images"`
-	Time       leabra.Time       `desc:"leabra timing parameters and state"`
-	ViewOn     bool              `desc:"whether to update the network view while running"`
-	TrainUpdt  leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt   leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
-	LayStatNms []string          `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	ARFLayers  []string          `desc:"names of layers to compute position activation fields on"`
-	TrainEnv   XYHDEnv           `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time      leabra.Time       `desc:"leabra timing parameters and state"`
+	ViewOn    bool              `desc:"whether to update the network view while running"`
+	TrainUpdt leabra.TimeScales `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
+	TestUpdt  leabra.TimeScales `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
+	ARFLayers []string          `desc:"names of layers to compute position activation fields on"`
+	TrainEnv  XYHDEnv           `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 
 	// statistics: note use float64 as that is best for etable.Table
-	RFMaps    map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
-	ActAction string                      `inactive:"+" desc:"action generated & taken"`
+	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
+	InputLays     []string                    `view:"-" desc:"input layers"`
+	TargetLays    []string                    `view:"-" desc:"target layers"`
+	ActAction     string                      `inactive:"+" desc:"action generated & taken"`
+	TrlCosDiff    float64                     `inactive:"+" desc:"current trial's overall cosine difference"`
+	TrlCosDiffTGT []float64                   `inactive:"+" desc:"current trial's cosine difference for target layers"`
+	EpcCosDiff    float64                     `inactive:"+" desc:"last epoch's average cosine difference for output layer (a normalized error measure, maximum of 1 when the minus phase exactly matches the plus)"`
+	NumTrlStats   int                         `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
+	SumCosDiff    float64                     `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
 
 	// internal state - view:"-"
 	Win                *gi.Window                  `view:"-" desc:"main GUI window"`
@@ -317,7 +347,6 @@ func (ss *Sim) New() {
 	ss.ViewOn = true
 	ss.TrainUpdt = leabra.Cycle
 	ss.TestUpdt = leabra.Cycle
-	ss.LayStatNms = []string{"EC", "Orientation", "Out_Position"}
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
 	ss.init_pos_assigned1 = false
 
@@ -326,8 +355,8 @@ func (ss *Sim) New() {
 }
 
 func (ec *EcParams) Defaults() {
-	ec.ECSize.Set(16, 16)
-	ec.InputSize.Set(16, 16)
+	ec.ECSize.Set(20, 20)
+	ec.InputSize.Set(16, 16) // zycyc: ?? automatic!
 	ec.PositionSize.Set(16, 16)
 	ec.OrientationSize.Set(16, 1)
 	ec.VestibularSize.Set(12, 1)
@@ -341,8 +370,8 @@ func (ec *EcParams) Defaults() {
 
 	ec.excitRadius4D = 3
 	ec.excitSigma4D = 2
-	ec.inhibRadius4D = 10
-	ec.inhibSigma4D = 2 // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
+	ec.inhibRadius4D = 10 // was 10
+	ec.inhibSigma4D = 2   // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
 }
 
 func (pp *PatParams) Defaults() {
@@ -369,17 +398,17 @@ func (ss *Sim) Config() {
 
 func (ss *Sim) ConfigEnv() {
 	if ss.MaxRuns == 0 { // allow user override
-		ss.MaxRuns = 1
+		ss.MaxRuns = 5
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 500  // zycyc, test
-		ss.TestEpcs = 500 // zycyc, test
+		ss.MaxEpcs = 100  // zycyc, test
+		ss.TestEpcs = 100 // zycyc, test
 	}
 	//if ss.MaxTrls == 0 { // allow user override
 	//	ss.MaxTrls = 100
 	//}
 
-	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
+	ss.TrainEnv.Config(300) // 1000) // n trials per epoch
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Run.Max = ss.MaxRuns // note: we are not setting epoch max -- do that manually
@@ -478,10 +507,31 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
 	inh.SetClass("InhibLateral")
 
+	one2one := prjn.NewOneToOne()
+	net.LateralConnectLayer(outPosition, one2one)
+	net.LateralConnectLayer(orientation, one2one)
+
 	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Init_Position", YAlign: relpos.Front, Space: 2})
 	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Init_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	outPosition.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "EC", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	orientation.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Out_Position", YAlign: relpos.Front, Space: 2})
+
+	//////////////////////////////////////
+	// collect
+
+	ss.InputLays = make([]string, 0, 10)
+	ss.TargetLays = make([]string, 0, 10)
+	for _, ly := range net.Layers {
+		if ly.IsOff() {
+			continue
+		}
+		switch ly.Type() {
+		case emer.Input:
+			ss.InputLays = append(ss.InputLays, ly.Name())
+		case emer.Target:
+			ss.TargetLays = append(ss.TargetLays, ly.Name())
+		}
+	}
 
 	net.Defaults()
 	ss.SetParams("Network", false) // only set Network params
@@ -675,6 +725,19 @@ func (ss *Sim) AlphaCyc(train bool) {
 	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
 	ec.Act.Clamp.Hard = false
 
+	//pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
+	//ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
+	//
+	//PosFmEC := pos.RcvPrjns.SendName("EC").(leabra.LeabraPrjn).AsLeabra()
+	//OriFmEC := ori.RcvPrjns.SendName("EC").(leabra.LeabraPrjn).AsLeabra()
+	//PosFmEC.WtScale.Rel = 0
+	//OriFmEC.WtScale.Rel = 0
+	//
+	//PosFmPos := pos.RcvPrjns.SendName("Out_Position").(leabra.LeabraPrjn).AsLeabra()
+	//OriFmOri := ori.RcvPrjns.SendName("Orientation").(leabra.LeabraPrjn).AsLeabra()
+	//PosFmPos.WtScale.Rel = 1
+	//OriFmOri.WtScale.Rel = 1
+
 	ss.Net.AlphaCycInit(train)
 	ss.Time.AlphaCycStart()
 
@@ -695,8 +758,18 @@ func (ss *Sim) AlphaCyc(train bool) {
 				}
 			}
 		}
+		//switch qtr + 1 {
+		//case 1: // Third Quarters: CA1 is driven by CA3 recall
+		//	PosFmEC.WtScale.Rel = 1
+		//	OriFmEC.WtScale.Rel = 1
+		//	PosFmPos.WtScale.Rel = 0
+		//	OriFmOri.WtScale.Rel = 0
+		//	ss.Net.GScaleFmAvgAct() // update computed scaling factors
+		//	ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
+		//}
 		ss.Net.QuarterFinal(&ss.Time)
 		ss.Time.QuarterInc()
+		//ss.QuarterInc()
 		if ss.ViewOn {
 			switch {
 			case viewUpdt <= leabra.Quarter:
@@ -716,6 +789,17 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.UpdateView(train)
 	}
 }
+
+//// QuarterInc increments at the quarter level, updating Quarter and PlusPhase
+//func (ss *Sim) QuarterInc() {
+//	tm := &ss.Time
+//	tm.Quarter++
+//	if tm.Quarter == 5 {
+//		tm.PlusPhase = true
+//	} else {
+//		tm.PlusPhase = false
+//	}
+//}
 
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
@@ -831,6 +915,10 @@ func (ss *Sim) NewRun() {
 // InitStats initializes all the statistics, especially important for the
 // cumulative epoch stats -- called at start of new run
 func (ss *Sim) InitStats() {
+	ss.NumTrlStats = 0
+	ss.TrlCosDiff = 0
+	ss.SumCosDiff = 0
+	ss.EpcCosDiff = 0
 }
 
 // TrialStats computes the trial-level statistics and adds them to the epoch accumulators if
@@ -839,8 +927,25 @@ func (ss *Sim) InitStats() {
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
 func (ss *Sim) TrialStats(accum bool) {
+	nt := len(ss.TargetLays)
+	if len(ss.TrlCosDiffTGT) != nt {
+		ss.TrlCosDiffTGT = make([]float64, nt)
+	}
+	acd := 0.0
+	for i, ln := range ss.TargetLays {
+		ly := ss.Net.LayerByName(ln).(leabra.LeabraLayer).AsLeabra()
+		cd := float64(ly.CosDiff.Cos)
+		acd += cd
+		ss.TrlCosDiffTGT[i] = cd
+	}
+	ss.TrlCosDiff = acd / float64(len(ss.TargetLays))
+	if accum {
+		ss.SumCosDiff += ss.TrlCosDiff
+	}
+
 	if accum {
 		// zycyc: ?? do all the trn epc log thing
+		ss.NumTrlStats++
 	} else {
 		ss.UpdtARFs()
 	}
@@ -983,9 +1088,9 @@ func (ss *Sim) UpdtARFs() {
 		case "Act":
 			mt.Set1D(ss.TrainEnv.Act, 1)
 		case "Ang":
-			mt.Set1D(ss.TrainEnv.Angle/45, 1)
+			mt.Set1D(ss.TrainEnv.Angle/90, 1)
 		case "Rot":
-			mt.Set1D(1+ss.TrainEnv.RotAng/45, 1)
+			mt.Set1D(1+ss.TrainEnv.RotAng/90, 1)
 		}
 	}
 
@@ -1053,6 +1158,7 @@ func (ss *Sim) OpenAllARFs(path gi.FileName) {
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
 func (ss *Sim) TestTrial(returnOnChg bool) {
+	ss.TakeAction(ss.Net, &ss.TrainEnv) // zycyc: ??
 	ss.TrainEnv.Step()
 
 	// Query counters FIRST
@@ -1334,12 +1440,10 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	dt.SetCellFloat("X", row, float64(env.PosI.X))
 	dt.SetCellFloat("Y", row, float64(env.PosI.Y))
 	dt.SetCellString("ActAction", row, ss.ActAction)
+	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
 	//dt.SetCellString("TrialName", row, ss.TrainEnv.TrialName.Cur)
-	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
-		tsr := ss.ValsTsr(lnm)
-		ly.UnitValsTensor(tsr, "Act")
-		dt.SetCellTensor(lnm+"Act", row, tsr)
+	for i, lnm := range ss.TargetLays {
+		dt.SetCellFloat(lnm+"_CosDiff", row, float64(ss.TrlCosDiffTGT[i]))
 	}
 
 	// note: essential to use Go version of update when called from another goroutine
@@ -1366,18 +1470,18 @@ func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
 		{"Y", etensor.FLOAT64, nil, nil},
 		{"Angle", etensor.FLOAT64, nil, nil},
 		{"ActAction", etensor.STRING, nil, nil},
+		{"CosDiff", etensor.FLOAT64, nil, nil},
 	}
 
-	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
-		sch = append(sch, etable.Column{lnm + "Act", etensor.FLOAT64, ly.Shp.Shp, nil})
+	for _, lnm := range ss.TargetLays {
+		sch = append(sch, etable.Column{lnm + "_CosDiff", etensor.FLOAT64, nil, nil})
 	}
 
 	dt.SetFromSchema(sch, 0)
 }
 
 func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "Hippocampus Train Trial Plot"
+	plt.Params.Title = "CAN_EC Train Trial Plot"
 	plt.Params.XAxisCol = "Event"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -1388,9 +1492,10 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Y", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("Angle", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("ActAction", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
+	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 
-	for _, lnm := range ss.LayStatNms {
-		plt.SetColParams(lnm+"Act", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	for _, lnm := range ss.TargetLays {
+		plt.SetColParams(lnm+"_CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
 
 	return plt
@@ -1409,13 +1514,28 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	// nt := float64(ss.TrainEnv.Trial.Max)
 
 	//ss.ECRFs()
+	nt := float64(ss.NumTrlStats)
+	ss.EpcCosDiff = ss.SumCosDiff / nt
+	ss.SumCosDiff = 0
+	ss.NumTrlStats = 0
+
+	trl := ss.TrnTrlLog
+	trlix := etable.NewIdxView(trl)
+	gpsp := split.GroupBy(trlix, []string{"ActAction"})
+	for _, lnm := range ss.TargetLays {
+		_, err := split.AggTry(gpsp, lnm+"_CosDiff", agg.AggMean)
+		if err != nil {
+			log.Println(err)
+		}
+	}
+	ss.TrnErrStats = gpsp.AggsToTable(etable.ColNameOnly)
 
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
+	dt.SetCellFloat("CosDiff", row, ss.EpcCosDiff)
 
-	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
-		dt.SetCellFloat(ly.Nm+" ActAvg", row, float64(ly.Pools[0].ActAvg.ActPAvgEff))
+	for _, lnm := range ss.TargetLays {
+		dt.SetCellFloat(lnm+"_CosDiff", row, agg.Agg(trlix, lnm+"_CosDiff", agg.AggMean)[0])
 	}
 
 	// note: essential to use Go version of update when called from another goroutine
@@ -1437,9 +1557,10 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 	sch := etable.Schema{
 		{"Run", etensor.INT64, nil, nil},
 		{"Epoch", etensor.INT64, nil, nil},
+		{"CosDiff", etensor.FLOAT64, nil, nil},
 	}
-	for _, lnm := range ss.LayStatNms {
-		sch = append(sch, etable.Column{lnm + " ActAvg", etensor.FLOAT64, nil, nil})
+	for _, lnm := range ss.TargetLays {
+		sch = append(sch, etable.Column{lnm + "_CosDiff", etensor.FLOAT64, nil, nil})
 	}
 	dt.SetFromSchema(sch, 0)
 	ss.ConfigWts(ss.EConWts)
@@ -1448,16 +1569,17 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "EC Receptive Field Epoch Plot"
+	plt.Params.Title = "CAN_EC Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
 	plt.SetColParams("Run", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("Epoch", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
-
-	for _, lnm := range ss.LayStatNms {
-		plt.SetColParams(lnm+" ActAvg", eplot.On, eplot.FixMin, 0, eplot.FixMax, .5)
+	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	for _, lnm := range ss.TargetLays {
+		plt.SetColParams(lnm+"_CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
+
 	return plt
 }
 
@@ -1479,6 +1601,7 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	dt.SetCellFloat("Y", row, float64(env.PosI.Y))
 	dt.SetCellFloat("Angle", row, float64(env.Angle))
 	dt.SetCellString("ActAction", row, ss.ActAction)
+	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
 
 	//epc := ss.TrainEnv.Epoch.Prv // this is triggered by increment so use previous value
 	//
@@ -1493,11 +1616,6 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	//dt.SetCellFloat("Epoch", row, float64(epc))
 	//dt.SetCellFloat("Trial", row, float64(trl))
 	//dt.SetCellString("TrialName", row, ss.TestEnv.TrialName.Cur)
-
-	for _, lnm := range ss.LayStatNms {
-		ly := ss.Net.LayerByName(lnm).(leabra.LeabraLayer).AsLeabra()
-		dt.SetCellFloat(ly.Nm+" ActM.Avg", row, float64(ly.Pools[0].ActM.Avg))
-	}
 
 	// note: essential to use Go version of update when called from another goroutine
 	ss.TstTrlPlot.GoUpdate()
@@ -1518,15 +1636,13 @@ func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) {
 		{"Y", etensor.FLOAT64, nil, nil},
 		{"Angle", etensor.FLOAT64, nil, nil},
 		{"ActAction", etensor.STRING, nil, nil},
-	}
-	for _, lnm := range ss.LayStatNms {
-		sch = append(sch, etable.Column{lnm + " ActM.Avg", etensor.FLOAT64, nil, nil})
+		{"CosDiff", etensor.FLOAT64, nil, nil},
 	}
 	dt.SetFromSchema(sch, 0)
 }
 
 func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "EC Receptive Field Test Trial Plot"
+	plt.Params.Title = "EC Test Trial Plot"
 	plt.Params.XAxisCol = "Event"
 	plt.SetTable(dt)
 
@@ -1537,11 +1653,9 @@ func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Y", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("Angle", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("ActAction", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
+	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	// order of params: on, fixMin, min, fixMax, max 0)
 
-	for _, lnm := range ss.LayStatNms {
-		plt.SetColParams(lnm+" ActM.Avg", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 0.5)
-	}
 	return plt
 }
 
@@ -1579,7 +1693,7 @@ func (ss *Sim) ConfigTstEpcLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigTstEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "EC Receptive Field Testing Epoch Plot"
+	plt.Params.Title = "CAN_EC Testing Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max
@@ -1642,7 +1756,7 @@ func (ss *Sim) ConfigRunLog(dt *etable.Table) {
 }
 
 func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
-	plt.Params.Title = "EC Receptive Field Run Plot"
+	plt.Params.Title = "CAN_EC Run Plot"
 	plt.Params.XAxisCol = "Run"
 	plt.SetTable(dt)
 	// order of params: on, fixMin, min, fixMax, max

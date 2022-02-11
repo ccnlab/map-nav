@@ -38,10 +38,10 @@ type XYHDEnv struct {
 	MatMap      map[string]int              `desc:"map of material name to index stored in world cell"`
 	BarrierIdx  int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
 	Pats        map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
-	Acts        []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
+	Acts        []string                    `desc:"list of actions: starts with: Left, Right, Forward"`
 	ActMap      map[string]int              `desc:"action map of action names to indexes"`
-	Params      map[string]float32           `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
-	AngInc      int                         `desc:"angle increment for rotation, in degrees -- defaults to 45"`
+	Params      map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
+	AngInc      int                         `desc:"angle increment for rotation, in degrees -- defaults to 90"`
 	NRotAngles  int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
 	TraceActGen bool                        `desc:"for debugging, print out a trace of the action generation logic"`
 	RingSize    int                         `inactive:"+" desc:"number of units in ring population codes"`
@@ -82,22 +82,22 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.Dsc = "Example world with xy coordinate system and head direction"
 	ev.Mats = []string{"Empty", "Wall"}
 	ev.BarrierIdx = 1
-	ev.Acts = []string{"Stay", "Left", "Right", "Forward", "Backward"}
+	ev.Acts = []string{"Left", "Right", "Forward"}
 	ev.Params = make(map[string]float32)
 
 	ev.Disp = false
-	ev.Size.Set(100, 100) // if changing to non-square, reset the popcode2d min
+	ev.Size.Set(5, 5) // if changing to non-square, reset the popcode2d min
 	ev.PatSize.Set(5, 5)
 	ev.PosSize.Set(16, 16)
-	ev.AngInc = 45
+	ev.AngInc = 90
 	ev.RingSize = 16
 	ev.PopSize = 12
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 	ev.PopCode2d.Defaults()
-	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.1) // assume it's a square
+	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.2) // assume it's a square
 	ev.AngCode.Defaults()
-	ev.AngCode.SetRange(0, 1, 0.1)
+	ev.AngCode.SetRange(0, 1, 0.1) // zycyc experiment
 
 	// debugging options:
 	ev.TraceActGen = false
@@ -406,37 +406,40 @@ func (ev *XYHDEnv) AddNewEventRefresh(wev *WEvent) {
 
 // TakeAct takes the action, updates state
 func (ev *XYHDEnv) TakeAct(act int) {
-	as := ""
-	if act >= len(ev.Acts) || act < 0 {
-		as = "Stay"
-	} else {
-		as = ev.Acts[act]
-	}
+	//as := ""
+	//if act >= len(ev.Acts) || act < 0 {
+	//	as = "Stay"
+	//} else {
+	//	as = ev.Acts[act]
+	//}
 
+	as := ev.Acts[act]
 	ev.RotAng = 0
 
 	nmat := len(ev.Mats)
 	frmat := ints.MinInt(ev.ProxMats[0], nmat)
-	behmat := ev.ProxMats[3] // behind
+	//behmat := ev.ProxMats[3] // behind
 
 	switch as {
-	case "Stay":
+	//case "Stay":
 	case "Left":
 		ev.RotAng = ev.AngInc
 		ev.Angle = AngMod(ev.Angle + ev.RotAng)
+		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
 	case "Right":
 		ev.RotAng = -ev.AngInc
 		ev.Angle = AngMod(ev.Angle + ev.RotAng)
+		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
 	case "Forward":
 		if frmat > 0 && frmat <= ev.BarrierIdx {
 		} else {
 			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
 		}
-	case "Backward":
-		if behmat > 0 && behmat <= ev.BarrierIdx {
-		} else {
-			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(AngMod(ev.Angle+180)))
-		}
+		//case "Backward":
+		//	if behmat > 0 && behmat <= ev.BarrierIdx {
+		//	} else {
+		//		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(AngMod(ev.Angle+180)))
+		//	}
 	}
 	ev.ScanProx()
 
@@ -466,7 +469,7 @@ func (ev *XYHDEnv) RenderAngle() {
 // RenderVestib renders vestibular state
 func (ev *XYHDEnv) RenderVestibular() {
 	vs := ev.NextStates["Vestibular"]
-	nv := 0.5*(float32(-ev.RotAng)/45) + 0.5
+	nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
 	ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
 }
 
@@ -474,8 +477,8 @@ func (ev *XYHDEnv) RenderVestibular() {
 func (ev *XYHDEnv) RenderPosition() {
 	xy := ev.NextStates["Position"]
 	pv := ev.PosF
-	pv.X /= float32(ev.Size.X)-2
-	pv.Y /= float32(ev.Size.Y)-2
+	pv.X /= float32(ev.Size.X) - 2
+	pv.Y /= float32(ev.Size.Y) - 2
 	ev.PopCode2d.Encode(xy, pv, false)
 }
 
@@ -716,6 +719,8 @@ func (ev *XYHDEnv) ActGen() int {
 
 	nmat := len(ev.Mats)
 	frmat := ints.MinInt(ev.ProxMats[0], nmat)
+	rmat := ints.MinInt(ev.ProxMats[1], nmat)
+	lmat := ints.MinInt(ev.ProxMats[2], nmat)
 
 	rlp := float64(.5)
 	rlact := left
@@ -730,23 +735,37 @@ func (ev *XYHDEnv) ActGen() int {
 	act := ev.ActMap["Forward"] // default
 	switch {
 	case frmat == wall:
-		if lastact == left || lastact == right {
-			act = lastact // keep going
-			ev.ActGenTrace("at wall, keep turning", act)
+		if (rmat != wall) && (lmat != wall) {
+			if lastact == left || lastact == right {
+				act = lastact // keep going
+				ev.ActGenTrace("at wall, keep turning", act)
+			} else {
+				act = rlact
+				ev.ActGenTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
+			}
+		} else if rmat == wall {
+			act = left
 		} else {
-			act = rlact
-			ev.ActGenTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
+			act = right
 		}
 	default: // random explore -- nothing obvious
 		switch {
-		case frnd < 0.25:
-			act = lastact // continue
-			ev.ActGenTrace("repeat last act", act)
-		case frnd < 0.4:
-			act = left
+		//case frnd < 0.25:
+		//	act = lastact // continue
+		//	ev.ActGenTrace("repeat last act", act)
+		case frnd < 0.15:
+			if lmat == wall {
+				act = right
+			} else {
+				act = left
+			}
 			ev.ActGenTrace("turn", act)
-		case frnd < 0.55:
-			act = right
+		case frnd < 0.3:
+			if rmat == wall {
+				act = left
+			} else {
+				act = right
+			}
 			ev.ActGenTrace("turn", act)
 		default:
 			ev.ActGenTrace("go", act)

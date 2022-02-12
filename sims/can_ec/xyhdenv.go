@@ -51,8 +51,11 @@ type XYHDEnv struct {
 	AngCode     popcode.Ring                `desc:"angle population code values, in normalized units"`
 
 	// current state below (params above)
+	PrevPosF      mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
+	PrevPosI      evec.Vec2i                  `inactive:"+" desc:"current location of agent, integer"`
 	PosF          mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
 	PosI          evec.Vec2i                  `inactive:"+" desc:"current location of agent, integer"`
+	PrevAngle     int                         `inactive:"+" desc:"current angle, in degrees"`
 	Angle         int                         `inactive:"+" desc:"current angle, in degrees"`
 	RotAng        int                         `inactive:"+" desc:"angle that we just rotated -- drives vestibular"`
 	Act           int                         `inactive:"+" desc:"last action taken"`
@@ -86,12 +89,12 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.Params = make(map[string]float32)
 
 	ev.Disp = false
-	ev.Size.Set(5, 5) // if changing to non-square, reset the popcode2d min
+	ev.Size.Set(10, 10) // if changing to non-square, reset the popcode2d min
 	ev.PatSize.Set(5, 5)
-	ev.PosSize.Set(16, 16)
+	ev.PosSize.Set(12, 12)
 	ev.AngInc = 90
-	ev.RingSize = 16
-	ev.PopSize = 12
+	ev.RingSize = 4 // was 16
+	ev.PopSize = 2  // was 12
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 	ev.PopCode2d.Defaults()
@@ -150,6 +153,10 @@ func (ev *XYHDEnv) ConfigImpl() {
 	ag.SetShape([]int{1, ev.RingSize}, nil, []string{"1", "Pop"})
 	ev.NextStates["Angle"] = ag
 
+	prevag := &etensor.Float32{}
+	prevag.SetShape([]int{1, ev.RingSize}, nil, []string{"1", "Pop"})
+	ev.NextStates["PrevAngle"] = prevag
+
 	vs := &etensor.Float32{}
 	vs.SetShape([]int{1, ev.PopSize}, nil, []string{"1", "Pop"})
 	ev.NextStates["Vestibular"] = vs
@@ -157,6 +164,10 @@ func (ev *XYHDEnv) ConfigImpl() {
 	xy := &etensor.Float32{}
 	xy.SetShape([]int{ev.PosSize.Y, ev.PosSize.X}, nil, []string{"Y", "X"})
 	ev.NextStates["Position"] = xy
+
+	prevxy := &etensor.Float32{}
+	prevxy.SetShape([]int{ev.PosSize.Y, ev.PosSize.X}, nil, []string{"Y", "X"})
+	ev.NextStates["PrevPosition"] = prevxy
 
 	av := &etensor.Float32{}
 	av.SetShape([]int{ev.PatSize.Y, ev.PatSize.X}, nil, []string{"Y", "X"})
@@ -420,6 +431,8 @@ func (ev *XYHDEnv) TakeAct(act int) {
 	frmat := ints.MinInt(ev.ProxMats[0], nmat)
 	//behmat := ev.ProxMats[3] // behind
 
+	ev.PrevPosF, ev.PrevPosI = ev.PosF, ev.PosI
+	ev.PrevAngle = ev.Angle
 	switch as {
 	//case "Stay":
 	case "Left":
@@ -460,23 +473,43 @@ func (ev *XYHDEnv) RenderProxSoma() {
 }
 
 // RenderAngle renders angle using pop ring
-func (ev *XYHDEnv) RenderAngle() {
-	as := ev.NextStates["Angle"]
-	av := (float32(ev.Angle) / 360.0)
-	ev.AngCode.Encode(&as.Values, av, ev.RingSize)
+func (ev *XYHDEnv) RenderAngle(statenm string, angle int) {
+	as := ev.NextStates[statenm]
+	//av := (float32(angle) / 360.0)
+	//ev.AngCode.Encode(&as.Values, av, ev.RingSize)
+	as.SetZeros()
+
+	if angle == 0 || angle == 360 {
+		as.Values = []float32{1, 0, 0, 0}
+	} else if angle == 90 {
+		as.Values = []float32{0, 1, 0, 0}
+	} else if angle == 180 {
+		as.Values = []float32{0, 0, 1, 0}
+	} else if angle == 270 {
+		as.Values = []float32{0, 0, 0, 1}
+	}
+
 }
 
 // RenderVestib renders vestibular state
 func (ev *XYHDEnv) RenderVestibular() {
 	vs := ev.NextStates["Vestibular"]
-	nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
-	ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
+	//nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
+	//ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
+	vs.SetZeros()
+
+	if ev.RotAng == -90 {
+		vs.Values = []float32{1, 0}
+	} else if ev.RotAng == 90 {
+		vs.Values = []float32{0, 1}
+	}
+
 }
 
 // RenderPosition renders position using 2d popcode
-func (ev *XYHDEnv) RenderPosition() {
-	xy := ev.NextStates["Position"]
-	pv := ev.PosF
+func (ev *XYHDEnv) RenderPosition(statenm string, posf mat32.Vec2) {
+	xy := ev.NextStates[statenm]
+	pv := posf
 	pv.X /= float32(ev.Size.X) - 2
 	pv.Y /= float32(ev.Size.Y) - 2
 	ev.PopCode2d.Encode(xy, pv, false)
@@ -497,9 +530,11 @@ func (ev *XYHDEnv) RenderAction() {
 // RenderState renders the current state into NextState vars
 func (ev *XYHDEnv) RenderState() {
 	ev.RenderProxSoma()
-	ev.RenderAngle()
+	ev.RenderAngle("Angle", ev.Angle)
+	ev.RenderAngle("PrevAngle", ev.PrevAngle)
 	ev.RenderVestibular()
-	ev.RenderPosition()
+	ev.RenderPosition("Position", ev.PosF)
+	ev.RenderPosition("PrevPosition", ev.PrevPosF)
 	ev.RenderAction()
 }
 

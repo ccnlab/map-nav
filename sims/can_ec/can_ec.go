@@ -115,6 +115,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".ExciteLateral", Desc: "lateral excitatory connection",
 				Params: params.Params{
+					//"Prjn.Off":         "true",
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
@@ -123,6 +124,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".InhibLateral", Desc: "lateral inhibitory connection",
 				Params: params.Params{
+					//"Prjn.Off":         "true",
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
@@ -135,20 +137,28 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#EC", Desc: "all EC layers: only pools, no layer-level",
 				Params: params.Params{
-					"Layer.Act.Init.Decay": "0",
+					//"Layer.Act.Init.Decay": "0",
+					"Layer.Act.Noise.Dist":  "Gaussian",
+					"Layer.Act.Noise.Var":   "0.004", // 0.002 fails to converge sometimes, .005 a bit noisy
+					"Layer.Act.Noise.Type":  "GeNoise",
+					"Layer.Act.Noise.Fixed": "false",
+
+					// DG setting
+					//"Layer.Inhib.ActAvg.Init": "0.01",
+					//"Layer.Inhib.Layer.Gi":    "3.8",
 				}},
-			{Sel: "#Init_Position", Desc: "Initial position, don't decay",
-				Params: params.Params{
-					"Layer.Act.Init.Decay": "0",
-				}},
+			//{Sel: "#Init_Position", Desc: "Initial position, don't decay",
+			//	Params: params.Params{
+			//		"Layer.Act.Init.Decay": "0",
+			//	}},
 			{Sel: "#Out_Position", Desc: "Initial position, don't decay",
 				Params: params.Params{
-					"Layer.Act.Init.Decay": "0",
+					//"Layer.Act.Init.Decay": "0",
 					"Layer.Inhib.Layer.Gi": "2.3",
 				}},
 			{Sel: "#Orientation", Desc: "Initial position, don't decay",
 				Params: params.Params{
-					"Layer.Act.Init.Decay": "0",
+					//"Layer.Act.Init.Decay": "0",
 					"Layer.Inhib.Layer.Gi": "2.3",
 				}},
 			{Sel: "#ECToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
@@ -163,18 +173,18 @@ var ParamSets = params.Sets{
 					"Prjn.WtInit.Var":  "0.25",
 					"Prjn.WtInit.Sym":  "false",
 				}},
-			{Sel: "#Out_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
-					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtScale.Rel": "1",
-				}},
-			{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
-					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtScale.Rel": "1",
-				}},
+			//{Sel: "#Out_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			//	Params: params.Params{
+			//		"Prjn.Learn.Learn": "true",
+			//		"Prjn.WtInit.Var":  "0.25",
+			//		"Prjn.WtScale.Rel": "1",
+			//	}},
+			//{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			//	Params: params.Params{
+			//		"Prjn.Learn.Learn": "true",
+			//		"Prjn.WtInit.Var":  "0.25",
+			//		"Prjn.WtScale.Rel": "1",
+			//	}},
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
@@ -183,22 +193,27 @@ var ParamSets = params.Sets{
 			{Sel: "#Init_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
-					"Prjn.WtInit.Var":  "0.25",
+					//"Prjn.WtInit.Var":  "0",
 				}},
-			{Sel: "#Out_PositionToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			{Sel: "#Prev_AngleToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Var":  "0",
-					"Prjn.WtInit.Mean": "0.8",
-					"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+					"Prjn.Learn.Learn": "true",
+					//"Prjn.WtInit.Var":  "0",
 				}},
-			{Sel: "#OrientationToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-				Params: params.Params{
-					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Var":  "0",
-					"Prjn.WtInit.Mean": "0.8",
-					"Prjn.WtScale.Rel": "0.1", // zycyc experiment
-				}},
+			//{Sel: "#Out_PositionToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			//	Params: params.Params{
+			//		"Prjn.Learn.Learn": "false",
+			//		"Prjn.WtInit.Var":  "0",
+			//		"Prjn.WtInit.Mean": "0.8",
+			//		"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+			//	}},
+			//{Sel: "#OrientationToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			//	Params: params.Params{
+			//		"Prjn.Learn.Learn": "false",
+			//		"Prjn.WtInit.Var":  "0",
+			//		"Prjn.WtInit.Mean": "0.8",
+			//		"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+			//	}},
 		},
 	}},
 }
@@ -277,6 +292,7 @@ type Sim struct {
 	TstEpcFile         *os.File                    `view:"-" desc:"log file"`
 	RunFile            *os.File                    `view:"-" desc:"log file"`
 	ValsTsrs           map[string]*etensor.Float32 `view:"-" desc:"for holding layer values"`
+	EClateralflag      bool                        `view:"-" desc:"flag for EClateral"`
 	IsRunning          bool                        `view:"-" desc:"true if sim is running"`
 	StopNow            bool                        `view:"-" desc:"flag to stop running"`
 	NeedsNewRun        bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
@@ -349,6 +365,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
 	ss.init_pos_assigned1 = false
+	ss.EClateralflag = false
 
 	ss.Entorhinal.Defaults()
 	ss.Pat.Defaults()
@@ -356,19 +373,19 @@ func (ss *Sim) New() {
 
 func (ec *EcParams) Defaults() {
 	ec.ECSize.Set(20, 20)
-	ec.InputSize.Set(16, 16) // zycyc: ?? automatic!
-	ec.PositionSize.Set(16, 16)
-	ec.OrientationSize.Set(16, 1)
-	ec.VestibularSize.Set(12, 1)
+	//ec.InputSize.Set(12, 12) // zycyc: ?? automatic!
+	ec.PositionSize.Set(12, 12)
+	ec.OrientationSize.Set(4, 1)
+	ec.VestibularSize.Set(2, 1)
 	ec.InputPctAct = 0.25
 	ec.OrientationPctAct = 0.25
 
-	ec.excitRadius2D = 5
-	ec.excitSigma2D = 3
-	ec.inhibRadius2D = 10
-	ec.inhibSigma2D = 10
+	//ec.excitRadius2D = 5
+	//ec.excitSigma2D = 3
+	//ec.inhibRadius2D = 10
+	//ec.inhibSigma2D = 10
 
-	ec.excitRadius4D = 3
+	ec.excitRadius4D = 3 // was 3
 	ec.excitSigma4D = 2
 	ec.inhibRadius4D = 10 // was 10
 	ec.inhibSigma4D = 2   // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
@@ -386,7 +403,7 @@ func (pp *PatParams) Defaults() {
 // Config configures all the elements using the standard functions
 func (ss *Sim) Config() {
 	//ss.OpenPats()
-	ss.ConfigPats()
+	//ss.ConfigPats()
 	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
 	ss.ConfigTrnTrlLog(ss.TrnTrlLog)
@@ -440,7 +457,8 @@ func (ss *Sim) ConfigRFMaps() {
 func (ss *Sim) ConfigNet(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
 	net.InitName(net, "can_ec")
-	initPosition := net.AddLayer2D("Init_Position", ecParam.InputSize.Y, ecParam.InputSize.X, emer.Input) // init position
+	initPosition := net.AddLayer2D("Init_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input) // init position
+	prevAngle := net.AddLayer2D("Prev_Angle", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input) // init position
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
 	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)                          // 4D EC
 	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target) // output
@@ -448,11 +466,13 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//ec := net.AddLayer2D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, emer.Hidden) // 2D EC
 
 	full := prjn.NewFull()
+	//oriePrjn := prjn.NewPoolSameUnit()
 	//random := prjn.NewUnifRnd()
 	net.ConnectLayers(initPosition, ec, full, emer.Forward)
+	net.ConnectLayers(prevAngle, ec, full, emer.Forward)
 	net.ConnectLayers(vestibular, ec, full, emer.Forward)
-	net.BidirConnectLayers(ec, outPosition, full)
-	net.BidirConnectLayers(ec, orientation, full)
+	net.ConnectLayers(ec, outPosition, full, emer.Forward)
+	net.ConnectLayers(ec, orientation, full, emer.Forward)
 
 	// 2D EC
 	//excit := prjn.NewCircle()
@@ -507,11 +527,12 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
 	inh.SetClass("InhibLateral")
 
-	one2one := prjn.NewOneToOne()
-	net.LateralConnectLayer(outPosition, one2one)
-	net.LateralConnectLayer(orientation, one2one)
+	//one2one := prjn.NewOneToOne()
+	//net.LateralConnectLayer(outPosition, one2one)
+	//net.LateralConnectLayer(orientation, one2one)
 
-	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Init_Position", YAlign: relpos.Front, Space: 2})
+	prevAngle.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Init_Position", YAlign: relpos.Front, Space: 2})
+	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Angle", YAlign: relpos.Front, Space: 2})
 	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Init_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	outPosition.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "EC", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	orientation.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Out_Position", YAlign: relpos.Front, Space: 2})
@@ -544,7 +565,7 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 }
 
 func (ss *Sim) ReConfigNet() {
-	ss.ConfigPats()
+	//ss.ConfigPats()
 	ss.Net = &leabra.Network{} // start over with new network
 	ss.ConfigNet(ss.Net)
 	if ss.NetView != nil {
@@ -556,13 +577,15 @@ func (ss *Sim) ReConfigNet() {
 func (ss *Sim) InitWts(net *leabra.Network) {
 	net.InitTopoScales() // needed for gaussian topo Circle wts
 	net.InitWts()
-	ss.InitLateralWts(net)
+	if ss.EClateralflag {
+		ss.InitLateralWts(net)
+	}
 }
 
 func (ss *Sim) InitLateralWts(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
 	ec := net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	lat := ec.RecvPrjn(4) // ?? zycyc: fix this
+	lat := ec.RecvPrjn(3) // ?? zycyc: fix this
 	nPy := ec.Shape().Dim(0)
 	nPx := ec.Shape().Dim(1)
 	//radius := ecParam.excitRadius2D // 2D EC
@@ -723,7 +746,14 @@ func (ss *Sim) AlphaCyc(train bool) {
 	}
 
 	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	ec.Act.Clamp.Hard = false
+	if ss.EClateralflag {
+		ec.Act.Clamp.Hard = false
+	} else {
+		late := ec.RecvPrjn(3).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+		lati := ec.RecvPrjn(4).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+		late.WtScale.Rel = 0
+		lati.WtScale.Rel = 0
+	}
 
 	//pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
 	//ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
@@ -819,13 +849,13 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	//ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	states := []string{"Vestibular", "Position", "Angle"}
-	lays := []string{"Vestibular", "Out_Position", "Orientation"} // zycyc: input: 16*16; orientation: 1*16 ring????
-	if !ss.init_pos_assigned1 {
-		initPosition := ss.Net.LayerByName("Init_Position").(leabra.LeabraLayer).AsLeabra()
-		initPosition.ApplyExt(en.State("Position"))
-		ss.init_pos_assigned1 = true
-	}
+	states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"}
+	lays := []string{"Vestibular", "Out_Position", "Orientation", "Init_Position", "Prev_Angle"} // zycyc: input: 16*16; orientation: 1*16 ring????
+	//if !ss.init_pos_assigned1 {
+	//	initPosition := ss.Net.LayerByName("Init_Position").(leabra.LeabraLayer).AsLeabra()
+	//	initPosition.ApplyExt(en.State("Position"))
+	//	ss.init_pos_assigned1 = true
+	//}
 
 	for i, lnm := range lays {
 		lyi := ss.Net.LayerByName(lnm)
@@ -1352,27 +1382,27 @@ func MixPats(dt *etable.Table, mp patgen.Vocab, colName []string, poolSource []s
 	return nil
 }
 
-func (ss *Sim) ConfigPats() {
-	ec := &ss.Entorhinal
-	inputY := ec.InputSize.Y
-	inputX := ec.InputSize.X
-	orientationY := ec.OrientationSize.Y
-	orientationX := ec.OrientationSize.X
-	npats := ss.Pat.ListSize
-	pctAct := ec.InputPctAct
-	orientationPctAct := ec.OrientationPctAct
-	//minDiff := ss.Pat.MinDiffPct
-
-	patgen.AddVocabPermutedBinary(ss.PoolVocab, "randompats", npats, inputY, inputX, pctAct, 0)
-	patgen.AddVocabPermutedBinary(ss.PoolVocab, "randomorientation", npats, orientationY, orientationX, orientationPctAct, 0)
-
-	InitPatsSingle(ss.CorticalInput, "CorticalInput", "cortical input patterns to EC", []string{"Input"}, npats, []int{inputY}, []int{inputX})
-	MixPats(ss.CorticalInput, ss.PoolVocab, []string{"Input"}, []string{"randompats"})
-
-	InitPats(ss.OrientationInput, "OrientationInput", "only orientation input patterns to EC", []string{"Input", "Orientation"}, npats, []int{inputY, orientationY}, []int{inputX, orientationX})
-	MixPats(ss.OrientationInput, ss.PoolVocab, []string{"Input", "Orientation"}, []string{"randompats", "randomorientation"})
-
-}
+//func (ss *Sim) ConfigPats() {
+//	ec := &ss.Entorhinal
+//	inputY := ec.InputSize.Y
+//	inputX := ec.InputSize.X
+//	orientationY := ec.OrientationSize.Y
+//	orientationX := ec.OrientationSize.X
+//	npats := ss.Pat.ListSize
+//	pctAct := ec.InputPctAct
+//	orientationPctAct := ec.OrientationPctAct
+//	//minDiff := ss.Pat.MinDiffPct
+//
+//	patgen.AddVocabPermutedBinary(ss.PoolVocab, "randompats", npats, inputY, inputX, pctAct, 0)
+//	patgen.AddVocabPermutedBinary(ss.PoolVocab, "randomorientation", npats, orientationY, orientationX, orientationPctAct, 0)
+//
+//	InitPatsSingle(ss.CorticalInput, "CorticalInput", "cortical input patterns to EC", []string{"Input"}, npats, []int{inputY}, []int{inputX})
+//	MixPats(ss.CorticalInput, ss.PoolVocab, []string{"Input"}, []string{"randompats"})
+//
+//	InitPats(ss.OrientationInput, "OrientationInput", "only orientation input patterns to EC", []string{"Input", "Orientation"}, npats, []int{inputY, orientationY}, []int{inputX, orientationX})
+//	MixPats(ss.OrientationInput, ss.PoolVocab, []string{"Input", "Orientation"}, []string{"randompats", "randomorientation"})
+//
+//}
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Logging
@@ -1489,10 +1519,10 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Epoch", eplot.Off, true, 0, eplot.FloatMax, 0)
 	plt.SetColParams("Event", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("X", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
-	plt.SetColParams("Y", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
-	plt.SetColParams("Angle", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("Y", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("Angle", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("ActAction", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
-	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	for _, lnm := range ss.TargetLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
@@ -1577,7 +1607,7 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Epoch", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	for _, lnm := range ss.TargetLays {
-		plt.SetColParams(lnm+"_CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+		plt.SetColParams(lnm+"_CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
 
 	return plt

@@ -282,7 +282,7 @@ func (ss *Sim) ConfigEnv() {
 	}
 	if ss.MaxEpcs == 0 { // allow user override
 		ss.MaxEpcs = 200
-		ss.TestEpcs = 500
+		ss.TestEpcs = 1000
 	}
 
 	ss.TrainEnv.Config(200) // 1000) // n trials per epoch

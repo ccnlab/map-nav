@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -147,19 +148,19 @@ var ParamSets = params.Sets{
 					//"Layer.Inhib.ActAvg.Init": "0.01",
 					//"Layer.Inhib.Layer.Gi":    "3.8",
 				}},
-			//{Sel: "#Init_Position", Desc: "Initial position, don't decay",
+			//{Sel: "#Prev_Position", Desc: "Initial position, don't decay",
 			//	Params: params.Params{
 			//		"Layer.Act.Init.Decay": "0",
 			//	}},
 			{Sel: "#Out_Position", Desc: "Initial position, don't decay",
 				Params: params.Params{
-					//"Layer.Act.Init.Decay": "0",
-					"Layer.Inhib.Layer.Gi": "2.3",
+					"Layer.Act.Init.Decay": "0",
+					"Layer.Inhib.Layer.Gi": "3.2",
 				}},
 			{Sel: "#Orientation", Desc: "Initial position, don't decay",
 				Params: params.Params{
 					//"Layer.Act.Init.Decay": "0",
-					"Layer.Inhib.Layer.Gi": "2.3",
+					"Layer.Inhib.Layer.Gi": "2.8",
 				}},
 			{Sel: "#ECToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
@@ -179,23 +180,23 @@ var ParamSets = params.Sets{
 			//		"Prjn.WtInit.Var":  "0.25",
 			//		"Prjn.WtScale.Rel": "1",
 			//	}},
-			//{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-			//	Params: params.Params{
-			//		"Prjn.Learn.Learn": "true",
-			//		"Prjn.WtInit.Var":  "0.25",
-			//		"Prjn.WtScale.Rel": "1",
-			//	}},
+			{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+				Params: params.Params{
+					"Prjn.Learn.Learn": "true",
+					"Prjn.WtInit.Var":  "0.25",
+					"Prjn.WtScale.Rel": "1",
+				}},
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
 				}},
-			{Sel: "#Init_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			{Sel: "#Prev_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					//"Prjn.WtInit.Var":  "0",
 				}},
-			{Sel: "#Prev_AngleToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			{Sel: "#Prev_OriToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					//"Prjn.WtInit.Var":  "0",
@@ -236,7 +237,6 @@ type Sim struct {
 	Probes           *etable.Table    `view:"no-inline" desc:"probe inputs"`
 	ARFs             actrf.RFs        `view:"no-inline" desc:"activation-based receptive fields"`
 	TrnTrlLog        *etable.Table    `view:"no-inline" desc:"training trial-level log data"`
-	TrnErrStats      *etable.Table    `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TrnEpcLog        *etable.Table    `view:"no-inline" desc:"training epoch-level log data"`
 	TstEpcLog        *etable.Table    `view:"no-inline" desc:"testing epoch-level log data"`
 	TstTrlLog        *etable.Table    `view:"no-inline" desc:"testing trial-level log data"`
@@ -365,7 +365,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
 	ss.init_pos_assigned1 = false
-	ss.EClateralflag = false
+	ss.EClateralflag = true
 
 	ss.Entorhinal.Defaults()
 	ss.Pat.Defaults()
@@ -375,8 +375,8 @@ func (ec *EcParams) Defaults() {
 	ec.ECSize.Set(20, 20)
 	//ec.InputSize.Set(12, 12) // zycyc: ?? automatic!
 	ec.PositionSize.Set(12, 12)
-	ec.OrientationSize.Set(4, 1)
-	ec.VestibularSize.Set(2, 1)
+	ec.OrientationSize.Set(16, 1)
+	ec.VestibularSize.Set(12, 1)
 	ec.InputPctAct = 0.25
 	ec.OrientationPctAct = 0.25
 
@@ -387,8 +387,8 @@ func (ec *EcParams) Defaults() {
 
 	ec.excitRadius4D = 3 // was 3
 	ec.excitSigma4D = 2
-	ec.inhibRadius4D = 10 // was 10
-	ec.inhibSigma4D = 2   // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
+	ec.inhibRadius4D = 8 // was 10
+	ec.inhibSigma4D = 2  // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
 }
 
 func (pp *PatParams) Defaults() {
@@ -457,22 +457,15 @@ func (ss *Sim) ConfigRFMaps() {
 func (ss *Sim) ConfigNet(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
 	net.InitName(net, "can_ec")
-	initPosition := net.AddLayer2D("Init_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input) // init position
-	prevAngle := net.AddLayer2D("Prev_Angle", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input) // init position
+	prevPosition := net.AddLayer2D("Prev_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input) // init position
+	prevOri := net.AddLayer2D("Prev_Ori", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)     // init position
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
 	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)                          // 4D EC
 	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target) // output
 	orientation := net.AddLayer2D("Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Target)
-	//ec := net.AddLayer2D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, emer.Hidden) // 2D EC
 
-	full := prjn.NewFull()
-	//oriePrjn := prjn.NewPoolSameUnit()
-	//random := prjn.NewUnifRnd()
-	net.ConnectLayers(initPosition, ec, full, emer.Forward)
-	net.ConnectLayers(prevAngle, ec, full, emer.Forward)
-	net.ConnectLayers(vestibular, ec, full, emer.Forward)
-	net.ConnectLayers(ec, outPosition, full, emer.Forward)
-	net.ConnectLayers(ec, orientation, full, emer.Forward)
+	//////////////////////////////////////////// EC first for indexing convinience
+	//ec := net.AddLayer2D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, emer.Hidden) // 2D EC
 
 	// 2D EC
 	//excit := prjn.NewCircle()
@@ -527,13 +520,22 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
 	inh.SetClass("InhibLateral")
 
+	full := prjn.NewFull()
+	//oriePrjn := prjn.NewPoolSameUnit()
+	//random := prjn.NewUnifRnd()
+	net.ConnectLayers(prevPosition, ec, full, emer.Forward)
+	net.ConnectLayers(prevOri, ec, full, emer.Forward)
+	net.ConnectLayers(vestibular, ec, full, emer.Forward)
+	net.ConnectLayers(ec, outPosition, full, emer.Forward)
+	net.ConnectLayers(ec, orientation, full, emer.Forward)
+
 	//one2one := prjn.NewOneToOne()
 	//net.LateralConnectLayer(outPosition, one2one)
 	//net.LateralConnectLayer(orientation, one2one)
 
-	prevAngle.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Init_Position", YAlign: relpos.Front, Space: 2})
-	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Angle", YAlign: relpos.Front, Space: 2})
-	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Init_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
+	prevOri.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Position", YAlign: relpos.Front, Space: 2})
+	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Ori", YAlign: relpos.Front, Space: 2})
+	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Prev_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	outPosition.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "EC", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	orientation.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Out_Position", YAlign: relpos.Front, Space: 2})
 
@@ -585,7 +587,7 @@ func (ss *Sim) InitWts(net *leabra.Network) {
 func (ss *Sim) InitLateralWts(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
 	ec := net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	lat := ec.RecvPrjn(3) // ?? zycyc: fix this
+	lat := ec.RecvPrjn(0) // ?? zycyc: fix this
 	nPy := ec.Shape().Dim(0)
 	nPx := ec.Shape().Dim(1)
 	//radius := ecParam.excitRadius2D // 2D EC
@@ -749,8 +751,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 	if ss.EClateralflag {
 		ec.Act.Clamp.Hard = false
 	} else {
-		late := ec.RecvPrjn(3).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
-		lati := ec.RecvPrjn(4).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+		late := ec.RecvPrjn(0).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+		lati := ec.RecvPrjn(1).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
 		late.WtScale.Rel = 0
 		lati.WtScale.Rel = 0
 	}
@@ -850,10 +852,10 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	// going to the same layers, but good practice and cheap anyway
 
 	states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"}
-	lays := []string{"Vestibular", "Out_Position", "Orientation", "Init_Position", "Prev_Angle"} // zycyc: input: 16*16; orientation: 1*16 ring????
+	lays := []string{"Vestibular", "Out_Position", "Orientation", "Prev_Position", "Prev_Ori"} // zycyc: input: 16*16; orientation: 1*16 ring????
 	//if !ss.init_pos_assigned1 {
-	//	initPosition := ss.Net.LayerByName("Init_Position").(leabra.LeabraLayer).AsLeabra()
-	//	initPosition.ApplyExt(en.State("Position"))
+	//	prevPosition := ss.Net.LayerByName("Prev_Position").(leabra.LeabraLayer).AsLeabra()
+	//	prevPosition.ApplyExt(en.State("Position"))
 	//	ss.init_pos_assigned1 = true
 	//}
 
@@ -1452,23 +1454,66 @@ func (ss *Sim) LogFileName(lognm string) string {
 // LogTrnTrl adds data from current trial to the TrnTrlLog table.
 // log always contains number of testing items
 func (ss *Sim) LogTrnTrl(dt *etable.Table) {
+	env := &ss.TrainEnv
 	epc := ss.TrainEnv.Epoch.Cur
 	trl := ss.TrainEnv.Trial.Cur
-
 	row := dt.Rows
 	if trl == 0 { // reset at start
 		row = 0
 	}
 	dt.SetNumRows(row + 1)
 
-	env := &ss.TrainEnv
+	// decode position and orientation
+	pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
+	pos_tsr := &etensor.Float32{}
+	pos_tsr.SetShape([]int{env.PosSize.Y, env.PosSize.X}, nil, []string{"Y", "X"})
+	for i, val := range pos.Neurons {
+		pos_tsr.Values[i] = val.ActM
+	}
+	dec_pos, _ := env.PopCode2d.Decode(pos_tsr)
 
+	ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
+	ori_tsr := make([]float32, len(ori.Neurons))
+	for i, val := range ori.Neurons {
+		ori_tsr[i] = val.ActM
+	}
+	dec_ori := env.AngCode.Decode(ori_tsr)
+
+	// acc of decoding
+	posbool := float64(env.PosI.X) == math.Round(float64(dec_pos.X*4)) && float64(env.PosI.Y) == math.Round(float64(dec_pos.Y*4))
+	oribool := false
+	if math.Round(float64(dec_ori*360)) < 10 || math.Abs(math.Round(float64(dec_ori*360))-360) < 10 {
+		if env.Angle == 360 || env.Angle == 0 {
+			dec_ori = float32(env.Angle)
+			oribool = true
+		}
+	} else if math.Abs(math.Round(float64(dec_ori*360))-float64(env.Angle)) < 10 {
+		dec_ori = float32(env.Angle)
+		oribool = true
+	}
+
+	// add rows
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
 	dt.SetCellFloat("Trial", row, float64(trl))
 	dt.SetCellFloat("Event", row, float64(env.Event.Cur))
 	dt.SetCellFloat("X", row, float64(env.PosI.X))
 	dt.SetCellFloat("Y", row, float64(env.PosI.Y))
+	dt.SetCellFloat("dX", row, math.Round(float64(dec_pos.X*4)))
+	dt.SetCellFloat("dY", row, math.Round(float64(dec_pos.Y*4)))
+	if posbool {
+		dt.SetCellFloat("PosACC", row, float64(1))
+	} else {
+		dt.SetCellFloat("PosACC", row, float64(0))
+	}
+	dt.SetCellFloat("Ori", row, float64(env.Angle))
+	if oribool {
+		dt.SetCellFloat("dOri", row, float64(dec_ori))
+		dt.SetCellFloat("OriACC", row, float64(1))
+	} else {
+		dt.SetCellFloat("dOri", row, math.Round(float64(dec_ori*360)))
+		dt.SetCellFloat("OriACC", row, float64(0))
+	}
 	dt.SetCellString("ActAction", row, ss.ActAction)
 	dt.SetCellFloat("CosDiff", row, ss.TrlCosDiff)
 	//dt.SetCellString("TrialName", row, ss.TrainEnv.TrialName.Cur)
@@ -1495,10 +1540,16 @@ func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
 	sch := etable.Schema{
 		{"Run", etensor.INT64, nil, nil},
 		{"Epoch", etensor.INT64, nil, nil},
+		{"Trial", etensor.INT64, nil, nil},
 		{"Event", etensor.INT64, nil, nil},
 		{"X", etensor.FLOAT64, nil, nil},
 		{"Y", etensor.FLOAT64, nil, nil},
-		{"Angle", etensor.FLOAT64, nil, nil},
+		{"dX", etensor.FLOAT64, nil, nil},
+		{"dY", etensor.FLOAT64, nil, nil},
+		{"PosACC", etensor.FLOAT64, nil, nil},
+		{"Ori", etensor.FLOAT64, nil, nil},
+		{"dOri", etensor.FLOAT64, nil, nil},
+		{"OriACC", etensor.FLOAT64, nil, nil},
 		{"ActAction", etensor.STRING, nil, nil},
 		{"CosDiff", etensor.FLOAT64, nil, nil},
 	}
@@ -1517,12 +1568,18 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	// order of params: on, fixMin, min, fixMax, max
 	plt.SetColParams("Run", eplot.Off, true, 0, eplot.FloatMax, 0)
 	plt.SetColParams("Epoch", eplot.Off, true, 0, eplot.FloatMax, 0)
+	plt.SetColParams("Trial", eplot.Off, true, 0, eplot.FloatMax, 0)
 	plt.SetColParams("Event", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("X", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("Y", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
-	plt.SetColParams("Angle", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("dX", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("dY", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("PosACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("Ori", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("dOri", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("OriACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("ActAction", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
-	plt.SetColParams("CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	for _, lnm := range ss.TargetLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
@@ -1558,7 +1615,6 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 			log.Println(err)
 		}
 	}
-	ss.TrnErrStats = gpsp.AggsToTable(etable.ColNameOnly)
 
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
@@ -1567,6 +1623,8 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	for _, lnm := range ss.TargetLays {
 		dt.SetCellFloat(lnm+"_CosDiff", row, agg.Agg(trlix, lnm+"_CosDiff", agg.AggMean)[0])
 	}
+	dt.SetCellFloat("PosACC", row, agg.Agg(trlix, "PosACC", agg.AggMean)[0])
+	dt.SetCellFloat("OriACC", row, agg.Agg(trlix, "OriACC", agg.AggMean)[0])
 
 	// note: essential to use Go version of update when called from another goroutine
 	ss.TrnEpcPlot.GoUpdate()
@@ -1592,6 +1650,9 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 	for _, lnm := range ss.TargetLays {
 		sch = append(sch, etable.Column{lnm + "_CosDiff", etensor.FLOAT64, nil, nil})
 	}
+	sch = append(sch, etable.Column{"PosACC", etensor.FLOAT64, nil, nil})
+	sch = append(sch, etable.Column{"OriACC", etensor.FLOAT64, nil, nil})
+
 	dt.SetFromSchema(sch, 0)
 	ss.ConfigWts(ss.EConWts)
 	ss.ConfigWts(ss.ECoffWts)
@@ -1609,6 +1670,8 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	for _, lnm := range ss.TargetLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
+	plt.SetColParams("PosACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("OriACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	return plt
 }

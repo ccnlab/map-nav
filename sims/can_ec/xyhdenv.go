@@ -89,12 +89,12 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.Params = make(map[string]float32)
 
 	ev.Disp = false
-	ev.Size.Set(10, 10) // if changing to non-square, reset the popcode2d min
+	ev.Size.Set(6, 6) // if changing to non-square, reset the popcode2d min
 	ev.PatSize.Set(5, 5)
 	ev.PosSize.Set(12, 12)
 	ev.AngInc = 90
-	ev.RingSize = 4 // was 16
-	ev.PopSize = 2  // was 12
+	ev.RingSize = 16 // was 16
+	ev.PopSize = 12  // was 12
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 	ev.PopCode2d.Defaults()
@@ -475,34 +475,36 @@ func (ev *XYHDEnv) RenderProxSoma() {
 // RenderAngle renders angle using pop ring
 func (ev *XYHDEnv) RenderAngle(statenm string, angle int) {
 	as := ev.NextStates[statenm]
-	//av := (float32(angle) / 360.0)
-	//ev.AngCode.Encode(&as.Values, av, ev.RingSize)
-	as.SetZeros()
+	av := (float32(angle) / 360.0)
+	ev.AngCode.Encode(&as.Values, av, ev.RingSize)
 
-	if angle == 0 || angle == 360 {
-		as.Values = []float32{1, 0, 0, 0}
-	} else if angle == 90 {
-		as.Values = []float32{0, 1, 0, 0}
-	} else if angle == 180 {
-		as.Values = []float32{0, 0, 1, 0}
-	} else if angle == 270 {
-		as.Values = []float32{0, 0, 0, 1}
-	}
+	//as.SetZeros()
+	//if angle == 0 || angle == 360 {
+	//	as.Values = []float32{1, 0, 0, 0}
+	//} else if angle == 90 {
+	//	as.Values = []float32{0, 1, 0, 0}
+	//} else if angle == 180 {
+	//	as.Values = []float32{0, 0, 1, 0}
+	//} else if angle == 270 {
+	//	as.Values = []float32{0, 0, 0, 1}
+	//}
 
 }
 
 // RenderVestib renders vestibular state
 func (ev *XYHDEnv) RenderVestibular() {
 	vs := ev.NextStates["Vestibular"]
-	//nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
-	//ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
-	vs.SetZeros()
+	nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
+	ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
 
-	if ev.RotAng == -90 {
-		vs.Values = []float32{1, 0}
-	} else if ev.RotAng == 90 {
-		vs.Values = []float32{0, 1}
-	}
+	//vs.SetZeros()
+	//if ev.RotAng == -90 {
+	//	vs.Values = []float32{1, 0, 0}
+	//} else if ev.RotAng == 0 {
+	//	vs.Values = []float32{0, 1, 0}
+	//} else if ev.RotAng == 90 {
+	//	vs.Values = []float32{0, 0, 1}
+	//}
 
 }
 

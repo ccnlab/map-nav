@@ -45,7 +45,7 @@ type XYHDEnv struct {
 	NRotAngles  int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
 	TraceActGen bool                        `desc:"for debugging, print out a trace of the action generation logic"`
 	RingSize    int                         `inactive:"+" desc:"number of units in ring population codes"`
-	PopSize     int                         `inactive:"+" desc:"number of units in population codes"`
+	VesSize     int                         `inactive:"+" desc:"number of units in population codes"`
 	PopCode     popcode.OneD                `desc:"population code values, in normalized units"`
 	PopCode2d   popcode.TwoD                `desc:"2d population code values, in normalized units"`
 	AngCode     popcode.Ring                `desc:"angle population code values, in normalized units"`
@@ -94,11 +94,12 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.PosSize.Set(12, 12)
 	ev.AngInc = 90
 	ev.RingSize = 16 // was 16
-	ev.PopSize = 12  // was 12
+	ev.VesSize = 12  // was 12
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 	ev.PopCode2d.Defaults()
-	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.2) // assume it's a square
+	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.2) // assume it's a square, 2 is length of walls
+	//ev.PopCode2d.SetRange(0, 1, 0.1) // assume it's a square, 2 is length of walls
 	ev.AngCode.Defaults()
 	ev.AngCode.SetRange(0, 1, 0.1) // zycyc experiment
 
@@ -158,7 +159,7 @@ func (ev *XYHDEnv) ConfigImpl() {
 	ev.NextStates["PrevAngle"] = prevag
 
 	vs := &etensor.Float32{}
-	vs.SetShape([]int{1, ev.PopSize}, nil, []string{"1", "Pop"})
+	vs.SetShape([]int{1, ev.VesSize}, nil, []string{"1", "Pop"})
 	ev.NextStates["Vestibular"] = vs
 
 	xy := &etensor.Float32{}
@@ -438,11 +439,11 @@ func (ev *XYHDEnv) TakeAct(act int) {
 	case "Left":
 		ev.RotAng = ev.AngInc
 		ev.Angle = AngMod(ev.Angle + ev.RotAng)
-		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
+		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle)) // when L/R contains forward
 	case "Right":
 		ev.RotAng = -ev.AngInc
 		ev.Angle = AngMod(ev.Angle + ev.RotAng)
-		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
+		ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle)) // when L/R contains forward
 	case "Forward":
 		if frmat > 0 && frmat <= ev.BarrierIdx {
 		} else {
@@ -495,7 +496,7 @@ func (ev *XYHDEnv) RenderAngle(statenm string, angle int) {
 func (ev *XYHDEnv) RenderVestibular() {
 	vs := ev.NextStates["Vestibular"]
 	nv := 0.5*(float32(-ev.RotAng)/90) + 0.5
-	ev.PopCode.Encode(&vs.Values, nv, ev.PopSize, false)
+	ev.PopCode.Encode(&vs.Values, nv, ev.VesSize, false)
 
 	//vs.SetZeros()
 	//if ev.RotAng == -90 {
@@ -770,6 +771,8 @@ func (ev *XYHDEnv) ActGen() int {
 	frnd := rand.Float32()
 
 	act := ev.ActMap["Forward"] // default
+
+	// when L/R contains forward
 	switch {
 	case frmat == wall:
 		if (rmat != wall) && (lmat != wall) {
@@ -808,6 +811,32 @@ func (ev *XYHDEnv) ActGen() int {
 			ev.ActGenTrace("go", act)
 		}
 	}
+
+	// when L/R doesn't contain forward
+	//switch {
+	//case frmat == wall:
+	//	if lastact == left || lastact == right {
+	//		act = lastact // keep going
+	//		ev.ActGenTrace("at wall, keep turning", act)
+	//	} else {
+	//		act = rlact
+	//		ev.ActGenTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
+	//	}
+	//default: // random explore -- nothing obvious
+	//	switch {
+	//	//case frnd < 0.25:
+	//	//	act = lastact // continue
+	//	//	ev.ActGenTrace("repeat last act", act)
+	//	case frnd < 0.15:
+	//		act = left
+	//		ev.ActGenTrace("turn", act)
+	//	case frnd < 0.3:
+	//		act = right
+	//		ev.ActGenTrace("turn", act)
+	//	default:
+	//		ev.ActGenTrace("go", act)
+	//	}
+	//}
 
 	return act
 }

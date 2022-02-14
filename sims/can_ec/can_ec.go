@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/emer/etable/agg"
-	"github.com/emer/etable/split"
 
 	"github.com/emer/empi/mpi"
 
@@ -91,7 +90,7 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.XCal.SetLLrn": "true",
 					"Prjn.Learn.XCal.LLrn":    "1",
 					"Prjn.Learn.WtSig.Gain":   "1", // key: more graded weights
-					"Prjn.Learn.Learn":        "false",
+					"Prjn.Learn.Learn":        "true",
 					//"Prjn.WtInit.Mean":        "0.5",
 					//"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
 				}},
@@ -155,7 +154,13 @@ var ParamSets = params.Sets{
 			{Sel: "#Out_Position", Desc: "Initial position, don't decay",
 				Params: params.Params{
 					"Layer.Act.Init.Decay": "0",
-					"Layer.Inhib.Layer.Gi": "3.2",
+					"Layer.Inhib.Layer.Gi": "3.6", // for EC = 20
+					//"Layer.Inhib.Layer.Gi": "2.8", // for EC = 30
+
+					// hip_bench setting
+					//"Layer.Inhib.Layer.Gi":    "2.8",
+					//"Layer.Inhib.ActAvg.Init": "0.02",
+					//"Layer.Learn.AvgL.Gain":   "2.5", // stick with 2.5
 				}},
 			{Sel: "#Orientation", Desc: "Initial position, don't decay",
 				Params: params.Params{
@@ -167,6 +172,12 @@ var ParamSets = params.Sets{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
 					"Prjn.WtInit.Sym":  "false",
+
+					// hip_bench setting
+					//"Prjn.Learn.Learn": "false", // learning here definitely does NOT work!
+					//"Prjn.WtInit.Mean": "0.9",
+					//"Prjn.WtInit.Var":  "0.01",
+					//"Prjn.WtScale.Rel": "4",
 				}},
 			{Sel: "#ECToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
@@ -203,10 +214,15 @@ var ParamSets = params.Sets{
 				}},
 			//{Sel: "#Out_PositionToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 			//	Params: params.Params{
-			//		"Prjn.Learn.Learn": "false",
-			//		"Prjn.WtInit.Var":  "0",
-			//		"Prjn.WtInit.Mean": "0.8",
-			//		"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+			//		//"Prjn.Learn.Learn": "false",
+			//		//"Prjn.WtInit.Var":  "0",
+			//		//"Prjn.WtInit.Mean": "0.8",
+			//		//"Prjn.WtScale.Rel": "0.1", // zycyc experiment
+			//
+			//		// hip_bench setting
+			//		"Prjn.Learn.Momentum.On": "false",
+			//		"Prjn.Learn.Norm.On":     "false",
+			//		"Prjn.Learn.WtBal.On":    "true",
 			//	}},
 			//{Sel: "#OrientationToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 			//	Params: params.Params{
@@ -280,6 +296,8 @@ type Sim struct {
 	MatColors          []string                    `desc:"color strings in material order"`
 	Trace              *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
 	TraceView          *etview.TensorGrid          `desc:"view of the activity trace"`
+	dTrace             *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
+	dTraceView         *etview.TensorGrid          `desc:"view of the activity trace"`
 	WorldView          *etview.TensorGrid          `desc:"view of the world"`
 	CurImgGrid         *etview.TensorGrid          `view:"-" desc:"the current image grid view"`
 	WtsGrid            *etview.TensorGrid          `view:"-" desc:"the weights grid view"`
@@ -310,6 +328,7 @@ type Sim struct {
 // EcParams have the entorhinal cortex size and connectivity parameters
 type EcParams struct {
 	ECSize            evec.Vec2i `desc:"size of EC"`
+	LstmSize          evec.Vec2i `desc:"size of EC"`
 	InputSize         evec.Vec2i `desc:"size of Input"`
 	PositionSize      evec.Vec2i `desc:"size of Position"`
 	OrientationSize   evec.Vec2i `desc:"size of Orientation (head direction, 0-360)"`
@@ -372,9 +391,10 @@ func (ss *Sim) New() {
 }
 
 func (ec *EcParams) Defaults() {
-	ec.ECSize.Set(20, 20)
+	ec.ECSize.Set(20, 20) // 30 needs lower Pos Gi, but just slightly better compared to 20
+	//ec.LstmSize.Set(12, 12)
 	//ec.InputSize.Set(12, 12) // zycyc: ?? automatic!
-	ec.PositionSize.Set(12, 12)
+	ec.PositionSize.Set(12, 12) // Gi needs to change as well??
 	ec.OrientationSize.Set(16, 1)
 	ec.VestibularSize.Set(12, 1)
 	ec.InputPctAct = 0.25
@@ -385,9 +405,9 @@ func (ec *EcParams) Defaults() {
 	//ec.inhibRadius2D = 10
 	//ec.inhibSigma2D = 10
 
-	ec.excitRadius4D = 3 // was 3
+	ec.excitRadius4D = 3 // was 3, 1
 	ec.excitSigma4D = 2
-	ec.inhibRadius4D = 8 // was 10
+	ec.inhibRadius4D = 8 // was 8 (Pos Gi 3.2 works; 3.6 also works?), 5 (Pos Gi 3.6 works)
 	ec.inhibSigma4D = 2  // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
 }
 
@@ -415,11 +435,11 @@ func (ss *Sim) Config() {
 
 func (ss *Sim) ConfigEnv() {
 	if ss.MaxRuns == 0 { // allow user override
-		ss.MaxRuns = 5
+		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 100  // zycyc, test
-		ss.TestEpcs = 100 // zycyc, test
+		ss.MaxEpcs = 300  // zycyc, test
+		ss.TestEpcs = 500 // zycyc, test
 	}
 	//if ss.MaxTrls == 0 { // allow user override
 	//	ss.MaxTrls = 100
@@ -460,6 +480,7 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	prevPosition := net.AddLayer2D("Prev_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input) // init position
 	prevOri := net.AddLayer2D("Prev_Ori", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)     // init position
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
+	//lstm := net.AddLayer2D("LSTM", ecParam.LstmSize.Y, ecParam.LstmSize.X, emer.Hidden)                        // init position
 	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)                          // 4D EC
 	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target) // output
 	orientation := net.AddLayer2D("Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Target)
@@ -520,9 +541,16 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
 	inh.SetClass("InhibLateral")
 
+	//////////////////////////////////////////// other connections
 	full := prjn.NewFull()
 	//oriePrjn := prjn.NewPoolSameUnit()
 	//random := prjn.NewUnifRnd()
+
+	//net.ConnectLayers(prevPosition, lstm, full, emer.Forward)
+	//net.ConnectLayers(prevOri, lstm, full, emer.Forward)
+	//net.ConnectLayers(vestibular, lstm, full, emer.Forward)
+	//net.ConnectLayers(lstm, ec, full, emer.Forward)
+
 	net.ConnectLayers(prevPosition, ec, full, emer.Forward)
 	net.ConnectLayers(prevOri, ec, full, emer.Forward)
 	net.ConnectLayers(vestibular, ec, full, emer.Forward)
@@ -530,11 +558,14 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	net.ConnectLayers(ec, orientation, full, emer.Forward)
 
 	//one2one := prjn.NewOneToOne()
-	//net.LateralConnectLayer(outPosition, one2one)
+	//net.LateralConnectLayer(outPosition, full)
+	//net.ConnectLayers(prevPosition, outPosition, full, emer.Forward)
+
 	//net.LateralConnectLayer(orientation, one2one)
 
 	prevOri.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Position", YAlign: relpos.Front, Space: 2})
 	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Ori", YAlign: relpos.Front, Space: 2})
+	//lstm.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Prev_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Prev_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	outPosition.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "EC", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	orientation.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Out_Position", YAlign: relpos.Front, Space: 2})
@@ -542,17 +573,19 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//////////////////////////////////////
 	// collect
 
-	ss.InputLays = make([]string, 0, 10)
-	ss.TargetLays = make([]string, 0, 10)
-	for _, ly := range net.Layers {
-		if ly.IsOff() {
-			continue
-		}
-		switch ly.Type() {
-		case emer.Input:
-			ss.InputLays = append(ss.InputLays, ly.Name())
-		case emer.Target:
-			ss.TargetLays = append(ss.TargetLays, ly.Name())
+	if len(ss.InputLays) == 0 && len(ss.TargetLays) == 0 {
+		ss.InputLays = make([]string, 0, 10)
+		ss.TargetLays = make([]string, 0, 10)
+		for _, ly := range net.Layers {
+			if ly.IsOff() {
+				continue
+			}
+			switch ly.Type() {
+			case emer.Input:
+				ss.InputLays = append(ss.InputLays, ly.Name())
+			case emer.Target:
+				ss.TargetLays = append(ss.TargetLays, ly.Name())
+			}
 		}
 	}
 
@@ -793,9 +826,9 @@ func (ss *Sim) AlphaCyc(train bool) {
 		//switch qtr + 1 {
 		//case 1: // Third Quarters: CA1 is driven by CA3 recall
 		//	PosFmEC.WtScale.Rel = 1
-		//	OriFmEC.WtScale.Rel = 1
-		//	PosFmPos.WtScale.Rel = 0
-		//	OriFmOri.WtScale.Rel = 0
+		//	//OriFmEC.WtScale.Rel = 1
+		//	//PosFmPos.WtScale.Rel = 0
+		//	//OriFmOri.WtScale.Rel = 0
 		//	ss.Net.GScaleFmAvgAct() // update computed scaling factors
 		//	ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
 		//}
@@ -1480,14 +1513,21 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	dec_ori := env.AngCode.Decode(ori_tsr)
 
 	// acc of decoding
-	posbool := float64(env.PosI.X) == math.Round(float64(dec_pos.X*4)) && float64(env.PosI.Y) == math.Round(float64(dec_pos.Y*4))
+	dX := math.Round(float64(dec_pos.X * (float32(env.Size.X) - 2)))
+	dY := math.Round(float64(dec_pos.Y * (float32(env.Size.Y) - 2)))
+	poserr := math.Sqrt(math.Pow(float64(env.PosI.X)-dX, 2) + math.Pow(float64(env.PosI.Y)-dY, 2))
+	posbool := float64(env.PosI.X) == dX && float64(env.PosI.Y) == dY
+
 	oribool := false
-	if math.Round(float64(dec_ori*360)) < 10 || math.Abs(math.Round(float64(dec_ori*360))-360) < 10 {
+	if math.Round(float64(dec_ori*360)) < 0 {
+		dec_ori = 1 + dec_ori
+	}
+	if math.Round(float64(dec_ori*360)) < float64(env.AngInc)/2 || math.Abs(math.Round(float64(dec_ori*360))-360) < float64(env.AngInc)/2 {
 		if env.Angle == 360 || env.Angle == 0 {
 			dec_ori = float32(env.Angle)
 			oribool = true
 		}
-	} else if math.Abs(math.Round(float64(dec_ori*360))-float64(env.Angle)) < 10 {
+	} else if math.Abs(math.Round(float64(dec_ori*360))-float64(env.Angle)) < float64(env.AngInc)/2 {
 		dec_ori = float32(env.Angle)
 		oribool = true
 	}
@@ -1499,8 +1539,9 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	dt.SetCellFloat("Event", row, float64(env.Event.Cur))
 	dt.SetCellFloat("X", row, float64(env.PosI.X))
 	dt.SetCellFloat("Y", row, float64(env.PosI.Y))
-	dt.SetCellFloat("dX", row, math.Round(float64(dec_pos.X*4)))
-	dt.SetCellFloat("dY", row, math.Round(float64(dec_pos.Y*4)))
+	dt.SetCellFloat("dX", row, dX)
+	dt.SetCellFloat("dY", row, dY)
+	dt.SetCellFloat("PosErr", row, poserr)
 	if posbool {
 		dt.SetCellFloat("PosACC", row, float64(1))
 	} else {
@@ -1509,9 +1550,11 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	dt.SetCellFloat("Ori", row, float64(env.Angle))
 	if oribool {
 		dt.SetCellFloat("dOri", row, float64(dec_ori))
+		dt.SetCellFloat("OriErr", row, math.Abs(float64(dec_ori)-float64(env.Angle)))
 		dt.SetCellFloat("OriACC", row, float64(1))
 	} else {
 		dt.SetCellFloat("dOri", row, math.Round(float64(dec_ori*360)))
+		dt.SetCellFloat("OriErr", row, float64(int(math.Abs(math.Round(float64(dec_ori*360))-float64(env.Angle)))%180))
 		dt.SetCellFloat("OriACC", row, float64(0))
 	}
 	dt.SetCellString("ActAction", row, ss.ActAction)
@@ -1546,9 +1589,11 @@ func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
 		{"Y", etensor.FLOAT64, nil, nil},
 		{"dX", etensor.FLOAT64, nil, nil},
 		{"dY", etensor.FLOAT64, nil, nil},
+		{"PosErr", etensor.FLOAT64, nil, nil},
 		{"PosACC", etensor.FLOAT64, nil, nil},
 		{"Ori", etensor.FLOAT64, nil, nil},
 		{"dOri", etensor.FLOAT64, nil, nil},
+		{"OriErr", etensor.FLOAT64, nil, nil},
 		{"OriACC", etensor.FLOAT64, nil, nil},
 		{"ActAction", etensor.STRING, nil, nil},
 		{"CosDiff", etensor.FLOAT64, nil, nil},
@@ -1574,9 +1619,11 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	plt.SetColParams("Y", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("dX", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("dY", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("PosErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("PosACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("Ori", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("dOri", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("OriErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("OriACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	plt.SetColParams("ActAction", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("CosDiff", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
@@ -1608,13 +1655,13 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 
 	trl := ss.TrnTrlLog
 	trlix := etable.NewIdxView(trl)
-	gpsp := split.GroupBy(trlix, []string{"ActAction"})
-	for _, lnm := range ss.TargetLays {
-		_, err := split.AggTry(gpsp, lnm+"_CosDiff", agg.AggMean)
-		if err != nil {
-			log.Println(err)
-		}
-	}
+	//gpsp := split.GroupBy(trlix, []string{"ActAction"})
+	//for _, lnm := range ss.TargetLays {
+	//	_, err := split.AggTry(gpsp, lnm+"_CosDiff", agg.AggMean)
+	//	if err != nil {
+	//		log.Println(err)
+	//	}
+	//}
 
 	dt.SetCellFloat("Run", row, float64(ss.TrainEnv.Run.Cur))
 	dt.SetCellFloat("Epoch", row, float64(epc))
@@ -1623,7 +1670,9 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	for _, lnm := range ss.TargetLays {
 		dt.SetCellFloat(lnm+"_CosDiff", row, agg.Agg(trlix, lnm+"_CosDiff", agg.AggMean)[0])
 	}
+	dt.SetCellFloat("PosErr", row, agg.Agg(trlix, "PosErr", agg.AggMean)[0])
 	dt.SetCellFloat("PosACC", row, agg.Agg(trlix, "PosACC", agg.AggMean)[0])
+	dt.SetCellFloat("OriErr", row, agg.Agg(trlix, "OriErr", agg.AggMean)[0])
 	dt.SetCellFloat("OriACC", row, agg.Agg(trlix, "OriACC", agg.AggMean)[0])
 
 	// note: essential to use Go version of update when called from another goroutine
@@ -1650,7 +1699,9 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 	for _, lnm := range ss.TargetLays {
 		sch = append(sch, etable.Column{lnm + "_CosDiff", etensor.FLOAT64, nil, nil})
 	}
+	sch = append(sch, etable.Column{"PosErr", etensor.FLOAT64, nil, nil})
 	sch = append(sch, etable.Column{"PosACC", etensor.FLOAT64, nil, nil})
+	sch = append(sch, etable.Column{"OriErr", etensor.FLOAT64, nil, nil})
 	sch = append(sch, etable.Column{"OriACC", etensor.FLOAT64, nil, nil})
 
 	dt.SetFromSchema(sch, 0)
@@ -1670,7 +1721,9 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	for _, lnm := range ss.TargetLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
+	plt.SetColParams("PosErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("PosACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("OriErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
 	plt.SetColParams("OriACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	return plt
@@ -1874,6 +1927,7 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 	ss.MatColors = []string{"lightgrey", "black", "orange", "blue", "brown", "navy"}
 
 	ss.Trace = ss.TrainEnv.World.Clone().(*etensor.Int)
+	ss.dTrace = ss.TrainEnv.World.Clone().(*etensor.Int)
 
 	width := 1600
 	height := 1200
@@ -1903,6 +1957,11 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 	ss.TraceView = tg
 	tg.SetTensor(ss.Trace)
 	ss.ConfigWorldView(tg)
+
+	dtg := tv.AddNewTab(etview.KiT_TensorGrid, "dTrace").(*etview.TensorGrid)
+	ss.dTraceView = dtg
+	dtg.SetTensor(ss.dTrace)
+	ss.ConfigWorldView(dtg)
 
 	wg := tv.AddNewTab(etview.KiT_TensorGrid, "World").(*etview.TensorGrid)
 	ss.WorldView = wg
@@ -1936,13 +1995,6 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 		act.SetActiveStateUpdt(!ss.IsRunning)
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
 		ss.Forward()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Backward", Icon: "wedge-down", Tooltip: "Step Backward", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Backward()
 		vp.SetFullReRender()
 	})
 
@@ -2022,13 +2074,38 @@ func (ss *Sim) UpdateWorldGui() {
 
 	if ss.TrainEnv.Scene.Chg { // something important happened, refresh
 		ss.Trace.CopyFrom(ss.TrainEnv.World)
+		ss.dTrace.CopyFrom(ss.TrainEnv.World)
 	}
 
 	nc := len(ss.TrainEnv.Mats)
 	ss.Trace.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, nc+ss.TrainEnv.Angle/ss.TrainEnv.AngInc)
 
+	////////////////////////////////////// decoding trace
+	env := &ss.TrainEnv
+	pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
+	pos_tsr := &etensor.Float32{}
+	pos_tsr.SetShape([]int{env.PosSize.Y, env.PosSize.X}, nil, []string{"Y", "X"})
+	for i, val := range pos.Neurons {
+		pos_tsr.Values[i] = val.ActM
+	}
+	dec_pos, _ := env.PopCode2d.Decode(pos_tsr)
+	dX := int(math.Round(float64(dec_pos.X * (float32(env.Size.X) - 2))))
+	dY := int(math.Round(float64(dec_pos.Y * (float32(env.Size.Y) - 2))))
+
+	ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
+	ori_tsr := make([]float32, len(ori.Neurons))
+	for i, val := range ori.Neurons {
+		ori_tsr[i] = val.ActM
+	}
+	dec_ori := env.AngCode.Decode(ori_tsr)
+	dOri := int(math.Round(float64(dec_ori * 360)))
+
+	ss.dTrace.Set([]int{dY, dX}, nc+dOri/env.AngInc)
+	////////////////////////////////////////////////////////////////////////
+
 	updt := ss.WorldTabs.UpdateStart()
 	ss.TraceView.UpdateSig()
+	ss.dTraceView.UpdateSig()
 	ss.WorldTabs.UpdateEnd(updt)
 }
 
@@ -2044,11 +2121,6 @@ func (ss *Sim) Right() {
 
 func (ss *Sim) Forward() {
 	ss.TrainEnv.Action("Forward", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Backward() {
-	ss.TrainEnv.Action("Backward", nil)
 	ss.UpdateWorldGui()
 }
 
@@ -2404,7 +2476,7 @@ func (ss *Sim) CmdArgs() {
 		ss.TstEpcFile, err = os.Create(fnm)
 		if err != nil {
 			log.Println(err)
-			ss.TrnEpcFile = nil
+			ss.TstEpcFile = nil
 		} else {
 			fmt.Printf("Saving testing epoch log to: %v\n", fnm)
 			defer ss.TstEpcFile.Close()

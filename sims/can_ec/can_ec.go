@@ -83,14 +83,14 @@ var ParamSets = params.Sets{
 		"Network": &params.Sheet{
 			{Sel: "Prjn", Desc: "no extra learning factors, hebbian learning",
 				Params: params.Params{
-					"Prjn.Learn.Norm.On":      "false",
-					"Prjn.Learn.Momentum.On":  "false",
-					"Prjn.Learn.WtBal.On":     "false",
-					"Prjn.Learn.XCal.MLrn":    "0", // pure hebb
-					"Prjn.Learn.XCal.SetLLrn": "true",
-					"Prjn.Learn.XCal.LLrn":    "1",
-					"Prjn.Learn.WtSig.Gain":   "1", // key: more graded weights
-					"Prjn.Learn.Learn":        "true",
+					"Prjn.Learn.Norm.On":     "false", // works well without
+					"Prjn.Learn.Momentum.On": "false",
+					"Prjn.Learn.WtBal.On":    "true", // this is typically critical
+					// "Prjn.Learn.XCal.MLrn":    "0", // pure hebb -- NO!  doing edl
+					// "Prjn.Learn.XCal.SetLLrn": "true",
+					// "Prjn.Learn.XCal.LLrn":    "1",
+					"Prjn.Learn.WtSig.Gain": "6", // 6 impedes learning..  was 1
+					"Prjn.Learn.Learn":      "true",
 					//"Prjn.WtInit.Mean":        "0.5",
 					//"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
 				}},
@@ -99,9 +99,9 @@ var ParamSets = params.Sets{
 					//"Layer.Learn.AvgL.Gain":   "1", // this is critical! much lower
 					//"Layer.Learn.AvgL.Min":    "0.01",
 					//"Layer.Learn.AvgL.Init":   "0.2",
-					"Layer.Inhib.Layer.Gi":    "1.8", // more active..
+					"Layer.Inhib.Layer.Gi":    "2.0", // more active..
 					"Layer.Inhib.Layer.FBTau": "3",
-					"Layer.Inhib.ActAvg.Init": "0.2",
+					"Layer.Inhib.ActAvg.Init": "0.1",
 					"Layer.Act.Gbar.L":        "0.1",
 					"Layer.Act.Dt.GTau":       "3", // slower = more noise integration -- otherwise fails sometimes
 					//"Layer.Act.Noise.Dist":    "Gaussian",
@@ -138,40 +138,30 @@ var ParamSets = params.Sets{
 			{Sel: "#EC", Desc: "all EC layers: only pools, no layer-level",
 				Params: params.Params{
 					//"Layer.Act.Init.Decay": "0",
-					"Layer.Act.Noise.Dist":  "Gaussian",
-					"Layer.Act.Noise.Var":   "0.004", // 0.002 fails to converge sometimes, .005 a bit noisy
-					"Layer.Act.Noise.Type":  "GeNoise",
-					"Layer.Act.Noise.Fixed": "false",
-
-					// DG setting
-					//"Layer.Inhib.ActAvg.Init": "0.01",
-					//"Layer.Inhib.Layer.Gi":    "3.8",
+					"Layer.Act.Noise.Dist":    "Gaussian",
+					"Layer.Act.Noise.Var":     "0.0", // 0.004, 0.002 fails to converge sometimes, .005 a bit noisy
+					"Layer.Act.Noise.Type":    "GeNoise",
+					"Layer.Act.Noise.Fixed":   "false",
+					"Layer.Inhib.ActAvg.Init": "0.08",
+					"Layer.Inhib.Layer.Gi":    "2.2",
 				}},
-			//{Sel: "#Prev_Position", Desc: "Initial position, don't decay",
-			//	Params: params.Params{
-			//		"Layer.Act.Init.Decay": "0",
-			//	}},
-			{Sel: "#Out_Position", Desc: "Initial position, don't decay",
+			{Sel: ".Position", Desc: "position layers",
 				Params: params.Params{
-					"Layer.Act.Init.Decay": "0",
-					"Layer.Inhib.Layer.Gi": "3.6", // for EC = 20
-					//"Layer.Inhib.Layer.Gi": "2.8", // for EC = 30
-
-					// hip_bench setting
-					//"Layer.Inhib.Layer.Gi":    "2.8",
-					//"Layer.Inhib.ActAvg.Init": "0.02",
-					//"Layer.Learn.AvgL.Gain":   "2.5", // stick with 2.5
+					// "Layer.Act.Init.Decay":    "0",
+					"Layer.Inhib.Layer.Gi":    "2.0",  // for EC = 20
+					"Layer.Inhib.ActAvg.Init": "0.05", // it is essential to set this for all layers
 				}},
-			{Sel: "#Orientation", Desc: "Initial position, don't decay",
+			{Sel: ".Orientation", Desc: "orientation layers",
 				Params: params.Params{
-					//"Layer.Act.Init.Decay": "0",
-					"Layer.Inhib.Layer.Gi": "2.8",
+					// "Layer.Act.Init.Decay":    "0",
+					"Layer.Inhib.Layer.Gi":    "2.0",
+					"Layer.Inhib.ActAvg.Init": "0.15", // it is essential to set this for all layers
 				}},
 			{Sel: "#ECToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtInit.Sym":  "false",
+					"Prjn.WtInit.Sym":  "false", // actually works better non-sym
 
 					// hip_bench setting
 					//"Prjn.Learn.Learn": "false", // learning here definitely does NOT work!
@@ -195,7 +185,7 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtScale.Rel": "1",
+					// "Prjn.WtScale.Rel": "1", // this makes orientation dominate
 				}},
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
@@ -384,7 +374,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
 	ss.init_pos_assigned1 = false
-	ss.EClateralflag = true
+	ss.EClateralflag = false // true
 
 	ss.Entorhinal.Defaults()
 	ss.Pat.Defaults()
@@ -477,13 +467,22 @@ func (ss *Sim) ConfigRFMaps() {
 func (ss *Sim) ConfigNet(net *leabra.Network) {
 	ecParam := &ss.Entorhinal
 	net.InitName(net, "can_ec")
-	prevPosition := net.AddLayer2D("Prev_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input) // init position
-	prevOri := net.AddLayer2D("Prev_Ori", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)     // init position
+	prevPosition := net.AddLayer2D("Prev_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input)
+	prevPosition.SetClass("Position")
+	prevOri := net.AddLayer2D("Prev_Ori", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)
+	prevOri.SetClass("Orientation")
+
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
-	//lstm := net.AddLayer2D("LSTM", ecParam.LstmSize.Y, ecParam.LstmSize.X, emer.Hidden)                        // init position
-	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)                          // 4D EC
-	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target) // output
+	vestibular.SetClass("Orientation")
+	//lstm := net.AddLayer2D("LSTM", ecParam.LstmSize.Y, ecParam.LstmSize.X, emer.Hidden)
+	// ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)
+	ec := net.AddLayer2D("EC", 16, 16, emer.Hidden)
+
+	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target)
+	outPosition.SetClass("Position")
+
 	orientation := net.AddLayer2D("Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Target)
+	orientation.SetClass("Orientation")
 
 	//////////////////////////////////////////// EC first for indexing convinience
 	//ec := net.AddLayer2D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, emer.Hidden) // 2D EC
@@ -534,12 +533,12 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//orie := net.ConnectLayers(orientation, ec, oriePrjn, emer.Forward)
 	//orie.SetClass("OrientationForward")
 
-	rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
-	rec.SetClass("ExciteLateral")
+	// rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
+	// rec.SetClass("ExciteLateral")
 
 	//inh := net.ConnectLayers(ec, ec, full, emer.Inhib)
-	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
-	inh.SetClass("InhibLateral")
+	// inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
+	// inh.SetClass("InhibLateral")
 
 	//////////////////////////////////////////// other connections
 	full := prjn.NewFull()
@@ -554,8 +553,8 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	net.ConnectLayers(prevPosition, ec, full, emer.Forward)
 	net.ConnectLayers(prevOri, ec, full, emer.Forward)
 	net.ConnectLayers(vestibular, ec, full, emer.Forward)
-	net.ConnectLayers(ec, outPosition, full, emer.Forward)
-	net.ConnectLayers(ec, orientation, full, emer.Forward)
+	net.BidirConnectLayers(ec, outPosition, full)
+	net.BidirConnectLayers(ec, orientation, full)
 
 	//one2one := prjn.NewOneToOne()
 	//net.LateralConnectLayer(outPosition, full)
@@ -780,15 +779,16 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
-	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	if ss.EClateralflag {
-		ec.Act.Clamp.Hard = false
-	} else {
-		late := ec.RecvPrjn(0).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
-		lati := ec.RecvPrjn(1).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
-		late.WtScale.Rel = 0
-		lati.WtScale.Rel = 0
-	}
+	// note: this is bad!  setting the input projections to 0!
+	// ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
+	// if ss.EClateralflag {
+	// 	ec.Act.Clamp.Hard = false
+	// } else {
+	// 	late := ec.RecvPrjn(0).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+	// 	lati := ec.RecvPrjn(1).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
+	// 	late.WtScale.Rel = 0
+	// 	lati.WtScale.Rel = 0
+	// }
 
 	//pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
 	//ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
@@ -1916,7 +1916,7 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
 	nv.ViewDefaults()
 	cam := &(nv.Scene().Camera)
-	cam.Pose.Pos.Set(0.0, 1.733, 2.3)
+	cam.Pose.Pos.Set(0.0, 1.08, 2.7)
 	cam.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
 	// cam.Pose.Quat.SetFromAxisAngle(mat32.Vec3{-1, 0, 0}, 0.4077744)
 }

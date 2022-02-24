@@ -129,7 +129,7 @@ var ParamSets = params.Sets{
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
-					"Prjn.WtScale.Abs": "2", // higher gives better grid
+					"Prjn.WtScale.Abs": "0.5", // higher gives better grid
 				}},
 			{Sel: ".OrientationForward", Desc: "orientation to ec forward connection",
 				Params: params.Params{
@@ -143,7 +143,7 @@ var ParamSets = params.Sets{
 					"Layer.Act.Noise.Type":    "GeNoise",
 					"Layer.Act.Noise.Fixed":   "false",
 					"Layer.Inhib.ActAvg.Init": "0.08",
-					"Layer.Inhib.Layer.Gi":    "2.2",
+					"Layer.Inhib.Layer.Gi":    "1.8",
 				}},
 			{Sel: ".Position", Desc: "position layers",
 				Params: params.Params{
@@ -185,7 +185,7 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
-					// "Prjn.WtScale.Rel": "1", // this makes orientation dominate
+					"Prjn.WtScale.Rel": ".1", // orientation is easier so give it a weaker top-down err
 				}},
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
@@ -374,7 +374,7 @@ func (ss *Sim) New() {
 	ss.TestUpdt = leabra.Cycle
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
 	ss.init_pos_assigned1 = false
-	ss.EClateralflag = false // true
+	ss.EClateralflag = true
 
 	ss.Entorhinal.Defaults()
 	ss.Pat.Defaults()
@@ -475,8 +475,8 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
 	vestibular.SetClass("Orientation")
 	//lstm := net.AddLayer2D("LSTM", ecParam.LstmSize.Y, ecParam.LstmSize.X, emer.Hidden)
-	// ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)
-	ec := net.AddLayer2D("EC", 16, 16, emer.Hidden)
+	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)
+	// ec := net.AddLayer2D("EC", 16, 16, emer.Hidden)
 
 	outPosition := net.AddLayer2D("Out_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Target)
 	outPosition.SetClass("Position")
@@ -533,12 +533,12 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//orie := net.ConnectLayers(orientation, ec, oriePrjn, emer.Forward)
 	//orie.SetClass("OrientationForward")
 
-	// rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
-	// rec.SetClass("ExciteLateral")
+	rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
+	rec.SetClass("ExciteLateral")
 
 	//inh := net.ConnectLayers(ec, ec, full, emer.Inhib)
-	// inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
-	// inh.SetClass("InhibLateral")
+	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
+	inh.SetClass("InhibLateral")
 
 	//////////////////////////////////////////// other connections
 	full := prjn.NewFull()
@@ -1721,10 +1721,10 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 	for _, lnm := range ss.TargetLays {
 		plt.SetColParams(lnm+"_CosDiff", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
 	}
-	plt.SetColParams("PosErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
-	plt.SetColParams("PosACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
-	plt.SetColParams("OriErr", eplot.On, eplot.FixMin, 0, eplot.FloatMax, 0)
-	plt.SetColParams("OriACC", eplot.On, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("PosErr", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
+	plt.SetColParams("PosACC", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
+	plt.SetColParams("OriErr", eplot.Off, eplot.FixMin, 0, eplot.FloatMax, 0)
+	plt.SetColParams("OriACC", eplot.Off, eplot.FixMin, 0, eplot.FixMax, 1)
 
 	return plt
 }

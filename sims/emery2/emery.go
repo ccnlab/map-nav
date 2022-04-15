@@ -22,6 +22,7 @@ import (
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
+	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
@@ -114,8 +115,8 @@ type Sim struct {
 	TrainEnv         FWorld                        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time                     `desc:"axon timing parameters and state"`
 	ViewOn           bool                          `desc:"whether to update the network view while running"`
-	TrainUpdt        axon.TimeScales               `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt         axon.TimeScales               `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
+	TrainUpdt        etime.Times                   `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
+	TestUpdt         etime.Times                   `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval     int                           `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	CosDifActs       []string                      `view:"-" desc:"actions to track CosDif performance by"`
 	InitOffNms       []string                      `desc:"names of layers to turn off initially"`
@@ -212,8 +213,8 @@ func (ss *Sim) New() {
 	ss.Params = ParamSets
 	ss.RndSeed = 1
 	ss.ViewOn = true
-	ss.TrainUpdt = axon.AlphaCycle
-	ss.TestUpdt = axon.GammaCycle
+	ss.TrainUpdt = etime.AlphaCycle
+	ss.TestUpdt = etime.GammaCycle
 	ss.CosDifActs = []string{"Forward", "Left", "Right"}
 	ss.InitOffNms = []string{"MSTdP", "cIPLCT", "cIPLP", "PCCCT"}
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
@@ -776,19 +777,19 @@ func (ss *Sim) UpdateView(train bool) {
 	ss.UpdateWorldGui()
 }
 
-func (ss *Sim) UpdateViewTime(train bool, viewUpdt axon.TimeScales) {
+func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) {
 	switch viewUpdt {
-	case axon.Cycle:
+	case etime.Cycle:
 		ss.UpdateView(train)
-	case axon.FastSpike:
+	case etime.FastSpike:
 		if ss.Time.Cycle%10 == 0 {
 			ss.UpdateView(train)
 		}
-	case axon.GammaCycle:
+	case etime.GammaCycle:
 		if ss.Time.Cycle%25 == 0 {
 			ss.UpdateView(train)
 		}
-	case axon.AlphaCycle:
+	case etime.AlphaCycle:
 		if ss.Time.Cycle%100 == 0 {
 			ss.UpdateView(train)
 		}
@@ -806,8 +807,10 @@ func (ss *Sim) UpdateViewTime(train bool, viewUpdt axon.TimeScales) {
 func (ss *Sim) ThetaCyc(train bool) {
 	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
 	viewUpdt := ss.TrainUpdt
+	mode := etime.Train.String()
 	if !train {
 		viewUpdt = ss.TestUpdt
+		mode = etime.Test.String()
 	}
 
 	// update prior weight changes at start, so any DWt values remain visible at end
@@ -815,9 +818,9 @@ func (ss *Sim) ThetaCyc(train bool) {
 	// in which case, move it out to the TrainTrial method where the relevant
 	// counters are being dealt with.
 	if train {
-		ss.Net.WtFmDWt()
+		ss.Net.WtFmDWt(&ss.Time)
 	} else {
-		ss.Net.SynFail()
+		ss.Net.SynFail(&ss.Time)
 	}
 
 	ev := &ss.TrainEnv
@@ -826,7 +829,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 	plusCyc := ss.PlusCycles
 
 	ss.Net.NewState()
-	ss.Time.NewState()
+	ss.Time.NewState(mode)
 
 	for cyc := 0; cyc < minusCyc; cyc++ { // do the minus phase
 		ss.Net.Cycle(&ss.Time)
@@ -855,9 +858,9 @@ func (ss *Sim) ThetaCyc(train bool) {
 			ss.UpdateViewTime(train, viewUpdt)
 		}
 	}
-	ss.Time.NewPhase()
+	ss.Time.NewPhase(true)
 	ss.TakeAction(ss.Net, ev)
-	if viewUpdt == axon.Phase {
+	if viewUpdt == etime.Phase {
 		ss.UpdateView(train)
 	}
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
@@ -879,9 +882,9 @@ func (ss *Sim) ThetaCyc(train bool) {
 	ss.TrialStats(train) // need stats for lrmod
 
 	if train {
-		ss.Net.DWt()
+		ss.Net.DWt(&ss.Time)
 	}
-	if viewUpdt == axon.Phase || viewUpdt == axon.AlphaCycle || viewUpdt == axon.ThetaCycle {
+	if viewUpdt == etime.Phase || viewUpdt == etime.AlphaCycle || viewUpdt == etime.ThetaCycle {
 		ss.UpdateView(train)
 	}
 	if !ss.NoGui {
@@ -964,7 +967,7 @@ func (ss *Sim) TrainTrial() {
 		ss.LogTrnEpc(ss.TrnEpcLog)
 		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
+		if ss.ViewOn && ss.TrainUpdt > etime.ThetaCycle {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.MaxEpcs {
@@ -1257,7 +1260,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 		ss.LogTstEpc(ss.TstEpcLog)
 		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > axon.ThetaCycle {
+		if ss.ViewOn && ss.TrainUpdt > etime.ThetaCycle {
 			ss.UpdateView(true)
 		}
 		if epc >= ss.TestEpcs {
@@ -2804,5 +2807,5 @@ func (ss *Sim) MPIWtFmDWt() {
 		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
 		ss.Net.SetDWts(ss.SumDWts, mpi.WorldSize())
 	}
-	ss.Net.WtFmDWt()
+	ss.Net.WtFmDWt(&ss.Time)
 }

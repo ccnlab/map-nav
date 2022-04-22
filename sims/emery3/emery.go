@@ -875,29 +875,6 @@ func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int {
 	return act
 }
 
-// ApplyInputs applies input patterns from given envirbonment.
-// It is good practice to have this be a separate method with appropriate
-// args so that it can be used for various different contexts
-// (training, testing, etc).
-func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) { // TODO(refactor): library code
-	net.InitExt() // clear any existing inputs -- not strictly necessary if always
-	// going to the same layers, but good practice and cheap anyway
-
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	for i, lnm := range lays {
-		lyi := ss.Net.LayerByName(lnm)
-		if lyi == nil {
-			continue
-		}
-		ly := lyi.(axon.AxonLayer).AsAxon()
-		pats := en.State(states[i])
-		if pats != nil {
-			ly.ApplyExt(pats)
-		}
-	}
-}
-
 // TrainTrial runs one trial of training using TrainEnv
 func (ss *Sim) TrainTrial() { // TODO(refactor): library code
 	if ss.NeedsNewRun {
@@ -934,8 +911,9 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): library code
 			}
 		}
 	}
-
-	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(true) // train
 	// ss.TrialStats(true) // now in alphacyc
 
@@ -1214,7 +1192,9 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 		}
 	}
 
-	ss.ApplyInputs(ss.Net, &ss.TrainEnv)
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(false) // train
 	// ss.TrialStats(true) // now in alphacyc
 

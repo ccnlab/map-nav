@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
+	"github.com/emer/emergent/env"
 	"github.com/emer/empi/mpi"
 	"log"
 	"time"
@@ -27,6 +28,29 @@ func ToggleLayersOff(net *axon.Network, layerNames []string, off bool) { // TODO
 // the same random seed for every run
 func NewRndSeed(randomSeed *int64) { // TODO(refactor): to library
 	*randomSeed = time.Now().UnixNano()
+}
+
+// ApplyInputs applies input patterns from given envirbonment.
+// It is good practice to have this be a separate method with appropriate
+// args so that it can be used for various different contexts
+// (training, testing, etc).
+func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TODO(refactor): library code
+	net.InitExt() // clear any existing inputs -- not strictly necessary if always
+	// going to the same layers, but good practice and cheap anyway
+
+	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	//lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	for i, lnm := range layers {
+		lyi := net.LayerByName(lnm)
+		if lyi == nil {
+			continue
+		}
+		ly := lyi.(axon.AxonLayer).AsAxon()
+		pats := en.State(states[i])
+		if pats != nil {
+			ly.ApplyExt(pats)
+		}
+	}
 }
 
 ////////////////////////////////////////////////////////////////////

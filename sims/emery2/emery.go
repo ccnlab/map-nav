@@ -48,8 +48,8 @@ import (
 )
 
 func main() {
-	TheSim.New() // note: not running Config here -- done in CmdArgs for mpi / nogui
-	if len(os.Args) > 1 {
+	TheSim.New()          // note: not running Config here -- done in CmdArgs for mpi / nogui
+	if len(os.Args) > 1 { // TODO(refactor): This if/else should be a function
 		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
 	} else {
 		TheSim.Config()      // for GUI case, config then run..
@@ -59,7 +59,7 @@ func main() {
 	}
 }
 
-func guirun() {
+func guirun() { // TODO(refactor): GUI library
 	TheSim.Init()
 	win := TheSim.ConfigGui()
 	fwin := TheSim.ConfigWorldGui()
@@ -68,7 +68,7 @@ func guirun() {
 }
 
 // LogPrec is precision for saving float values in logs
-const LogPrec = 4
+const LogPrec = 4 // TODO(refactor): Logs library
 
 // see params_def.go for default params
 
@@ -77,7 +77,7 @@ const LogPrec = 4
 // state information organized and available without having to pass everything around
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
-type Sim struct {
+type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net              *deep.Network                 `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
@@ -189,7 +189,7 @@ var KiT_Sim = kit.Types.AddType(&Sim{}, SimProps)
 var TheSim Sim
 
 // New creates new blank elements and initializes defaults
-func (ss *Sim) New() {
+func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.Net = &deep.Network{}
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TrnTrlLog = &etable.Table{}
@@ -225,13 +225,13 @@ func (ss *Sim) New() {
 }
 
 // Defaults set default param values
-func (ss *Sim) Defaults() {
+func (ss *Sim) Defaults() { // TODO(refactor): This shouldn't be a function
 	ss.PctCortexMax = 0.9 // 0.5 before
 	ss.TestInterval = 50000
 }
 
 // NewPrjns creates new projections
-func (ss *Sim) NewPrjns() {
+func (ss *Sim) NewPrjns() { // TODO(refactor): I think this is good?
 	ss.Prjn4x4Skp2 = prjn.NewPoolTile()
 	ss.Prjn4x4Skp2.Size.Set(4, 4)
 	ss.Prjn4x4Skp2.Skip.Set(2, 2)
@@ -264,7 +264,7 @@ func (ss *Sim) NewPrjns() {
 // 		Configs
 
 // Config configures all the elements using the standard functions
-func (ss *Sim) Config() {
+func (ss *Sim) Config() { // TODO(refactor): Remove a lot
 	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
 	ss.ConfigTrnEpcLog(ss.TrnEpcLog)
@@ -278,7 +278,7 @@ func (ss *Sim) Config() {
 }
 
 func (ss *Sim) ConfigEnv() {
-	if ss.MaxRuns == 0 { // allow user override
+	if ss.MaxRuns == 0 { // allow user override // TODO(refactor): Remove, set defaults elsewhere
 		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
@@ -286,7 +286,7 @@ func (ss *Sim) ConfigEnv() {
 		ss.TestEpcs = 1000
 	}
 
-	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
+	ss.TrainEnv.Config(200) // 1000) // n trials per epoch // TODO(refactor): why doesn't this function do more?
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Run.Max = ss.MaxRuns
@@ -296,7 +296,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.ConfigRFMaps()
 }
 
-func (ss *Sim) ConfigRFMaps() {
+func (ss *Sim) ConfigRFMaps() { // TODO(refactor): environment file
 	ss.RFMaps = make(map[string]*etensor.Float32)
 	mt := &etensor.Float32{}
 	mt.CopyShapeFrom(ss.TrainEnv.World)
@@ -622,7 +622,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
 
 	//////////////////////////////////////
-	// position
+	// position // TODO(refactor): This GUI stuff should maybe be separated? at least it should be commented as GUI
 
 	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wd.Name(), YAlign: relpos.Front, Space: 15})
 	v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: 4})
@@ -667,7 +667,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: 10})
 
 	//////////////////////////////////////
-	// collect
+	// collect // TODO(refactor): this is used for like logging and stuff?
 
 	ss.PulvLays = make([]string, 0, 10)
 	ss.HidLays = make([]string, 0, 10)
@@ -703,7 +703,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		smact.SetThread(3)
 	*/
 
-	net.Defaults()
+	net.Defaults()                           // TODO(refactor): why isn't all this in a function?
 	ss.SetParams("Network", ss.LogSetParams) // only set Network params
 	err := net.Build()
 	if err != nil {
@@ -718,14 +718,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 }
 
 // Initialize network weights including scales
-func (ss *Sim) InitWts(net *deep.Network) {
+func (ss *Sim) InitWts(net *deep.Network) { // TODO(refactor): remove
 	net.InitWts()
 	// net.InitTopoSWts() //  sets all wt scales
 
 	// ss.ToggleLaysOff(true)
 }
 
-func (ss *Sim) ToggleLaysOff(off bool) {
+func (ss *Sim) ToggleLaysOff(off bool) { // TODO(refactor): move to library
 	for _, lnm := range ss.InitOffNms {
 		lyi := ss.Net.LayerByName(lnm)
 		if lyi == nil {
@@ -741,7 +741,7 @@ func (ss *Sim) ToggleLaysOff(off bool) {
 
 // Init restarts the run, and initializes everything, including network weights
 // and resets the epoch log table
-func (ss *Sim) Init() {
+func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
 	ss.ConfigEnv() // re-config env just in case a different set of patterns was
 	// selected or patterns have been modified etc
@@ -753,14 +753,14 @@ func (ss *Sim) Init() {
 
 // NewRndSeed gets a new random seed based on current time -- otherwise uses
 // the same random seed for every run
-func (ss *Sim) NewRndSeed() {
+func (ss *Sim) NewRndSeed() { // TODO(refactor): to library
 	ss.RndSeed = time.Now().UnixNano()
 }
 
 // Counters returns a string of the current counter state
 // use tabs to achieve a reasonable formatting overall
 // and add a few tabs at the end to allow for expansion..
-func (ss *Sim) Counters(train bool) string {
+func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
 	// if train {
 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
 	// } else {
@@ -768,16 +768,16 @@ func (ss *Sim) Counters(train bool) string {
 	// }
 }
 
-func (ss *Sim) UpdateView(train bool) {
+func (ss *Sim) UpdateView(train bool) { // TODO(refactor):  GUI
 	if ss.NetView != nil && ss.NetView.IsVisible() {
 		ss.NetView.Record(ss.Counters(train))
 		// note: essential to use Go version of update when called from another goroutine
 		ss.NetView.GoUpdate() // note: using counters is significantly slower..
 	}
-	ss.UpdateWorldGui()
+	ss.UpdateWorldGui() // TODO(refactor): this is the environment GUI
 }
 
-func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) {
+func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) { // TODO(refactor): GUI library
 	switch viewUpdt {
 	case etime.Cycle:
 		ss.UpdateView(train)
@@ -797,7 +797,7 @@ func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// 	    Running the Network, starting bottom-up..
+// 	    Running the Network, starting bottom-up.. // TODO(refactor): All this goes to looper library code
 
 // ThetaCyc runs one alpha-cycle (100 msec, 4 quarters)			 of processing.
 // External inputs must have already been applied prior to calling,
@@ -859,7 +859,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 		}
 	}
 	ss.Time.NewPhase(true)
-	ss.TakeAction(ss.Net, ev)
+	ss.TakeAction(ss.Net, ev) // TODO(refactor): this seems different
 	if viewUpdt == etime.Phase {
 		ss.UpdateView(train)
 	}
@@ -894,7 +894,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
-func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) {
+func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): call this in looper
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	nact := ss.DecodeAct(ly, ev)
 	gact, urgency := ev.ActGen()
@@ -933,7 +933,7 @@ func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int {
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
+func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) { // TODO(refactor): library code
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
@@ -953,7 +953,7 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
 }
 
 // TrainTrial runs one trial of training using TrainEnv
-func (ss *Sim) TrainTrial() {
+func (ss *Sim) TrainTrial() { // TODO(refactor): library code
 	if ss.NeedsNewRun {
 		ss.NewRun()
 	}
@@ -999,7 +999,7 @@ func (ss *Sim) TrainTrial() {
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc here
-func (ss *Sim) RunEnd() {
+func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 	ss.LogRun(ss.RunLog)
 	// if ss.SaveWts { // doing this earlier
 	// 	ss.SaveWeights()
@@ -1011,7 +1011,7 @@ func (ss *Sim) RunEnd() {
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
-func (ss *Sim) NewRun() {
+func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	run := ss.TrainEnv.Run.Cur
 	ss.PctCortex = 0
 	ss.TrainEnv.Init(run)
@@ -1026,7 +1026,7 @@ func (ss *Sim) NewRun() {
 
 // InitStats initializes all the statistics, especially important for the
 // cumulative epoch stats -- called at start of new run
-func (ss *Sim) InitStats() {
+func (ss *Sim) InitStats() { // TODO(refactor): use Stats
 	// accumulators
 	ss.NumTrlStats = 0
 	ss.SumActMatch = 0
@@ -1037,7 +1037,7 @@ func (ss *Sim) InitStats() {
 }
 
 // TrialStatsTRC computes the trial-level statistics for TRC layers
-func (ss *Sim) TrialStatsTRC(accum bool) {
+func (ss *Sim) TrialStatsTRC(accum bool) { // TODO(refactor): looper stats?
 	nt := len(ss.PulvLays)
 	if len(ss.TrlCosDiffTRC) != nt {
 		ss.TrlCosDiffTRC = make([]float64, nt)
@@ -1056,14 +1056,14 @@ func (ss *Sim) TrialStatsTRC(accum bool) {
 }
 
 // SetAFMetaData
-func (ss *Sim) SetAFMetaData(af etensor.Tensor) {
+func (ss *Sim) SetAFMetaData(af etensor.Tensor) { // TODO(refactor): game gui related
 	af.SetMetaData("min", "0")
 	af.SetMetaData("colormap", "Viridis") // "JetMuted")
 	af.SetMetaData("grid-fill", "1")
 }
 
 // UpdtARFs updates position activation rf's
-func (ss *Sim) UpdtARFs() {
+func (ss *Sim) UpdtARFs() { // TODO(refactor): game gui
 	for nm, mt := range ss.RFMaps {
 		mt.SetZeros()
 		switch nm {
@@ -1107,7 +1107,7 @@ func (ss *Sim) UpdtARFs() {
 }
 
 // SaveAllARFs saves all ARFs to files
-func (ss *Sim) SaveAllARFs() {
+func (ss *Sim) SaveAllARFs() { // TODO(refactor): game gui
 	ss.ARFs.Avg()
 	ss.ARFs.Norm()
 	for _, paf := range ss.ARFs.RFs {
@@ -1117,7 +1117,7 @@ func (ss *Sim) SaveAllARFs() {
 }
 
 // OpenAllARFs open all ARFs from directory of given path
-func (ss *Sim) OpenAllARFs(path gi.FileName) {
+func (ss *Sim) OpenAllARFs(path gi.FileName) { // TODO(refactor): game gui
 	ss.UpdtARFs()
 	ss.ARFs.Avg()
 	ss.ARFs.Norm()
@@ -1142,7 +1142,7 @@ func (ss *Sim) OpenAllARFs(path gi.FileName) {
 // core algorithm side remains as simple as possible, and doesn't need to worry about
 // different time-scales over which stats could be accumulated etc.
 // You can also aggregate directly from log data, as is done for testing stats
-func (ss *Sim) TrialStats(accum bool) {
+func (ss *Sim) TrialStats(accum bool) { // TODO(refactor): looper call
 	ss.TrialStatsTRC(accum)
 	if accum {
 		ss.SumActMatch += ss.ActMatch
@@ -1154,7 +1154,7 @@ func (ss *Sim) TrialStats(accum bool) {
 }
 
 // TrainEpoch runs training trials for remainder of this epoch
-func (ss *Sim) TrainEpoch() {
+func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
 	ss.StopNow = false
 	curEpc := ss.TrainEnv.Epoch.Cur
 	for {
@@ -1167,7 +1167,7 @@ func (ss *Sim) TrainEpoch() {
 }
 
 // TrainRun runs training trials for remainder of run
-func (ss *Sim) TrainRun() {
+func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
 	ss.StopNow = false
 	curRun := ss.TrainEnv.Run.Cur
 	for {
@@ -1180,7 +1180,7 @@ func (ss *Sim) TrainRun() {
 }
 
 // EpochSched implements the learning rate schedule etc.
-func (ss *Sim) EpochSched(epc int) {
+func (ss *Sim) EpochSched(epc int) { // TODO(refactor): looper callback
 	if epc > 1 && epc%10 == 0 {
 		ss.PctCortex = float64(epc) / 100
 		if ss.PctCortex > ss.PctCortexMax {
@@ -1206,7 +1206,7 @@ func (ss *Sim) EpochSched(epc int) {
 }
 
 // Train runs the full training from this point onward
-func (ss *Sim) Train() {
+func (ss *Sim) Train() { // TODO(refactor): delete, looper
 	ss.StopNow = false
 	for {
 		ss.TrainTrial()
@@ -1218,12 +1218,12 @@ func (ss *Sim) Train() {
 }
 
 // Stop tells the sim to stop running
-func (ss *Sim) Stop() {
+func (ss *Sim) Stop() { // TODO(refactor): gui library
 	ss.StopNow = true
 }
 
 // Stopped is called when a run method stops running -- updates the IsRunning flag and toolbar
-func (ss *Sim) Stopped() {
+func (ss *Sim) Stopped() { // TODO(refactor): gui library
 	ss.IsRunning = false
 	if ss.Win != nil {
 		vp := ss.Win.WinViewport2D()
@@ -1238,7 +1238,7 @@ func (ss *Sim) Stopped() {
 
 // SaveWeights saves the network weights -- when called with giv.CallMethod
 // it will auto-prompt for filename
-func (ss *Sim) SaveWeights() {
+func (ss *Sim) SaveWeights() { // TODO(refactor): library code
 	fnm := ss.WeightsFileName()
 	fmt.Printf("Saving Weights to: %v\n", fnm)
 	ss.Net.SaveWtsJSON(gi.FileName(fnm))
@@ -1250,7 +1250,7 @@ func (ss *Sim) SaveWeights() {
 // note: using TrainEnv for everything
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
-func (ss *Sim) TestTrial(returnOnChg bool) {
+func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with looper
 	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
@@ -1276,7 +1276,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 }
 
 // TestAll runs through the full set of testing items
-func (ss *Sim) TestAll() {
+func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
 	ss.StopNow = false
 	curRun := ss.TrainEnv.Run.Cur
 	for {
@@ -1289,7 +1289,7 @@ func (ss *Sim) TestAll() {
 }
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
-func (ss *Sim) RunTestAll() {
+func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
 	ss.StopNow = false
 	ss.TestAll()
 	ss.Stopped()
@@ -1299,7 +1299,7 @@ func (ss *Sim) RunTestAll() {
 //   Params setting
 
 // ParamsName returns name of current set of parameters
-func (ss *Sim) ParamsName() string {
+func (ss *Sim) ParamsName() string { // TODO(refactor): library code
 	if ss.ParamSet == "" {
 		return "Base"
 	}
@@ -1310,7 +1310,7 @@ func (ss *Sim) ParamsName() string {
 // If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
 // otherwise just the named sheet
 // if setMsg = true then we output a message for each param that was set.
-func (ss *Sim) SetParams(sheet string, setMsg bool) error {
+func (ss *Sim) SetParams(sheet string, setMsg bool) error { // TODO(refactor): Move to library, take in names as args
 	if sheet == "" {
 		// this is important for catching typos and ensuring that all sheets can be used
 		ss.Params.ValidateSheets([]string{"Network", "Sim"})
@@ -1326,7 +1326,7 @@ func (ss *Sim) SetParams(sheet string, setMsg bool) error {
 // If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
 // otherwise just the named sheet
 // if setMsg = true then we output a message for each param that was set.
-func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error {
+func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error { // TODO(refactor): library, take in names as args
 	pset, err := ss.Params.SetByNameTry(setNm)
 	if err != nil {
 		return err
@@ -1353,7 +1353,7 @@ func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error {
 // 		Logging
 
 // ValsTsr gets value tensor of given name, creating if not yet made
-func (ss *Sim) ValsTsr(name string) *etensor.Float32 {
+func (ss *Sim) ValsTsr(name string) *etensor.Float32 { // TODO(refactor): library code
 	if ss.ValsTsrs == nil {
 		ss.ValsTsrs = make(map[string]*etensor.Float32)
 	}
@@ -1366,7 +1366,7 @@ func (ss *Sim) ValsTsr(name string) *etensor.Float32 {
 }
 
 // ConfigSpikeRasts
-func (ss *Sim) ConfigSpikeRasts() {
+func (ss *Sim) ConfigSpikeRasts() { // TODO(refactor): GUI library
 	ncy := ss.MinusCycles + ss.PlusCycles
 	for _, lnm := range ss.SpikeRecLays {
 		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
@@ -1376,7 +1376,7 @@ func (ss *Sim) ConfigSpikeRasts() {
 }
 
 // SpikeRastTsr gets spike raster tensor of given name, creating if not yet made
-func (ss *Sim) SpikeRastTsr(name string) *etensor.Float32 {
+func (ss *Sim) SpikeRastTsr(name string) *etensor.Float32 { // TODO(refactor): GUI library
 	if ss.SpikeRasters == nil {
 		ss.SpikeRasters = make(map[string]*etensor.Float32)
 	}
@@ -1389,7 +1389,7 @@ func (ss *Sim) SpikeRastTsr(name string) *etensor.Float32 {
 }
 
 // SpikeRastGrid gets spike raster grid of given name, creating if not yet made
-func (ss *Sim) SpikeRastGrid(name string) *etview.TensorGrid {
+func (ss *Sim) SpikeRastGrid(name string) *etview.TensorGrid { // TODO(refactor): GUI library
 	if ss.SpikeRastGrids == nil {
 		ss.SpikeRastGrids = make(map[string]*etview.TensorGrid)
 	}
@@ -1402,21 +1402,21 @@ func (ss *Sim) SpikeRastGrid(name string) *etview.TensorGrid {
 }
 
 // SetSpikeRastCol sets column of given spike raster from data
-func (ss *Sim) SetSpikeRastCol(sr, vl *etensor.Float32, col int) {
+func (ss *Sim) SetSpikeRastCol(sr, vl *etensor.Float32, col int) { // TODO(refactor): GUI code
 	for ni, v := range vl.Values {
 		sr.Set([]int{ni, col}, v)
 	}
 }
 
 // ConfigSpikeGrid configures the spike grid
-func (ss *Sim) ConfigSpikeGrid(tg *etview.TensorGrid, sr *etensor.Float32) {
+func (ss *Sim) ConfigSpikeGrid(tg *etview.TensorGrid, sr *etensor.Float32) { // TODO(refactor): GUI code
 	tg.SetStretchMax()
 	sr.SetMetaData("grid-fill", "1")
 	tg.SetTensor(sr)
 }
 
 // RecordSpikes
-func (ss *Sim) RecordSpikes(cyc int) {
+func (ss *Sim) RecordSpikes(cyc int) { // TODO(refactor):  GUI code
 	for _, lnm := range ss.SpikeRecLays {
 		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
 		tv := ss.ValsTsr(lnm)
@@ -1428,7 +1428,7 @@ func (ss *Sim) RecordSpikes(cyc int) {
 
 // RunName returns a name for this run that combines Tag and Params -- add this to
 // any file names that are saved.
-func (ss *Sim) RunName() string {
+func (ss *Sim) RunName() string { // TODO(refactor): library code
 	if ss.Tag != "" {
 		return ss.Tag + "_" + ss.ParamsName()
 	} else {
@@ -1438,17 +1438,17 @@ func (ss *Sim) RunName() string {
 
 // RunEpochName returns a string with the run and epoch numbers with leading zeros, suitable
 // for using in weights file names.  Uses 3, 5 digits for each.
-func (ss *Sim) RunEpochName(run, epc int) string {
+func (ss *Sim) RunEpochName(run, epc int) string { // TODO(refactor): library
 	return fmt.Sprintf("%03d_%05d", run, epc)
 }
 
 // WeightsFileName returns default current weights file name
-func (ss *Sim) WeightsFileName() string {
+func (ss *Sim) WeightsFileName() string { // TODO(refactor): library
 	return ss.Net.Nm + "_" + ss.RunName() + "_" + ss.RunEpochName(ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur) + ".wts.gz"
 }
 
 // LogFileName returns default log file name
-func (ss *Sim) LogFileName(lognm string) string {
+func (ss *Sim) LogFileName(lognm string) string { // TODO(refactor): library
 	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
 }
 
@@ -1457,7 +1457,7 @@ func (ss *Sim) LogFileName(lognm string) string {
 
 // CenterPoolsIdxs returns the indexes for 2x2 center pools (including sub-pools):
 // nu = number of units per pool, sis = starting indexes
-func (ss *Sim) CenterPoolsIdxs(ly *axon.Layer) (nu int, sis []int) {
+func (ss *Sim) CenterPoolsIdxs(ly *axon.Layer) (nu int, sis []int) { // TODO(refactor): Axon code?
 	nu = ly.Shp.Dim(2) * ly.Shp.Dim(3)
 	npy := ly.Shp.Dim(0)
 	npx := ly.Shp.Dim(1)
@@ -1493,7 +1493,7 @@ func (ss *Sim) CenterPoolsIdxs(ly *axon.Layer) (nu int, sis []int) {
 }
 
 // CopyCenterPools copy 2 center pools of ActM to tensor
-func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) {
+func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) { // TODO(refactor): axon code?
 	nu, sis := ss.CenterPoolsIdxs(ly)
 	vl.SetShape([]int{len(sis) * nu}, nil, nil)
 	ti := 0
@@ -1506,7 +1506,7 @@ func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) {
 }
 
 // LogTrnRepTrl adds data from current trial to the TrnTrlRepLog table.
-func (ss *Sim) LogTrnRepTrl(dt *etable.Table) {
+func (ss *Sim) LogTrnRepTrl(dt *etable.Table) { // TODO(refactor): logging
 	epc := ss.TrainEnv.Epoch.Cur
 	event := ss.TrainEnv.Event.Cur
 	row := dt.Rows
@@ -1546,7 +1546,7 @@ func (ss *Sim) LogTrnRepTrl(dt *etable.Table) {
 	}
 }
 
-func (ss *Sim) ConfigTrnTrlRepLog(dt *etable.Table) {
+func (ss *Sim) ConfigTrnTrlRepLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TrnTrlRepLog")
 	dt.SetMetaData("desc", "Record of training per input pattern")
 	dt.SetMetaData("read-only", "true")
@@ -1580,7 +1580,7 @@ func (ss *Sim) ConfigTrnTrlRepLog(dt *etable.Table) {
 
 // HogDead computes the proportion of units in given layer name with ActAvg over hog thr
 // and under dead threshold
-func (ss *Sim) HogDead(lnm string) (hog, dead float64) {
+func (ss *Sim) HogDead(lnm string) (hog, dead float64) { // TODO(refactor): library stats code
 	ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
 	n := len(ly.Neurons)
 	for ni := range ly.Neurons {
@@ -1598,7 +1598,7 @@ func (ss *Sim) HogDead(lnm string) (hog, dead float64) {
 
 // LogTrnEpc adds data from current epoch to the TrnEpcLog table.
 // computes epoch averages prior to logging.
-func (ss *Sim) LogTrnEpc(dt *etable.Table) {
+func (ss *Sim) LogTrnEpc(dt *etable.Table) { // TODO(refactor): logging
 	row := dt.Rows
 	dt.SetNumRows(row + 1)
 
@@ -1731,7 +1731,7 @@ func (ss *Sim) LogTrnEpc(dt *etable.Table) {
 	trl.SetNumRows(0)
 }
 
-func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
+func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TrnEpcLog")
 	dt.SetMetaData("desc", "Record of performance over epochs of training")
 	dt.SetMetaData("read-only", "true")
@@ -1774,7 +1774,7 @@ func (ss *Sim) ConfigTrnEpcLog(dt *etable.Table) {
 	dt.SetFromSchema(sch, 0)
 }
 
-func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
@@ -1815,7 +1815,7 @@ func (ss *Sim) ConfigTrnEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 //  TrnTrlLog
 
 // LogTrnTrl adds data from current trial to the TrnTrlLog table.
-func (ss *Sim) LogTrnTrl(dt *etable.Table) {
+func (ss *Sim) LogTrnTrl(dt *etable.Table) { // TODO(refactor): logging
 	row := dt.Rows
 	dt.SetNumRows(row + 1)
 
@@ -1843,7 +1843,7 @@ func (ss *Sim) LogTrnTrl(dt *etable.Table) {
 	ss.TrnTrlPlot.GoUpdate()
 }
 
-func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
+func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TrnTrlLog")
 	dt.SetMetaData("desc", "Record of trials while training, including position")
 	dt.SetMetaData("read-only", "true")
@@ -1871,7 +1871,7 @@ func (ss *Sim) ConfigTrnTrlLog(dt *etable.Table) {
 	dt.SetFromSchema(sch, 0)
 }
 
-func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Event Plot"
 	plt.Params.XAxisCol = "Event"
 	plt.SetTable(dt)
@@ -1901,7 +1901,7 @@ func (ss *Sim) ConfigTrnTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 
 // LogTstTrl adds data from current trial to the TstTrlLog table.
 // log always contains number of testing items
-func (ss *Sim) LogTstTrl(dt *etable.Table) {
+func (ss *Sim) LogTstTrl(dt *etable.Table) { // TODO(refactor): logging
 	row := dt.Rows
 	dt.SetNumRows(row + 1)
 
@@ -1925,7 +1925,7 @@ func (ss *Sim) LogTstTrl(dt *etable.Table) {
 	ss.TstTrlPlot.GoUpdate()
 }
 
-func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) {
+func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TstTrlLog")
 	dt.SetMetaData("desc", "Record of testing per input pattern")
 	dt.SetMetaData("read-only", "true")
@@ -1949,7 +1949,7 @@ func (ss *Sim) ConfigTstTrlLog(dt *etable.Table) {
 	dt.SetFromSchema(sch, 0)
 }
 
-func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Test Trial Plot"
 	plt.Params.XAxisCol = "Event"
 	plt.SetTable(dt)
@@ -1973,7 +1973,7 @@ func (ss *Sim) ConfigTstTrlPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 //////////////////////////////////////////////
 //  TstEpcLog
 
-func (ss *Sim) LogTstEpc(dt *etable.Table) {
+func (ss *Sim) LogTstEpc(dt *etable.Table) { // TODO(refactor): logging
 	row := dt.Rows
 	dt.SetNumRows(row + 1)
 
@@ -2018,7 +2018,7 @@ func (ss *Sim) LogTstEpc(dt *etable.Table) {
 	}
 }
 
-func (ss *Sim) ConfigTstEpcLog(dt *etable.Table) {
+func (ss *Sim) ConfigTstEpcLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TstEpcLog")
 	dt.SetMetaData("desc", "Summary stats for testing trials")
 	dt.SetMetaData("read-only", "true")
@@ -2039,7 +2039,7 @@ func (ss *Sim) ConfigTstEpcLog(dt *etable.Table) {
 	dt.SetFromSchema(sch, 0)
 }
 
-func (ss *Sim) ConfigTstEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigTstEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Testing Epoch Plot"
 	plt.Params.XAxisCol = "Epoch"
 	plt.SetTable(dt)
@@ -2061,7 +2061,7 @@ func (ss *Sim) ConfigTstEpcPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 
 // LogTstCyc adds data from current trial to the TstCycLog table.
 // log just has 100 cycles, is overwritten
-func (ss *Sim) LogTstCyc(dt *etable.Table, cyc int) {
+func (ss *Sim) LogTstCyc(dt *etable.Table, cyc int) { // TODO(refactor): logging
 	if dt.Rows <= cyc {
 		dt.SetNumRows(cyc + 1)
 	}
@@ -2079,7 +2079,7 @@ func (ss *Sim) LogTstCyc(dt *etable.Table, cyc int) {
 	}
 }
 
-func (ss *Sim) ConfigTstCycLog(dt *etable.Table) {
+func (ss *Sim) ConfigTstCycLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "TstCycLog")
 	dt.SetMetaData("desc", "Record of activity etc over one trial by cycle")
 	dt.SetMetaData("read-only", "true")
@@ -2096,7 +2096,7 @@ func (ss *Sim) ConfigTstCycLog(dt *etable.Table) {
 	dt.SetFromSchema(sch, np)
 }
 
-func (ss *Sim) ConfigTstCycPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigTstCycPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Test Cycle Plot"
 	plt.Params.XAxisCol = "Cycle"
 	plt.SetTable(dt)
@@ -2113,7 +2113,7 @@ func (ss *Sim) ConfigTstCycPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot
 //  RunLog
 
 // LogRun adds data from current run to the RunLog table.
-func (ss *Sim) LogRun(dt *etable.Table) {
+func (ss *Sim) LogRun(dt *etable.Table) { // TODO(refactor): logging
 	run := ss.TrainEnv.Run.Cur // this is NOT triggered by increment yet -- use Cur
 	row := dt.Rows
 	dt.SetNumRows(row + 1)
@@ -2148,7 +2148,7 @@ func (ss *Sim) LogRun(dt *etable.Table) {
 	}
 }
 
-func (ss *Sim) ConfigRunLog(dt *etable.Table) {
+func (ss *Sim) ConfigRunLog(dt *etable.Table) { // TODO(refactor): logging
 	dt.SetMetaData("name", "RunLog")
 	dt.SetMetaData("desc", "Record of performance at end of training")
 	dt.SetMetaData("read-only", "true")
@@ -2161,7 +2161,7 @@ func (ss *Sim) ConfigRunLog(dt *etable.Table) {
 	}, 0)
 }
 
-func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D {
+func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D { // TODO(refactor): logging
 	plt.Params.Title = "Emery Run Plot"
 	plt.Params.XAxisCol = "Run"
 	plt.SetTable(dt)
@@ -2174,13 +2174,13 @@ func (ss *Sim) ConfigRunPlot(plt *eplot.Plot2D, dt *etable.Table) *eplot.Plot2D 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Gui
 
-func (ss *Sim) ConfigNetView(nv *netview.NetView) {
+func (ss *Sim) ConfigNetView(nv *netview.NetView) { // TODO(refactor): GUI
 	nv.Scene().Camera.Pose.Pos.Set(0, 2.2, 1.9)
 	nv.Scene().Camera.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
 }
 
 // ConfigWorldGui configures all the world view GUI elements
-func (ss *Sim) ConfigWorldGui() *gi.Window {
+func (ss *Sim) ConfigWorldGui() *gi.Window { // TODO(refactor): game gui
 	// order: Empty, wall, food, water, foodwas, waterwas
 	ss.MatColors = []string{"lightgrey", "black", "orange", "blue", "brown", "navy"}
 
@@ -2316,7 +2316,7 @@ func (ss *Sim) ConfigWorldGui() *gi.Window {
 	return win
 }
 
-func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) {
+func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) { // TODO(refactor): game gui
 	cnm := "FWorldColors"
 	cm, ok := giv.AvailColorMaps[cnm]
 	if !ok {
@@ -2342,7 +2342,7 @@ func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) {
 	tg.SetStretchMax()
 }
 
-func (ss *Sim) UpdateWorldGui() {
+func (ss *Sim) UpdateWorldGui() { // TODO(refactor):  game gui
 	if ss.WorldWin == nil || !ss.TrainEnv.Disp {
 		return
 	}
@@ -2359,7 +2359,7 @@ func (ss *Sim) UpdateWorldGui() {
 	ss.WorldTabs.UpdateEnd(updt)
 }
 
-func (ss *Sim) Left() {
+func (ss *Sim) Left() { // TODO(refactor): these are all for the game gui
 	ss.TrainEnv.Action("Left", nil)
 	ss.UpdateWorldGui()
 }
@@ -2390,7 +2390,7 @@ func (ss *Sim) Drink() {
 }
 
 // ConfigGui configures the GoGi gui interface for this simulation,
-func (ss *Sim) ConfigGui() *gi.Window {
+func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of it is specific
 	width := 1600
 	height := 1200
 
@@ -2664,7 +2664,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 }
 
 // These props register Save methods so they can be used
-var SimProps = ki.Props{
+var SimProps = ki.Props{ // TODO(refactor): ???
 	"CallMethods": ki.PropSlice{
 		{"SaveWeights", ki.Props{
 			"desc": "save network weights to file",
@@ -2687,7 +2687,7 @@ var SimProps = ki.Props{
 	},
 }
 
-func (ss *Sim) CmdArgs() {
+func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 	ss.NoGui = true
 	var nogui bool
 	var saveEpcLog bool
@@ -2763,14 +2763,14 @@ func (ss *Sim) CmdArgs() {
 		fmt.Printf("Saving final weights per run\n")
 	}
 	fmt.Printf("Running %d Runs\n", ss.MaxRuns)
-	ss.Train()
+	ss.Train() // TODO(refactor): Remove this lol
 }
 
 ////////////////////////////////////////////////////////////////////
 //  MPI code
 
 // MPIInit initializes MPI
-func (ss *Sim) MPIInit() {
+func (ss *Sim) MPIInit() { // TODO(refactor): library code
 	mpi.Init()
 	var err error
 	ss.Comm, err = mpi.NewComm(nil) // use all procs
@@ -2783,21 +2783,21 @@ func (ss *Sim) MPIInit() {
 }
 
 // MPIFinalize finalizes MPI
-func (ss *Sim) MPIFinalize() {
+func (ss *Sim) MPIFinalize() { // TODO(refactor): library code
 	if ss.UseMPI {
 		mpi.Finalize()
 	}
 }
 
 // CollectDWts collects the weight changes from all synapses into AllDWts
-func (ss *Sim) CollectDWts(net *axon.Network) {
+func (ss *Sim) CollectDWts(net *axon.Network) { // TODO(refactor): axon library code
 	net.CollectDWts(&ss.AllDWts)
 }
 
 // MPIWtFmDWt updates weights from weight changes, using MPI to integrate
 // DWt changes across parallel nodes, each of which are learning on different
 // sequences of inputs.
-func (ss *Sim) MPIWtFmDWt() {
+func (ss *Sim) MPIWtFmDWt() { // TODO(refactor): axon library code
 	if ss.UseMPI {
 		ss.CollectDWts(&ss.Net.Network)
 		ndw := len(ss.AllDWts)

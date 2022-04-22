@@ -197,14 +197,15 @@ func LogFileName(netName, lognm, tag, paramName string) string { // TODO(refacto
 // 		Logging
 
 // ValsTsr gets value tensor of given name, creating if not yet made
-func (ss *Sim) ValsTsr(name string) *etensor.Float32 { // TODO(refactor): library code
-	if ss.ValsTsrs == nil {
-		ss.ValsTsrs = make(map[string]*etensor.Float32)
+func ValsTsr(tensorDictionary *map[string]*etensor.Float32, name string) *etensor.Float32 { // TODO(refactor): library code
+
+	if *tensorDictionary == nil {
+		*tensorDictionary = make(map[string]*etensor.Float32)
 	}
-	tsr, ok := ss.ValsTsrs[name]
+	tsr, ok := (*tensorDictionary)[name]
 	if !ok {
 		tsr = &etensor.Float32{}
-		ss.ValsTsrs[name] = tsr
+		(*tensorDictionary)[name] = tsr
 	}
 	return tsr
 }

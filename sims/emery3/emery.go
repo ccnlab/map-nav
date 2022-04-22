@@ -40,7 +40,7 @@ func main() {
 	if len(os.Args) > 1 { // TODO(refactor): This if/else should be a function
 		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
 	} else {
-		TheSim.Config()      // for GUI case, config then run..
+		TheSim.Config() // for GUI case, config then run..
 		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
 			guirun()
 		})
@@ -816,8 +816,8 @@ func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): ca
 }
 
 // DecodeAct decodes the VL ActM state to find closest action pattern
-func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int {
-	vt := ss.ValsTsr("VL")
+func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this go
+	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
 	act := ev.DecodeAct(vt)
 	return act
@@ -1132,7 +1132,8 @@ func (ss *Sim) ConfigSpikeGrid(tg *etview.TensorGrid, sr *etensor.Float32) { // 
 func (ss *Sim) RecordSpikes(cyc int) { // TODO(refactor):  GUI code
 	for _, lnm := range ss.SpikeRecLays {
 		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
-		tv := ss.ValsTsr(lnm)
+		tv := ValsTsr(&ss.ValsTsrs, lnm)
+
 		ly.UnitValsTensor(tv, "Spike")
 		sr := ss.SpikeRastTsr(lnm)
 		ss.SetSpikeRastCol(sr, tv, cyc)

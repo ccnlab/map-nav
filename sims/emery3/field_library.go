@@ -56,7 +56,7 @@ func (ss *Sim) UpdtARFs() { // TODO(refactor): game gui
 			if ly == nil {
 				continue
 			}
-			vt := ss.ValsTsr(lnm)
+			vt := ValsTsr(&ss.ValsTsrs, lnm)
 			ly.UnitValsTensor(vt, "ActM")
 			for nm, mt := range ss.RFMaps {
 				af := ss.ARFs.AddRF(lnm+"_"+nm, vt, mt)
@@ -69,7 +69,7 @@ func (ss *Sim) UpdtARFs() { // TODO(refactor): game gui
 		if ly == nil {
 			continue
 		}
-		vt := ss.ValsTsr(lnm)
+		vt := ValsTsr(&ss.ValsTsrs, lnm)
 		ly.UnitValsTensor(vt, "ActM")
 		for nm, mt := range ss.RFMaps {
 			ss.ARFs.Add(lnm+"_"+nm, vt, mt, 0.01) // thr prevent weird artifacts

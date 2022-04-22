@@ -20,7 +20,6 @@ import (
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
 	"github.com/emer/empi/mpi"
-	"github.com/emer/etable/eplot"
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor"
 	"github.com/emer/etable/etview"
@@ -30,13 +29,10 @@ import (
 	"github.com/goki/gi/gist"
 	"github.com/goki/gi/giv"
 	"github.com/goki/ki/ki"
-	"github.com/goki/ki/kit"
 	"github.com/goki/mat32"
 	"log"
 	"math/rand"
 	"os"
-	"path/filepath"
-	"strings"
 )
 
 func main() {
@@ -135,12 +131,6 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Trace        *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
 	TraceView    *etview.TensorGrid          `desc:"view of the activity trace"`
 	WorldView    *etview.TensorGrid          `desc:"view of the world"`
-	TrnEpcPlot   *eplot.Plot2D               `view:"-" desc:"the training epoch plot"`
-	TrnTrlPlot   *eplot.Plot2D               `view:"-" desc:"the training trial plot"`
-	TstEpcPlot   *eplot.Plot2D               `view:"-" desc:"the testing epoch plot"`
-	TstTrlPlot   *eplot.Plot2D               `view:"-" desc:"the test-trial plot"`
-	TstCycPlot   *eplot.Plot2D               `view:"-" desc:"the test-cycle plot"`
-	RunPlot      *eplot.Plot2D               `view:"-" desc:"the run plot"`
 	TrnEpcFile   *os.File                    `view:"-" desc:"log file"`
 	TstEpcFile   *os.File                    `view:"-" desc:"log file"`
 	RunFile      *os.File                    `view:"-" desc:"log file"`
@@ -160,10 +150,6 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	AllDWts      []float32                   `view:"-" desc:"buffer of all dwt weight changes -- for mpi sharing"`
 	SumDWts      []float32                   `view:"-" desc:"buffer of MPI summed dwt weight changes"`
 }
-
-// this registers this Sim Type and gives it properties that e.g.,
-// prompt for filename for save methods.
-var KiT_Sim = kit.Types.AddType(&Sim{}, SimProps)
 
 // TheSim is the overall state for this simulation
 var TheSim Sim
@@ -193,18 +179,16 @@ func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 	ss.ARFLayers = []string{"MSTd", "cIPL", "PCC", "SMA"}
 	ss.SpikeRecLays = []string{"cIPL", "PCC", "SMA"}
-	ss.Defaults()
+
+	// Default values
+	ss.PctCortexMax = 0.9 // 0.5 before
+	ss.TestInterval = 50000
+
 	ss.NewPrjns()
 }
 
-// Defaults set default param values
-func (ss *Sim) Defaults() { // TODO(refactor): This shouldn't be a function
-	ss.PctCortexMax = 0.9 // 0.5 before
-	ss.TestInterval = 50000
-}
-
 // NewPrjns creates new projections
-func (ss *Sim) NewPrjns() { // TODO(refactor): I think this is good?
+func (ss *Sim) NewPrjns() {
 	ss.Prjn4x4Skp2 = prjn.NewPoolTile()
 	ss.Prjn4x4Skp2.Size.Set(4, 4)
 	ss.Prjn4x4Skp2.Skip.Set(2, 2)
@@ -237,21 +221,13 @@ func (ss *Sim) NewPrjns() { // TODO(refactor): I think this is good?
 // 		Configs
 
 // Config configures all the elements using the standard functions
-func (ss *Sim) Config() { // TODO(refactor): Remove a lot
+func (ss *Sim) Config() {
 	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
 }
 
 func (ss *Sim) ConfigEnv() {
-	if ss.MaxRuns == 0 { // allow user override // TODO(refactor): Remove, set defaults elsewhere
-		ss.MaxRuns = 1
-	}
-	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 200
-		ss.TestEpcs = 1000
-	}
-
-	ss.TrainEnv.Config(200) // 1000) // n trials per epoch // TODO(refactor): why doesn't this function do more?
+	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Run.Max = ss.MaxRuns
@@ -259,25 +235,6 @@ func (ss *Sim) ConfigEnv() {
 	ss.TrainEnv.Validate()
 
 	ss.ConfigRFMaps()
-}
-
-func (ss *Sim) ConfigRFMaps() { // TODO(refactor): environment file
-	ss.RFMaps = make(map[string]*etensor.Float32)
-	mt := &etensor.Float32{}
-	mt.CopyShapeFrom(ss.TrainEnv.World)
-	ss.RFMaps["Pos"] = mt
-
-	mt = &etensor.Float32{}
-	mt.SetShape([]int{len(ss.TrainEnv.Acts)}, nil, nil)
-	ss.RFMaps["Act"] = mt
-
-	mt = &etensor.Float32{}
-	mt.SetShape([]int{ss.TrainEnv.NRotAngles}, nil, nil)
-	ss.RFMaps["Ang"] = mt
-
-	mt = &etensor.Float32{}
-	mt.SetShape([]int{3}, nil, nil)
-	ss.RFMaps["Rot"] = mt
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
@@ -668,8 +625,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		smact.SetThread(3)
 	*/
 
-	net.Defaults()                           // TODO(refactor): why isn't all this in a function?
-	ss.SetParams("Network", ss.LogSetParams) // only set Network params
+	net.Defaults()                                                             // TODO(refactor): why isn't all this in a function?
+	SetParams("Network", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // only set Network params
 	err := net.Build()
 	if err != nil {
 		log.Println(err)
@@ -679,13 +636,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		sr := net.SizeReport()
 		mpi.Printf("%s", sr)
 	}
-	ss.InitWts(net)
-}
-
-// Initialize network weights including scales
-func (ss *Sim) InitWts(net *deep.Network) { // TODO(refactor): remove
 	net.InitWts()
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -698,7 +649,7 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	ss.ConfigEnv() // re-config env just in case a different set of patterns was
 	// selected or patterns have been modified etc
 	ss.StopNow = false
-	ss.SetParams("", ss.LogSetParams) // all sheets
+	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
 	ss.UpdateView(true)
 }
@@ -833,9 +784,6 @@ func (ss *Sim) ThetaCyc(train bool) {
 	if viewUpdt == etime.Phase || viewUpdt == etime.AlphaCycle || viewUpdt == etime.ThetaCycle {
 		ss.UpdateView(train)
 	}
-	if !ss.NoGui {
-		ss.TstCycPlot.GoUpdate() // make sure up-to-date at end
-	}
 }
 
 // TakeAction takes action for this step, using either decoded cortical
@@ -876,7 +824,7 @@ func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int {
 }
 
 // TrainTrial runs one trial of training using TrainEnv
-func (ss *Sim) TrainTrial() { // TODO(refactor): library code
+func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 	if ss.NeedsNewRun {
 		ss.NewRun()
 	}
@@ -895,7 +843,7 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): library code
 		}
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
-				ss.SaveWeights()
+				SaveWeights(ss.WeightsFileName(), ss.Net)
 			}
 			// done with training..
 			if ss.SaveARFs {
@@ -941,7 +889,7 @@ func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	ss.TrainEnv.Init(run)
 	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
-	ss.InitWts(ss.Net)
+	ss.Net.InitWts()
 	ss.InitStats()
 
 	ss.NeedsNewRun = false
@@ -975,88 +923,6 @@ func (ss *Sim) TrialStatsTRC(accum bool) { // TODO(refactor): looper stats?
 	ss.TrlCosDiff = acd / float64(len(ss.PulvLays))
 	if accum {
 		ss.SumCosDiff += ss.TrlCosDiff
-	}
-}
-
-// SetAFMetaData
-func (ss *Sim) SetAFMetaData(af etensor.Tensor) { // TODO(refactor): game gui related
-	af.SetMetaData("min", "0")
-	af.SetMetaData("colormap", "Viridis") // "JetMuted")
-	af.SetMetaData("grid-fill", "1")
-}
-
-// UpdtARFs updates position activation rf's
-func (ss *Sim) UpdtARFs() { // TODO(refactor): game gui
-	for nm, mt := range ss.RFMaps {
-		mt.SetZeros()
-		switch nm {
-		case "Pos":
-			mt.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, 1)
-		case "Act":
-			mt.Set1D(ss.TrainEnv.Act, 1)
-		case "Ang":
-			mt.Set1D(ss.TrainEnv.Angle/15, 1)
-		case "Rot":
-			mt.Set1D(1+ss.TrainEnv.RotAng/15, 1)
-		}
-	}
-
-	naf := len(ss.ARFLayers) * len(ss.RFMaps)
-	if len(ss.ARFs.RFs) != naf {
-		for _, lnm := range ss.ARFLayers {
-			ly := ss.Net.LayerByName(lnm)
-			if ly == nil {
-				continue
-			}
-			vt := ss.ValsTsr(lnm)
-			ly.UnitValsTensor(vt, "ActM")
-			for nm, mt := range ss.RFMaps {
-				af := ss.ARFs.AddRF(lnm+"_"+nm, vt, mt)
-				ss.SetAFMetaData(&af.NormRF)
-			}
-		}
-	}
-	for _, lnm := range ss.ARFLayers {
-		ly := ss.Net.LayerByName(lnm)
-		if ly == nil {
-			continue
-		}
-		vt := ss.ValsTsr(lnm)
-		ly.UnitValsTensor(vt, "ActM")
-		for nm, mt := range ss.RFMaps {
-			ss.ARFs.Add(lnm+"_"+nm, vt, mt, 0.01) // thr prevent weird artifacts
-		}
-	}
-}
-
-// SaveAllARFs saves all ARFs to files
-func (ss *Sim) SaveAllARFs() { // TODO(refactor): game gui
-	ss.ARFs.Avg()
-	ss.ARFs.Norm()
-	for _, paf := range ss.ARFs.RFs {
-		fnm := ss.LogFileName(paf.Name)
-		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
-	}
-}
-
-// OpenAllARFs open all ARFs from directory of given path
-func (ss *Sim) OpenAllARFs(path gi.FileName) { // TODO(refactor): game gui
-	ss.UpdtARFs()
-	ss.ARFs.Avg()
-	ss.ARFs.Norm()
-	ap := string(path)
-	if strings.HasSuffix(ap, ".tsv") {
-		ap, _ = filepath.Split(ap)
-	}
-	vp := ss.Win.Viewport
-	for _, paf := range ss.ARFs.RFs {
-		fnm := filepath.Join(ap, ss.LogFileName(paf.Name))
-		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(fnm), '\t')
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
-		}
 	}
 }
 
@@ -1159,14 +1025,6 @@ func (ss *Sim) Stopped() { // TODO(refactor): gui library
 	}
 }
 
-// SaveWeights saves the network weights -- when called with giv.CallMethod
-// it will auto-prompt for filename
-func (ss *Sim) SaveWeights() { // TODO(refactor): library code
-	fnm := ss.WeightsFileName()
-	fmt.Printf("Saving Weights to: %v\n", fnm)
-	ss.Net.SaveWtsJSON(gi.FileName(fnm))
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////
 // Testing
 
@@ -1218,76 +1076,6 @@ func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
 	ss.StopNow = false
 	ss.TestAll()
 	ss.Stopped()
-}
-
-/////////////////////////////////////////////////////////////////////////
-//   Params setting
-
-// ParamsName returns name of current set of parameters
-func (ss *Sim) ParamsName() string { // TODO(refactor): library code
-	if ss.ParamSet == "" {
-		return "Base"
-	}
-	return ss.ParamSet
-}
-
-// SetParams sets the params for "Base" and then current ParamSet.
-// If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
-// otherwise just the named sheet
-// if setMsg = true then we output a message for each param that was set.
-func (ss *Sim) SetParams(sheet string, setMsg bool) error { // TODO(refactor): Move to library, take in names as args
-	if sheet == "" {
-		// this is important for catching typos and ensuring that all sheets can be used
-		ss.Params.ValidateSheets([]string{"Network", "Sim"})
-	}
-	err := ss.SetParamsSet("Base", sheet, setMsg)
-	if ss.ParamSet != "" && ss.ParamSet != "Base" {
-		err = ss.SetParamsSet(ss.ParamSet, sheet, setMsg)
-	}
-	return err
-}
-
-// SetParamsSet sets the params for given params.Set name.
-// If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
-// otherwise just the named sheet
-// if setMsg = true then we output a message for each param that was set.
-func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error { // TODO(refactor): library, take in names as args
-	pset, err := ss.Params.SetByNameTry(setNm)
-	if err != nil {
-		return err
-	}
-	if sheet == "" || sheet == "Network" {
-		netp, ok := pset.Sheets["Network"]
-		if ok {
-			ss.Net.ApplyParams(netp, setMsg)
-		}
-	}
-
-	if sheet == "" || sheet == "Sim" {
-		simp, ok := pset.Sheets["Sim"]
-		if ok {
-			simp.Apply(ss, setMsg)
-		}
-	}
-	// note: if you have more complex environments with parameters, definitely add
-	// sheets for them, e.g., "TrainEnv", "TestEnv" etc
-	return err
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-// 		Logging
-
-// ValsTsr gets value tensor of given name, creating if not yet made
-func (ss *Sim) ValsTsr(name string) *etensor.Float32 { // TODO(refactor): library code
-	if ss.ValsTsrs == nil {
-		ss.ValsTsrs = make(map[string]*etensor.Float32)
-	}
-	tsr, ok := ss.ValsTsrs[name]
-	if !ok {
-		tsr = &etensor.Float32{}
-		ss.ValsTsrs[name] = tsr
-	}
-	return tsr
 }
 
 // ConfigSpikeRasts
@@ -1349,32 +1137,6 @@ func (ss *Sim) RecordSpikes(cyc int) { // TODO(refactor):  GUI code
 		sr := ss.SpikeRastTsr(lnm)
 		ss.SetSpikeRastCol(sr, tv, cyc)
 	}
-}
-
-// RunName returns a name for this run that combines Tag and Params -- add this to
-// any file names that are saved.
-func (ss *Sim) RunName() string { // TODO(refactor): library code
-	if ss.Tag != "" {
-		return ss.Tag + "_" + ss.ParamsName()
-	} else {
-		return ss.ParamsName()
-	}
-}
-
-// RunEpochName returns a string with the run and epoch numbers with leading zeros, suitable
-// for using in weights file names.  Uses 3, 5 digits for each.
-func (ss *Sim) RunEpochName(run, epc int) string { // TODO(refactor): library
-	return fmt.Sprintf("%03d_%05d", run, epc)
-}
-
-// WeightsFileName returns default current weights file name
-func (ss *Sim) WeightsFileName() string { // TODO(refactor): library
-	return ss.Net.Nm + "_" + ss.RunName() + "_" + ss.RunEpochName(ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur) + ".wts.gz"
-}
-
-// LogFileName returns default log file name
-func (ss *Sim) LogFileName(lognm string) string { // TODO(refactor): library
-	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
 }
 
 //////////////////////////////////////////////
@@ -1829,16 +1591,6 @@ func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of 
 	})
 
 	tbar.AddSeparator("log")
-
-	tbar.AddAction(gi.ActOpts{Label: "Reset RunLog", Icon: "reset", Tooltip: "Reset the accumulated log of all Runs, which are tagged with the ParamSet used"}, win.This(),
-		func(recv, send ki.Ki, sig int64, data interface{}) {
-			ss.RunPlot.Update()
-		})
-
-	tbar.AddAction(gi.ActOpts{Label: "Reset TrlLog", Icon: "reset", Tooltip: "Reset the accumulated trial log"}, win.This(),
-		func(recv, send ki.Ki, sig int64, data interface{}) {
-			ss.TrnTrlPlot.Update()
-		})
 
 	tbar.AddSeparator("misc")
 

@@ -5,7 +5,10 @@ import (
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/env"
+	"github.com/emer/emergent/params"
 	"github.com/emer/empi/mpi"
+	"github.com/emer/etable/etensor"
+	"github.com/goki/gi/gi"
 	"log"
 	"time"
 )
@@ -53,6 +56,14 @@ func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TO
 	}
 }
 
+// SaveWeights saves the network weights -- when called with giv.CallMethod
+// it will auto-prompt for filename
+func SaveWeights(fileName string, net *deep.Network) { // TODO(refactor): library code
+	fnm := fileName
+	fmt.Printf("Saving Weights to: %v\n", fnm)
+	net.SaveWtsJSON(gi.FileName(fnm))
+}
+
 ////////////////////////////////////////////////////////////////////
 //  MPI code
 
@@ -98,4 +109,102 @@ func MPIWtFmDWt(comm *mpi.Comm, net *deep.Network, useMPI bool, allWeightChanges
 		net.SetDWts(*sumWeights, mpi.WorldSize())
 	}
 	net.WtFmDWt(&time)
+}
+
+/////////////////////////////////////////////////////////////////////////
+//   Params setting
+
+// ParamsName returns name of current set of parameters
+func ParamsName(paramset string) string { // TODO(refactor): library code
+	if paramset == "" {
+		return "Base"
+	}
+	return paramset
+}
+
+// TODO(refactor): Fix "Network" and "Sim" as arguments below
+
+// SetParams sets the params for "Base" and then current ParamSet.
+// If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
+// otherwise just the named sheet
+// if setMsg = true then we output a message for each param that was set.
+func SetParams(sheet string, setMsg bool, net *deep.Network, params *params.Sets, paramName string, ss interface{}) error { // TODO(refactor): Move to library, take in names as args
+	if sheet == "" {
+		// this is important for catching typos and ensuring that all sheets can be used
+		params.ValidateSheets([]string{"Network", "Sim"})
+	}
+	err := SetParamsSet("Base", sheet, setMsg, net, params, ss)
+	if paramName != "" && paramName != "Base" {
+		err = SetParamsSet(paramName, sheet, setMsg, net, params, ss)
+	}
+	return err
+}
+
+// SetParamsSet sets the params for given params.Set name.
+// If sheet is empty, then it applies all avail sheets (e.g., Network, Sim)
+// otherwise just the named sheet
+// if setMsg = true then we output a message for each param that was set.
+func SetParamsSet(setNm string, sheet string, setMsg bool, net *deep.Network, params *params.Sets, ss interface{}) error { // TODO(refactor): library, take in names as args
+	pset, err := params.SetByNameTry(setNm)
+	if err != nil {
+		return err
+	}
+	if sheet == "" || sheet == "Network" {
+		netp, ok := pset.Sheets["Network"]
+		if ok {
+			net.ApplyParams(netp, setMsg)
+		}
+	}
+
+	if sheet == "" || sheet == "Sim" {
+		simp, ok := pset.Sheets["Sim"]
+		if ok {
+			simp.Apply(ss, setMsg)
+		}
+	}
+	// note: if you have more complex environments with parameters, definitely add
+	// sheets for them, e.g., "TrainEnv", "TestEnv" etc
+	return err
+}
+
+// RunName returns a name for this run that combines Tag and Params -- add this to
+// any file names that are saved.
+func (ss *Sim) RunName() string { // TODO(refactor): library code
+	if ss.Tag != "" {
+		return ss.Tag + "_" + ParamsName(ss.ParamSet)
+	} else {
+		return ParamsName(ss.ParamSet)
+	}
+}
+
+// RunEpochName returns a string with the run and epoch numbers with leading zeros, suitable
+// for using in weights file names.  Uses 3, 5 digits for each.
+func (ss *Sim) RunEpochName(run, epc int) string { // TODO(refactor): library
+	return fmt.Sprintf("%03d_%05d", run, epc)
+}
+
+// WeightsFileName returns default current weights file name
+func (ss *Sim) WeightsFileName() string { // TODO(refactor): library
+	return ss.Net.Nm + "_" + ss.RunName() + "_" + ss.RunEpochName(ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur) + ".wts.gz"
+}
+
+// LogFileName returns default log file name
+func (ss *Sim) LogFileName(lognm string) string { // TODO(refactor): library
+	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////
+// 		Logging
+
+// ValsTsr gets value tensor of given name, creating if not yet made
+func (ss *Sim) ValsTsr(name string) *etensor.Float32 { // TODO(refactor): library code
+	if ss.ValsTsrs == nil {
+		ss.ValsTsrs = make(map[string]*etensor.Float32)
+	}
+	tsr, ok := ss.ValsTsrs[name]
+	if !ok {
+		tsr = &etensor.Float32{}
+		ss.ValsTsrs[name] = tsr
+	}
+	return tsr
 }

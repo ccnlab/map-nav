@@ -8,13 +8,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
-	"math/rand"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
-
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
@@ -39,6 +32,11 @@ import (
 	"github.com/goki/ki/ki"
 	"github.com/goki/ki/kit"
 	"github.com/goki/mat32"
+	"log"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 func main() {
@@ -687,20 +685,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 // Initialize network weights including scales
 func (ss *Sim) InitWts(net *deep.Network) { // TODO(refactor): remove
 	net.InitWts()
-	// net.InitTopoSWts() //  sets all wt scales
 
-	// ss.ToggleLaysOff(true)
-}
-
-func (ss *Sim) ToggleLaysOff(off bool) { // TODO(refactor): move to library
-	for _, lnm := range ss.InitOffNms {
-		lyi := ss.Net.LayerByName(lnm)
-		if lyi == nil {
-			fmt.Printf("layer not found: %s\n", lnm)
-			continue
-		}
-		lyi.SetOff(off)
-	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -716,12 +701,6 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	ss.SetParams("", ss.LogSetParams) // all sheets
 	ss.NewRun()
 	ss.UpdateView(true)
-}
-
-// NewRndSeed gets a new random seed based on current time -- otherwise uses
-// the same random seed for every run
-func (ss *Sim) NewRndSeed() { // TODO(refactor): to library
-	ss.RndSeed = time.Now().UnixNano()
 }
 
 // Counters returns a string of the current counter state
@@ -1885,7 +1864,7 @@ func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of 
 
 	tbar.AddAction(gi.ActOpts{Label: "New Seed", Icon: "new", Tooltip: "Generate a new initial random seed to get different results.  By default, Init re-establishes the same initial seed every time."}, win.This(),
 		func(recv, send ki.Ki, sig int64, data interface{}) {
-			ss.NewRndSeed()
+			NewRndSeed(&ss.RndSeed)
 		})
 
 	tbar.AddAction(gi.ActOpts{Label: "README", Icon: "file-markdown", Tooltip: "Opens your browser on the README file that contains instructions for how to run this model."}, win.This(),

@@ -61,9 +61,6 @@ func guirun() { // TODO(refactor): GUI library
 	win.StartEventLoop()
 }
 
-// LogPrec is precision for saving float values in logs
-const LogPrec = 4 // TODO(refactor): Logs library
-
 // see params_def.go for default params
 
 // Sim encapsulates the entire simulation model, and we define all the
@@ -76,17 +73,8 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
 	ARFs             actrf.RFs                     `view:"no-inline" desc:"activation-based receptive fields"`
-	TrnEpcLog        *etable.Table                 `view:"no-inline" desc:"training epoch-level log data"`
-	TrnTrlLog        *etable.Table                 `view:"no-inline" desc:"training trial-level log data"`
-	TrnTrlRepLog     *etable.Table                 `view:"no-inline" desc:"training trial-level reps log data"`
-	TrnTrlRepLogAll  *etable.Table                 `view:"no-inline" desc:"training trial-level reps log data"`
 	TrnErrStats      *etable.Table                 `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TrnAggStats      *etable.Table                 `view:"no-inline" desc:"stats on all train trials"`
-	TstEpcLog        *etable.Table                 `view:"no-inline" desc:"testing epoch-level log data"`
-	TstTrlLog        *etable.Table                 `view:"no-inline" desc:"testing trial-level log data"`
-	TstErrLog        *etable.Table                 `view:"no-inline" desc:"log of all test trials where errors were made"`
-	TstCycLog        *etable.Table                 `view:"no-inline" desc:"testing cycle-level log data"`
-	RunLog           *etable.Table                 `view:"no-inline" desc:"summary log of each run"`
 	RunStats         *etable.Table                 `view:"no-inline" desc:"aggregate stats on all runs"`
 	MinusCycles      int                           `desc:"number of minus-phase cycles"`
 	PlusCycles       int                           `desc:"number of plus-phase cycles"`
@@ -185,14 +173,7 @@ var TheSim Sim
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.Net = &deep.Network{}
-	ss.TrnEpcLog = &etable.Table{}
-	ss.TrnTrlLog = &etable.Table{}
-	ss.TrnTrlRepLog = &etable.Table{}
-	ss.TrnTrlRepLogAll = &etable.Table{}
-	ss.TstEpcLog = &etable.Table{}
-	ss.TstTrlLog = &etable.Table{}
-	ss.TstCycLog = &etable.Table{}
-	ss.RunLog = &etable.Table{}
+
 	ss.RunStats = &etable.Table{}
 
 	ss.Time.Defaults()
@@ -1005,8 +986,7 @@ func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	ss.Time.Reset()
 	ss.InitWts(ss.Net)
 	ss.InitStats()
-	ss.TrnEpcLog.SetNumRows(0)
-	ss.TstEpcLog.SetNumRows(0)
+
 	ss.NeedsNewRun = false
 }
 
@@ -1893,13 +1873,11 @@ func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of 
 
 	tbar.AddAction(gi.ActOpts{Label: "Reset RunLog", Icon: "reset", Tooltip: "Reset the accumulated log of all Runs, which are tagged with the ParamSet used"}, win.This(),
 		func(recv, send ki.Ki, sig int64, data interface{}) {
-			ss.RunLog.SetNumRows(0)
 			ss.RunPlot.Update()
 		})
 
 	tbar.AddAction(gi.ActOpts{Label: "Reset TrlLog", Icon: "reset", Tooltip: "Reset the accumulated trial log"}, win.This(),
 		func(recv, send ki.Ki, sig int64, data interface{}) {
-			ss.TrnTrlLog.SetNumRows(0)
 			ss.TrnTrlPlot.Update()
 		})
 

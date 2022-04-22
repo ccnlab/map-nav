@@ -6,11 +6,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
+	"github.com/emer/emergent/ecmd"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
@@ -36,15 +36,12 @@ import (
 )
 
 func main() {
-	TheSim.New()          // note: not running Config here -- done in CmdArgs for mpi / nogui
-	if len(os.Args) > 1 { // TODO(refactor): This if/else should be a function
-		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
-	} else {
-		TheSim.Config()      // for GUI case, config then run..
-		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
-			guirun()
-		})
-	}
+	TheSim.New() // note: not running Config here -- done in CmdArgs for mpi / nogui
+
+	TheSim.Config()      // for GUI case, config then run..
+	gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
+		guirun()
+	})
 }
 
 func guirun() { // TODO(refactor): GUI library
@@ -63,7 +60,9 @@ func guirun() { // TODO(refactor): GUI library
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
-	Net              *deep.Network                 `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Net  *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Args ecmd.Args     `view:"no-inline" desc:"command line args"`
+
 	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
 	ARFs             actrf.RFs                     `view:"no-inline" desc:"activation-based receptive fields"`
@@ -1653,107 +1652,4 @@ func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of 
 
 	win.MainMenuUpdated()
 	return win
-}
-
-// These props register Save methods so they can be used
-var SimProps = ki.Props{ // TODO(refactor): ???
-	"CallMethods": ki.PropSlice{
-		{"SaveWeights", ki.Props{
-			"desc": "save network weights to file",
-			"icon": "file-save",
-			"Args": ki.PropSlice{
-				{"File Name", ki.Props{
-					"ext": ".wts,.wts.gz",
-				}},
-			},
-		}},
-		{"OpenAllARFs", ki.Props{
-			"desc": "open all Activation-based Receptive Fields from selected path (can select a file too)",
-			"icon": "file-open",
-			"Args": ki.PropSlice{
-				{"Path", ki.Props{
-					"ext": ".tsv",
-				}},
-			},
-		}},
-	},
-}
-
-func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
-	ss.NoGui = true
-	var nogui bool
-	var saveEpcLog bool
-	var saveRunLog bool
-	var note string
-	flag.StringVar(&ss.ParamSet, "params", "", "ParamSet name to use -- must be valid name as listed in compiled-in params or loaded params")
-	flag.StringVar(&ss.Tag, "tag", "", "extra tag to add to file names saved from this run")
-	flag.StringVar(&note, "note", "", "user note -- describe the run params etc")
-	flag.IntVar(&ss.MaxRuns, "runs", 1, "number of runs to do (note that MaxEpcs is in paramset)")
-	flag.BoolVar(&ss.LogSetParams, "setparams", false, "if true, print a record of each parameter that is set")
-	flag.BoolVar(&ss.SaveWts, "wts", false, "if true, save final weights after each run")
-	flag.BoolVar(&ss.SaveARFs, "arfs", false, "if true, save final arfs after each run")
-	flag.BoolVar(&saveEpcLog, "epclog", true, "if true, save train epoch log to file")
-	flag.BoolVar(&saveRunLog, "runlog", false, "if true, save run epoch log to file")
-	flag.BoolVar(&nogui, "nogui", true, "if not passing any other args and want to run nogui, use nogui")
-	flag.BoolVar(&ss.UseMPI, "mpi", false, "if set, use MPI for distributed computation")
-	flag.Parse()
-	ss.Init()
-
-	if ss.UseMPI {
-		MPIInit(&ss.UseMPI)
-	}
-
-	// key for Config and Init to be after MPIInit
-	ss.Config()
-	ss.Init()
-
-	if note != "" {
-		mpi.Printf("note: %s\n", note)
-	}
-	if ss.ParamSet != "" {
-		mpi.Printf("Using ParamSet: %s\n", ss.ParamSet)
-	}
-
-	if ss.ParamSet != "" {
-		fmt.Printf("Using ParamSet: %s\n", ss.ParamSet)
-	}
-
-	if saveEpcLog { // TODO(refactor): Delete logs stuff
-		var err error
-		fnm := LogFileName(ss.Net.Nm, "trn_epc", ss.Tag, ss.ParamSet)
-		ss.TrnEpcFile, err = os.Create(fnm)
-		if err != nil {
-			log.Println(err)
-			ss.TrnEpcFile = nil
-		} else {
-			fmt.Printf("Saving training epoch log to: %v\n", fnm)
-			defer ss.TrnEpcFile.Close()
-		}
-		fnm = LogFileName(ss.Net.Nm, "tst_epc", ss.Tag, ss.ParamSet)
-		ss.TstEpcFile, err = os.Create(fnm)
-		if err != nil {
-			log.Println(err)
-			ss.TrnEpcFile = nil
-		} else {
-			fmt.Printf("Saving testing epoch log to: %v\n", fnm)
-			defer ss.TstEpcFile.Close()
-		}
-	}
-	if saveRunLog {
-		var err error
-		fnm := LogFileName(ss.Net.Nm, "run", ss.Tag, ss.ParamSet)
-		ss.RunFile, err = os.Create(fnm)
-		if err != nil {
-			log.Println(err)
-			ss.RunFile = nil
-		} else {
-			fmt.Printf("Saving run log to: %v\n", fnm)
-			defer ss.RunFile.Close()
-		}
-	}
-	if ss.SaveWts {
-		fmt.Printf("Saving final weights per run\n")
-	}
-	fmt.Printf("Running %d Runs\n", ss.MaxRuns)
-	ss.Train() // TODO(refactor): Remove this lol
 }

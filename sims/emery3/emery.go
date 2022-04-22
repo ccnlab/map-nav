@@ -1991,7 +1991,7 @@ func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 	ss.Init()
 
 	if ss.UseMPI {
-		ss.MPIInit()
+		MPIInit(&ss.UseMPI)
 	}
 
 	// key for Config and Init to be after MPIInit
@@ -2047,48 +2047,4 @@ func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 	}
 	fmt.Printf("Running %d Runs\n", ss.MaxRuns)
 	ss.Train() // TODO(refactor): Remove this lol
-}
-
-////////////////////////////////////////////////////////////////////
-//  MPI code
-
-// MPIInit initializes MPI
-func (ss *Sim) MPIInit() { // TODO(refactor): library code
-	mpi.Init()
-	var err error
-	ss.Comm, err = mpi.NewComm(nil) // use all procs
-	if err != nil {
-		log.Println(err)
-		ss.UseMPI = false
-	} else {
-		mpi.Printf("MPI running on %d procs\n", mpi.WorldSize())
-	}
-}
-
-// MPIFinalize finalizes MPI
-func (ss *Sim) MPIFinalize() { // TODO(refactor): library code
-	if ss.UseMPI {
-		mpi.Finalize()
-	}
-}
-
-// CollectDWts collects the weight changes from all synapses into AllDWts
-func (ss *Sim) CollectDWts(net *axon.Network) { // TODO(refactor): axon library code
-	net.CollectDWts(&ss.AllDWts)
-}
-
-// MPIWtFmDWt updates weights from weight changes, using MPI to integrate
-// DWt changes across parallel nodes, each of which are learning on different
-// sequences of inputs.
-func (ss *Sim) MPIWtFmDWt() { // TODO(refactor): axon library code
-	if ss.UseMPI {
-		ss.CollectDWts(&ss.Net.Network)
-		ndw := len(ss.AllDWts)
-		if len(ss.SumDWts) != ndw {
-			ss.SumDWts = make([]float32, ndw)
-		}
-		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
-		ss.Net.SetDWts(ss.SumDWts, mpi.WorldSize())
-	}
-	ss.Net.WtFmDWt(&ss.Time)
 }

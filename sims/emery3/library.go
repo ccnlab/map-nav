@@ -209,3 +209,21 @@ func ValsTsr(tensorDictionary *map[string]*etensor.Float32, name string) *etenso
 	}
 	return tsr
 }
+
+// HogDead computes the proportion of units in given layer name with ActAvg over hog thr
+// and under dead threshold
+func HogDead(net *deep.Network, lnm string) (hog, dead float64) { // TODO(refactor): library stats code
+	ly := net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
+	n := len(ly.Neurons)
+	for ni := range ly.Neurons {
+		nrn := &ly.Neurons[ni]
+		if nrn.ActAvg > 0.3 {
+			hog += 1
+		} else if nrn.ActAvg < 0.01 {
+			dead += 1
+		}
+	}
+	hog /= float64(n)
+	dead /= float64(n)
+	return
+}

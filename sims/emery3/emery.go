@@ -40,7 +40,7 @@ func main() {
 	if len(os.Args) > 1 { // TODO(refactor): This if/else should be a function
 		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
 	} else {
-		TheSim.Config() // for GUI case, config then run..
+		TheSim.Config()      // for GUI case, config then run..
 		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
 			guirun()
 		})
@@ -1192,30 +1192,6 @@ func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) { // TODO(re
 		}
 	}
 }
-
-//////////////////////////////////////////////
-//  TrnEpcLog
-
-// HogDead computes the proportion of units in given layer name with ActAvg over hog thr
-// and under dead threshold
-func (ss *Sim) HogDead(lnm string) (hog, dead float64) { // TODO(refactor): library stats code
-	ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
-	n := len(ly.Neurons)
-	for ni := range ly.Neurons {
-		nrn := &ly.Neurons[ni]
-		if nrn.ActAvg > 0.3 {
-			hog += 1
-		} else if nrn.ActAvg < 0.01 {
-			dead += 1
-		}
-	}
-	hog /= float64(n)
-	dead /= float64(n)
-	return
-}
-
-//////////////////////////////////////////////
-//  TstTrlLog
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Gui

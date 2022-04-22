@@ -1,11 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"github.com/emer/etable/etensor"
-	"github.com/emer/etable/etview"
 	"github.com/goki/gi/gi"
-	"github.com/goki/gi/giv"
 	"path/filepath"
 	"strings"
 )
@@ -84,10 +81,10 @@ func (ss *Sim) UpdtARFs() { // TODO(refactor): game gui
 func (ss *Sim) SaveAllARFs() { // TODO(refactor): game gui
 	ss.ARFs.Avg()
 	ss.ARFs.Norm()
-	for _, paf := range ss.ARFs.RFs {
-		fnm := ss.LogFileName(paf.Name)
-		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
-	}
+	//for _, paf := range ss.ARFs.RFs { // TODO Deleted logging
+	//	fnm := ss.LogFileName(paf.Name)
+	//	etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	//}
 }
 
 // OpenAllARFs open all ARFs from directory of given path
@@ -99,14 +96,14 @@ func (ss *Sim) OpenAllARFs(path gi.FileName) { // TODO(refactor): game gui
 	if strings.HasSuffix(ap, ".tsv") {
 		ap, _ = filepath.Split(ap)
 	}
-	vp := ss.Win.Viewport
-	for _, paf := range ss.ARFs.RFs {
-		fnm := filepath.Join(ap, ss.LogFileName(paf.Name))
-		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(fnm), '\t')
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
-		}
-	}
+	//vp := ss.Win.Viewport // TODO Deleted logging
+	//for _, paf := range ss.ARFs.RFs {
+	//	fnm := filepath.Join(ap, ss.LogFileName(paf.Name))
+	//	err := etensor.OpenCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	//	if err != nil {
+	//		fmt.Println(err)
+	//	} else {
+	//		etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+	//	}
+	//}
 }

@@ -169,28 +169,28 @@ func SetParamsSet(setNm string, sheet string, setMsg bool, net *deep.Network, pa
 
 // RunName returns a name for this run that combines Tag and Params -- add this to
 // any file names that are saved.
-func (ss *Sim) RunName() string { // TODO(refactor): library code
-	if ss.Tag != "" {
-		return ss.Tag + "_" + ParamsName(ss.ParamSet)
+func RunName(tag string, paramName string) string { // TODO(refactor): library code
+	if tag != "" {
+		return tag + "_" + ParamsName(paramName)
 	} else {
-		return ParamsName(ss.ParamSet)
+		return ParamsName(paramName)
 	}
 }
 
 // RunEpochName returns a string with the run and epoch numbers with leading zeros, suitable
 // for using in weights file names.  Uses 3, 5 digits for each.
-func (ss *Sim) RunEpochName(run, epc int) string { // TODO(refactor): library
+func RunEpochName(run, epc int) string { // TODO(refactor): library
 	return fmt.Sprintf("%03d_%05d", run, epc)
 }
 
 // WeightsFileName returns default current weights file name
-func (ss *Sim) WeightsFileName() string { // TODO(refactor): library
-	return ss.Net.Nm + "_" + ss.RunName() + "_" + ss.RunEpochName(ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur) + ".wts.gz"
+func WeightsFileName(netName, tag, paramName string, run, epc int) string { // TODO(refactor): library
+	return netName + "_" + RunName(tag, paramName) + "_" + RunEpochName(run, epc) + ".wts.gz"
 }
 
 // LogFileName returns default log file name
-func (ss *Sim) LogFileName(lognm string) string { // TODO(refactor): library
-	return ss.Net.Nm + "_" + ss.RunName() + "_" + lognm + ".tsv"
+func LogFileName(netName, lognm, tag, paramName string) string { // TODO(refactor): library
+	return netName + "_" + RunName(tag, paramName) + "_" + lognm + ".tsv"
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////

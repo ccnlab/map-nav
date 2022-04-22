@@ -843,7 +843,7 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 		}
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
-				SaveWeights(ss.WeightsFileName(), ss.Net)
+				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur), ss.Net)
 			}
 			// done with training..
 			if ss.SaveARFs {
@@ -1741,9 +1741,9 @@ func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 		fmt.Printf("Using ParamSet: %s\n", ss.ParamSet)
 	}
 
-	if saveEpcLog {
+	if saveEpcLog { // TODO(refactor): Delete logs stuff
 		var err error
-		fnm := ss.LogFileName("trn_epc")
+		fnm := LogFileName(ss.Net.Nm, "trn_epc", ss.Tag, ss.ParamSet)
 		ss.TrnEpcFile, err = os.Create(fnm)
 		if err != nil {
 			log.Println(err)
@@ -1752,7 +1752,7 @@ func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 			fmt.Printf("Saving training epoch log to: %v\n", fnm)
 			defer ss.TrnEpcFile.Close()
 		}
-		fnm = ss.LogFileName("tst_epc")
+		fnm = LogFileName(ss.Net.Nm, "tst_epc", ss.Tag, ss.ParamSet)
 		ss.TstEpcFile, err = os.Create(fnm)
 		if err != nil {
 			log.Println(err)
@@ -1764,7 +1764,7 @@ func (ss *Sim) CmdArgs() { // TODO(refactor): use ecmd library
 	}
 	if saveRunLog {
 		var err error
-		fnm := ss.LogFileName("run")
+		fnm := LogFileName(ss.Net.Nm, "run", ss.Tag, ss.ParamSet)
 		ss.RunFile, err = os.Create(fnm)
 		if err != nil {
 			log.Println(err)

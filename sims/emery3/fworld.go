@@ -860,6 +860,7 @@ func (ev *FWorld) Step() bool {
 }
 
 func (ev *FWorld) Action(action string, nop etensor.Tensor) {
+	fmt.Println("action: " + action)
 	a, ok := ev.ActMap[action]
 	if !ok {
 		fmt.Printf("Action not recognized: %s\n", action)

@@ -10,7 +10,6 @@ import (
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
-	"github.com/emer/emergent/ecmd"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
@@ -25,31 +24,16 @@ import (
 	"github.com/emer/etable/etview"
 	"github.com/emer/etable/pca"
 	"github.com/goki/gi/gi"
-	"github.com/goki/gi/gimain"
-	"github.com/goki/gi/gist"
-	"github.com/goki/gi/giv"
-	"github.com/goki/ki/ki"
-	"github.com/goki/mat32"
 	"log"
 	"math/rand"
 	"os"
 )
 
 func main() {
-	TheSim.New() // note: not running Config here -- done in CmdArgs for mpi / nogui
-
-	TheSim.Config()      // for GUI case, config then run..
-	gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
-		guirun()
-	})
-}
-
-func guirun() { // TODO(refactor): GUI library
+	TheSim.New()    // note: not running Config here -- done in CmdArgs for mpi / nogui
+	TheSim.Config() // for GUI case, config then run..
 	TheSim.Init()
-	win := TheSim.ConfigGui()
-	fwin := TheSim.ConfigWorldGui()
-	fwin.GoStartEventLoop()
-	win.StartEventLoop()
+	TheSim.Train()
 }
 
 // see params_def.go for default params
@@ -60,8 +44,7 @@ func guirun() { // TODO(refactor): GUI library
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
-	Net  *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	Args ecmd.Args     `view:"no-inline" desc:"command line args"`
+	Net *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 
 	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
@@ -650,7 +633,6 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	ss.StopNow = false
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
-	ss.UpdateView(true)
 }
 
 // Counters returns a string of the current counter state
@@ -664,34 +646,6 @@ func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
 	// }
 }
 
-func (ss *Sim) UpdateView(train bool) { // TODO(refactor):  GUI
-	if ss.NetView != nil && ss.NetView.IsVisible() {
-		ss.NetView.Record(ss.Counters(train))
-		// note: essential to use Go version of update when called from another goroutine
-		ss.NetView.GoUpdate() // note: using counters is significantly slower..
-	}
-	ss.UpdateWorldGui() // TODO(refactor): this is the environment GUI
-}
-
-func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) { // TODO(refactor): GUI library
-	switch viewUpdt {
-	case etime.Cycle:
-		ss.UpdateView(train)
-	case etime.FastSpike:
-		if ss.Time.Cycle%10 == 0 {
-			ss.UpdateView(train)
-		}
-	case etime.GammaCycle:
-		if ss.Time.Cycle%25 == 0 {
-			ss.UpdateView(train)
-		}
-	case etime.AlphaCycle:
-		if ss.Time.Cycle%100 == 0 {
-			ss.UpdateView(train)
-		}
-	}
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // 	    Running the Network, starting bottom-up.. // TODO(refactor): All this goes to looper library code
 
@@ -702,10 +656,9 @@ func (ss *Sim) UpdateViewTime(train bool, viewUpdt etime.Times) { // TODO(refact
 // Handles netview updating within scope of ThetaCycle
 func (ss *Sim) ThetaCyc(train bool) {
 	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
-	viewUpdt := ss.TrainUpdt
+
 	mode := etime.Train.String()
 	if !train {
-		viewUpdt = ss.TestUpdt
 		mode = etime.Test.String()
 	}
 
@@ -730,9 +683,6 @@ func (ss *Sim) ThetaCyc(train bool) {
 	for cyc := 0; cyc < minusCyc; cyc++ { // do the minus phase
 		ss.Net.Cycle(&ss.Time)
 
-		if !ss.NoGui {
-			ss.RecordSpikes(ss.Time.Cycle)
-		}
 		ss.Time.CycleInc()
 		switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
 		case 75:
@@ -750,29 +700,20 @@ func (ss *Sim) ThetaCyc(train bool) {
 		if cyc == minusCyc-1 { // do before view update
 			ss.Net.MinusPhase(&ss.Time)
 		}
-		if ss.ViewOn {
-			ss.UpdateViewTime(train, viewUpdt)
-		}
+
 	}
 	ss.Time.NewPhase(true)
 	ss.TakeAction(ss.Net, ev) // TODO(refactor): this seems different
-	if viewUpdt == etime.Phase {
-		ss.UpdateView(train)
-	}
+
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
 		ss.Net.Cycle(&ss.Time)
 
-		if !ss.NoGui {
-			ss.RecordSpikes(ss.Time.Cycle)
-		}
 		ss.Time.CycleInc()
 
 		if cyc == plusCyc-1 { // do before view update
 			ss.Net.PlusPhase(&ss.Time)
 		}
-		if ss.ViewOn {
-			ss.UpdateViewTime(train, viewUpdt)
-		}
+
 	}
 
 	ss.TrialStats(train) // need stats for lrmod
@@ -780,9 +721,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 	if train {
 		ss.Net.DWt(&ss.Time)
 	}
-	if viewUpdt == etime.Phase || viewUpdt == etime.AlphaCycle || viewUpdt == etime.ThetaCycle {
-		ss.UpdateView(train)
-	}
+
 }
 
 // TakeAction takes action for this step, using either decoded cortical
@@ -837,9 +776,7 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 
 		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > etime.ThetaCycle {
-			ss.UpdateView(true)
-		}
+
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
 				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur), ss.Net)
@@ -951,7 +888,7 @@ func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
 			break
 		}
 	}
-	ss.Stopped()
+
 }
 
 // TrainRun runs training trials for remainder of run
@@ -964,7 +901,7 @@ func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
 			break
 		}
 	}
-	ss.Stopped()
+
 }
 
 // EpochSched implements the learning rate schedule etc.
@@ -1002,26 +939,6 @@ func (ss *Sim) Train() { // TODO(refactor): delete, looper
 			break
 		}
 	}
-	ss.Stopped()
-}
-
-// Stop tells the sim to stop running
-func (ss *Sim) Stop() { // TODO(refactor): gui library
-	ss.StopNow = true
-}
-
-// Stopped is called when a run method stops running -- updates the IsRunning flag and toolbar
-func (ss *Sim) Stopped() { // TODO(refactor): gui library
-	ss.IsRunning = false
-	if ss.Win != nil {
-		vp := ss.Win.WinViewport2D()
-		vp.BlockUpdates()
-		if ss.ToolBar != nil {
-			ss.ToolBar.UpdateActions()
-		}
-		vp.UnblockUpdates()
-		vp.SetNeedsFullRender()
-	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -1040,9 +957,7 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 
 		ss.EpochSched(epc)
 		ss.TrainEnv.Event.Cur = 0
-		if ss.ViewOn && ss.TrainUpdt > etime.ThetaCycle {
-			ss.UpdateView(true)
-		}
+
 		if epc >= ss.TestEpcs {
 			ss.StopNow = true
 			return
@@ -1067,76 +982,14 @@ func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
 			break
 		}
 	}
-	ss.Stopped()
+
 }
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
 func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
 	ss.StopNow = false
 	ss.TestAll()
-	ss.Stopped()
-}
 
-// ConfigSpikeRasts
-func (ss *Sim) ConfigSpikeRasts() { // TODO(refactor): GUI library
-	ncy := ss.MinusCycles + ss.PlusCycles
-	for _, lnm := range ss.SpikeRecLays {
-		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
-		sr := ss.SpikeRastTsr(lnm)
-		sr.SetShape([]int{ly.Shp.Len(), ncy}, nil, []string{"Nrn", "Cyc"})
-	}
-}
-
-// SpikeRastTsr gets spike raster tensor of given name, creating if not yet made
-func (ss *Sim) SpikeRastTsr(name string) *etensor.Float32 { // TODO(refactor): GUI library
-	if ss.SpikeRasters == nil {
-		ss.SpikeRasters = make(map[string]*etensor.Float32)
-	}
-	tsr, ok := ss.SpikeRasters[name]
-	if !ok {
-		tsr = &etensor.Float32{}
-		ss.SpikeRasters[name] = tsr
-	}
-	return tsr
-}
-
-// SpikeRastGrid gets spike raster grid of given name, creating if not yet made
-func (ss *Sim) SpikeRastGrid(name string) *etview.TensorGrid { // TODO(refactor): GUI library
-	if ss.SpikeRastGrids == nil {
-		ss.SpikeRastGrids = make(map[string]*etview.TensorGrid)
-	}
-	tsr, ok := ss.SpikeRastGrids[name]
-	if !ok {
-		tsr = &etview.TensorGrid{}
-		ss.SpikeRastGrids[name] = tsr
-	}
-	return tsr
-}
-
-// SetSpikeRastCol sets column of given spike raster from data
-func (ss *Sim) SetSpikeRastCol(sr, vl *etensor.Float32, col int) { // TODO(refactor): GUI code
-	for ni, v := range vl.Values {
-		sr.Set([]int{ni, col}, v)
-	}
-}
-
-// ConfigSpikeGrid configures the spike grid
-func (ss *Sim) ConfigSpikeGrid(tg *etview.TensorGrid, sr *etensor.Float32) { // TODO(refactor): GUI code
-	tg.SetStretchMax()
-	sr.SetMetaData("grid-fill", "1")
-	tg.SetTensor(sr)
-}
-
-// RecordSpikes
-func (ss *Sim) RecordSpikes(cyc int) { // TODO(refactor):  GUI code
-	for _, lnm := range ss.SpikeRecLays {
-		ly := ss.Net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
-		tv := ValsTsr(&ss.ValsTsrs, lnm)
-
-		ly.UnitValsTensor(tv, "Spike")
-		sr := ss.SpikeRastTsr(lnm)
-		ss.SetSpikeRastCol(sr, tv, cyc)
-	}
 }
 
 //////////////////////////////////////////////
@@ -1190,466 +1043,4 @@ func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) { // TODO(re
 			ti++
 		}
 	}
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-// 		Gui
-
-func (ss *Sim) ConfigNetView(nv *netview.NetView) { // TODO(refactor): GUI
-	nv.Scene().Camera.Pose.Pos.Set(0, 2.2, 1.9)
-	nv.Scene().Camera.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
-}
-
-// ConfigWorldGui configures all the world view GUI elements
-func (ss *Sim) ConfigWorldGui() *gi.Window { // TODO(refactor): game gui
-	// order: Empty, wall, food, water, foodwas, waterwas
-	ss.MatColors = []string{"lightgrey", "black", "orange", "blue", "brown", "navy"}
-
-	ss.Trace = ss.TrainEnv.World.Clone().(*etensor.Int)
-
-	width := 1600
-	height := 1200
-
-	win := gi.NewMainWindow("fworld", "Flat World", width, height)
-	ss.WorldWin = win
-
-	vp := win.WinViewport2D()
-	updt := vp.UpdateStart()
-
-	mfr := win.SetMainFrame()
-
-	tbar := gi.AddNewToolBar(mfr, "tbar")
-	tbar.SetStretchMaxWidth()
-
-	split := gi.AddNewSplitView(mfr, "split")
-	split.Dim = mat32.X
-	split.SetStretchMax()
-
-	sv := giv.AddNewStructView(split, "sv")
-	sv.SetStruct(&ss.TrainEnv)
-
-	tv := gi.AddNewTabView(split, "tv")
-	ss.WorldTabs = tv
-
-	tg := tv.AddNewTab(etview.KiT_TensorGrid, "Trace").(*etview.TensorGrid)
-	ss.TraceView = tg
-	tg.SetTensor(ss.Trace)
-	ss.ConfigWorldView(tg)
-
-	wg := tv.AddNewTab(etview.KiT_TensorGrid, "World").(*etview.TensorGrid)
-	ss.WorldView = wg
-	wg.SetTensor(ss.TrainEnv.World)
-	ss.ConfigWorldView(wg)
-
-	split.SetSplits(.3, .7)
-
-	tbar.AddAction(gi.ActOpts{Label: "Init", Icon: "reset", Tooltip: "Init env.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Init()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Left", Icon: "wedge-left", Tooltip: "Rotate Left", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Left()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Right", Icon: "wedge-right", Tooltip: "Rotate Right", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Right()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Forward", Icon: "wedge-up", Tooltip: "Step Forward", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Forward()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Backward", Icon: "wedge-down", Tooltip: "Step Backward", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Backward()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddSeparator("sep-eat")
-
-	tbar.AddAction(gi.ActOpts{Label: "Eat", Icon: "field", Tooltip: "Eat food -- only if directly in front", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Eat()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Drink", Icon: "svg", Tooltip: "Drink water -- only if directly in front", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Drink()
-		vp.SetFullReRender()
-	})
-
-	tbar.AddSeparator("sep-file")
-
-	tbar.AddAction(gi.ActOpts{Label: "Open World", Icon: "file-open", Tooltip: "Open World from .tsv file", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		giv.CallMethod(&ss.TrainEnv, "OpenWorld", vp)
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Save World", Icon: "file-save", Tooltip: "Save World to .tsv file", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		giv.CallMethod(&ss.TrainEnv, "SaveWorld", vp)
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Open Pats", Icon: "file-open", Tooltip: "Open bit patterns from .json file", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		giv.CallMethod(&ss.TrainEnv, "OpenPats", vp)
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Save Pats", Icon: "file-save", Tooltip: "Save bit patterns to .json file", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		giv.CallMethod(&ss.TrainEnv, "SavePats", vp)
-	})
-
-	vp.UpdateEndNoSig(updt)
-
-	// main menu
-	appnm := gi.AppName()
-	mmen := win.MainMenu
-	mmen.ConfigMenus([]string{appnm, "File", "Edit", "Window"})
-
-	amen := win.MainMenu.ChildByName(appnm, 0).(*gi.Action)
-	amen.Menu.AddAppMenu(win)
-
-	emen := win.MainMenu.ChildByName("Edit", 1).(*gi.Action)
-	emen.Menu.AddCopyCutPaste(win)
-
-	win.MainMenuUpdated()
-	return win
-}
-
-func (ss *Sim) ConfigWorldView(tg *etview.TensorGrid) { // TODO(refactor): game gui
-	cnm := "FWorldColors"
-	cm, ok := giv.AvailColorMaps[cnm]
-	if !ok {
-		cm = &giv.ColorMap{}
-		cm.Name = cnm
-		cm.Indexed = true
-		nc := len(ss.TrainEnv.Mats)
-		cm.Colors = make([]gist.Color, nc+ss.TrainEnv.NRotAngles)
-		cm.NoColor = gist.Black
-		for i, cnm := range ss.MatColors {
-			cm.Colors[i].SetString(cnm, nil)
-		}
-		ch := giv.AvailColorMaps["ColdHot"]
-		for i := 0; i < ss.TrainEnv.NRotAngles; i++ {
-			nv := float64(i) / float64(ss.TrainEnv.NRotAngles-1)
-			cm.Colors[nc+i] = ch.Map(nv) // color map of rotation
-		}
-		giv.AvailColorMaps[cnm] = cm
-	}
-	tg.Disp.Defaults()
-	tg.Disp.ColorMap = giv.ColorMapName(cnm)
-	tg.Disp.GridFill = 1
-	tg.SetStretchMax()
-}
-
-func (ss *Sim) UpdateWorldGui() { // TODO(refactor):  game gui
-	if ss.WorldWin == nil || !ss.TrainEnv.Disp {
-		return
-	}
-
-	if ss.TrainEnv.Scene.Chg { // something important happened, refresh
-		ss.Trace.CopyFrom(ss.TrainEnv.World)
-	}
-
-	nc := len(ss.TrainEnv.Mats)
-	ss.Trace.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, nc+ss.TrainEnv.Angle/ss.TrainEnv.AngInc)
-
-	updt := ss.WorldTabs.UpdateStart()
-	ss.TraceView.UpdateSig()
-	ss.WorldTabs.UpdateEnd(updt)
-}
-
-func (ss *Sim) Left() { // TODO(refactor): these are all for the game gui
-	ss.TrainEnv.Action("Left", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Right() {
-	ss.TrainEnv.Action("Right", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Forward() {
-	ss.TrainEnv.Action("Forward", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Backward() {
-	ss.TrainEnv.Action("Backward", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Eat() {
-	ss.TrainEnv.Action("Eat", nil)
-	ss.UpdateWorldGui()
-}
-
-func (ss *Sim) Drink() {
-	ss.TrainEnv.Action("Drink", nil)
-	ss.UpdateWorldGui()
-}
-
-// ConfigGui configures the GoGi gui interface for this simulation,
-func (ss *Sim) ConfigGui() *gi.Window { // TODO(refactor): gui code but some of it is specific
-	width := 1600
-	height := 1200
-
-	gi.SetAppName("Emery")
-	gi.SetAppAbout(`Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`)
-
-	win := gi.NewMainWindow("Emery", "Emery simulated rat / cat", width, height)
-	ss.Win = win
-
-	vp := win.WinViewport2D()
-	updt := vp.UpdateStart()
-
-	mfr := win.SetMainFrame()
-
-	tbar := gi.AddNewToolBar(mfr, "tbar")
-	tbar.SetStretchMaxWidth()
-	ss.ToolBar = tbar
-
-	split := gi.AddNewSplitView(mfr, "split")
-	split.Dim = gi.X
-	split.SetStretchMaxWidth()
-	split.SetStretchMaxHeight()
-
-	sv := giv.AddNewStructView(split, "sv")
-	sv.SetStruct(ss)
-
-	tv := gi.AddNewTabView(split, "tv")
-
-	nv := tv.AddNewTab(netview.KiT_NetView, "NetView").(*netview.NetView)
-	nv.Var = "Act"
-	// nv.Params.ColorMap = "Jet" // default is ColdHot
-	// which fares pretty well in terms of discussion here:
-	// https://matplotlib.org/tutorials/colors/colormaps.html
-	nv.SetNet(ss.Net)
-	ss.NetView = nv
-	ss.ConfigNetView(nv)
-
-	stb := tv.AddNewTab(gi.KiT_Layout, "Spike Rasters").(*gi.Layout)
-	stb.Lay = gi.LayoutVert
-	stb.SetStretchMax()
-	ss.ConfigSpikeRasts()
-	for _, lnm := range ss.SpikeRecLays {
-		sr := ss.SpikeRastTsr(lnm)
-		tg := ss.SpikeRastGrid(lnm)
-		tg.SetName(lnm + "Spikes")
-		gi.AddNewLabel(stb, lnm, lnm+":")
-		stb.AddChild(tg)
-		gi.AddNewSpace(stb, lnm+"_spc")
-		ss.ConfigSpikeGrid(tg, sr)
-	}
-
-	split.SetSplits(.3, .7)
-
-	tbar.AddAction(gi.ActOpts{Label: "Init", Icon: "update", Tooltip: "Initialize everything including network weights, and start over.  Also applies current params.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Init()
-		vp.SetNeedsFullRender()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Train", Icon: "run", Tooltip: "Starts the network training, picking up from wherever it may have left off.  If not stopped, training will complete the specified number of Runs through the full number of Epochs of training, with testing automatically occuring at the specified interval.",
-		UpdateFunc: func(act *gi.Action) {
-			act.SetActiveStateUpdt(!ss.IsRunning)
-		}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			tbar.UpdateActions()
-			// ss.Train()
-			go ss.Train()
-		}
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Stop", Icon: "stop", Tooltip: "Interrupts running.  Hitting Train again will pick back up where it left off.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.Stop()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Step Trial", Icon: "step-fwd", Tooltip: "Advances one training trial at a time.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			ss.TrainTrial()
-			ss.IsRunning = false
-			vp.SetNeedsFullRender()
-		}
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Step Epoch", Icon: "fast-fwd", Tooltip: "Advances one epoch (complete set of training patterns) at a time.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			tbar.UpdateActions()
-			go ss.TrainEpoch()
-		}
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Step Run", Icon: "fast-fwd", Tooltip: "Advances one full training Run at a time.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			tbar.UpdateActions()
-			go ss.TrainRun()
-		}
-	})
-
-	tbar.AddSeparator("test")
-
-	tbar.AddAction(gi.ActOpts{Label: "Reset ARFs", Icon: "reset", Tooltip: "reset current position activation rfs accumulation data", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.ARFs.Reset()
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "View ARFs", Icon: "file-image", Tooltip: "compute activation rfs and view them.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		ss.ARFs.Avg()
-		ss.ARFs.Norm()
-		for _, paf := range ss.ARFs.RFs {
-			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
-		}
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Open ARFs", Icon: "file-open", Tooltip: "Open saved ARF .tsv files -- select a path or specific file in path", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		giv.CallMethod(ss, "OpenAllARFs", vp)
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Test Trial", Icon: "step-fwd", Tooltip: "Runs the next testing trial.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			ss.TestTrial(false) // don't return on change -- wrap
-			ss.IsRunning = false
-			vp.SetNeedsFullRender()
-		}
-	})
-
-	tbar.AddAction(gi.ActOpts{Label: "Test All", Icon: "fast-fwd", Tooltip: "Tests all of the testing trials.", UpdateFunc: func(act *gi.Action) {
-		act.SetActiveStateUpdt(!ss.IsRunning)
-	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-		if !ss.IsRunning {
-			ss.IsRunning = true
-			tbar.UpdateActions()
-			go ss.RunTestAll()
-		}
-	})
-
-	tbar.AddSeparator("log")
-
-	tbar.AddSeparator("misc")
-
-	tbar.AddAction(gi.ActOpts{Label: "New Seed", Icon: "new", Tooltip: "Generate a new initial random seed to get different results.  By default, Init re-establishes the same initial seed every time."}, win.This(),
-		func(recv, send ki.Ki, sig int64, data interface{}) {
-			NewRndSeed(&ss.RndSeed)
-		})
-
-	tbar.AddAction(gi.ActOpts{Label: "README", Icon: "file-markdown", Tooltip: "Opens your browser on the README file that contains instructions for how to run this model."}, win.This(),
-		func(recv, send ki.Ki, sig int64, data interface{}) {
-			gi.OpenURL("https://github.com/emer/axon/blob/master/examples/deep_fsa/README.md")
-		})
-
-	vp.UpdateEndNoSig(updt)
-
-	// main menu
-	appnm := gi.AppName()
-	mmen := win.MainMenu
-	mmen.ConfigMenus([]string{appnm, "File", "Edit", "Window"})
-
-	amen := win.MainMenu.ChildByName(appnm, 0).(*gi.Action)
-	amen.Menu.AddAppMenu(win)
-
-	emen := win.MainMenu.ChildByName("Edit", 1).(*gi.Action)
-	emen.Menu.AddCopyCutPaste(win)
-
-	// note: Command in shortcuts is automatically translated into Control for
-	// Linux, Windows or Meta for MacOS
-	// fmen := win.MainMenu.ChildByName("File", 0).(*gi.Action)
-	// fmen.Menu.AddAction(gi.ActOpts{Label: "Open", Shortcut: "Command+O"},
-	// 	win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	// 		FileViewOpenSVG(vp)
-	// 	})
-	// fmen.Menu.AddSeparator("csep")
-	// fmen.Menu.AddAction(gi.ActOpts{Label: "Close Window", Shortcut: "Command+W"},
-	// 	win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	// 		win.Close()
-	// 	})
-
-	/*
-		inQuitPrompt := false
-		gi.SetQuitReqFunc(func() {
-			if inQuitPrompt {
-				return
-			}
-			inQuitPrompt = true
-			gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Quit?",
-				Prompt: "Are you <i>sure</i> you want to quit and lose any unsaved params, weights, logs, etc?"}, true, true,
-				win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-					if sig == int64(gi.DialogAccepted) {
-						gi.Quit()
-					} else {
-						inQuitPrompt = false
-					}
-				})
-		})
-
-		// gi.SetQuitCleanFunc(func() {
-		// 	fmt.Printf("Doing final Quit cleanup here..\n")
-		// })
-
-		inClosePrompt := false
-		win.SetCloseReqFunc(func(w *gi.Window) {
-			if inClosePrompt {
-				return
-			}
-			inClosePrompt = true
-			gi.PromptDialog(vp, gi.DlgOpts{Title: "Really Close Window?",
-				Prompt: "Are you <i>sure</i> you want to close the window?  This will Quit the App as well, losing all unsaved params, weights, logs, etc"}, true, true,
-				win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-					if sig == int64(gi.DialogAccepted) {
-						gi.Quit()
-					} else {
-						inClosePrompt = false
-					}
-				})
-		})
-	*/
-
-	win.SetCloseCleanFunc(func(w *gi.Window) {
-		go gi.Quit() // once main window is closed, quit
-	})
-
-	win.MainMenuUpdated()
-	return win
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
-	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/params"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etensor"
@@ -33,11 +32,15 @@ func NewRndSeed(randomSeed *int64) { // TODO(refactor): to library
 	*randomSeed = time.Now().UnixNano()
 }
 
+type Observable interface {
+	Observe(name string) etensor.Tensor
+}
+
 // ApplyInputs applies input patterns from given envirbonment.
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TODO(refactor): library code
+func ApplyInputs(net *deep.Network, en Observable, states, layers []string) { // TODO(refactor): library code
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
@@ -49,7 +52,7 @@ func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TO
 			continue
 		}
 		ly := lyi.(axon.AxonLayer).AsAxon()
-		pats := en.State(states[i])
+		pats := en.Observe(states[i])
 		if pats != nil {
 			ly.ApplyExt(pats)
 		}
@@ -226,4 +229,13 @@ func HogDead(net *deep.Network, lnm string) (hog, dead float64) { // TODO(refact
 	hog /= float64(n)
 	dead /= float64(n)
 	return
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Stolen from FWorld
+
+// DecodeAct decodes action from given tensor of activation states
+// Forward is only selected if it is 2x larger than other options
+func DecodeAct(vt *etensor.Float32) int {
+	return 1 // TODO(refactor) This should be better.
 }

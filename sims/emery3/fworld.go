@@ -271,7 +271,7 @@ func (ev *FWorld) Validate() error {
 	return nil
 }
 
-func (ev *FWorld) State(element string) etensor.Tensor {
+func (ev *FWorld) State(element string) etensor.Tensor { //Todo move to environment interface with name Observe
 	return ev.CurStates[element]
 }
 

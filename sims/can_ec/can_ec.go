@@ -1,13 +1,9 @@
-// Copyright (c) 2019, The Emergent Authors. All rights reserved.
+// Copyright (c) 2022, The Emergent Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
 /*
-v1rf illustrates how self-organizing learning in response to natural images
-produces the oriented edge detector receptive field properties of neurons
-in primary visual cortex (EC). This provides insight into why the visual
-system encodes information in the way it does, while also providing an
-important test of the biological relevance of our computational models.
+can_ec is a predictive learning / autoencoding model of entorhinal cortex with continuous attractor dynamics
 */
 package main
 
@@ -83,6 +79,7 @@ var ParamSets = params.Sets{
 		"Network": &params.Sheet{
 			{Sel: "Prjn", Desc: "no extra learning factors, hebbian learning",
 				Params: params.Params{
+					"Prjn.Learn.Learn":       "true",
 					"Prjn.Learn.Norm.On":     "false", // works well without
 					"Prjn.Learn.Momentum.On": "false",
 					"Prjn.Learn.WtBal.On":    "true", // this is typically critical
@@ -90,7 +87,6 @@ var ParamSets = params.Sets{
 					// "Prjn.Learn.XCal.SetLLrn": "true",
 					// "Prjn.Learn.XCal.LLrn":    "1",
 					"Prjn.Learn.WtSig.Gain": "6", // 6 impedes learning..  was 1
-					"Prjn.Learn.Learn":      "true",
 					//"Prjn.WtInit.Mean":        "0.5",
 					//"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
 				}},
@@ -115,8 +111,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".ExciteLateral", Desc: "lateral excitatory connection",
 				Params: params.Params{
-					//"Prjn.Off":         "true",
-					"Prjn.Learn.Learn": "true",
+					"Prjn.Learn.Learn": "false",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
@@ -125,7 +120,7 @@ var ParamSets = params.Sets{
 			{Sel: ".InhibLateral", Desc: "lateral inhibitory connection",
 				Params: params.Params{
 					//"Prjn.Off":         "true",
-					"Prjn.Learn.Learn": "true",
+					"Prjn.Learn.Learn": "false",
 					"Prjn.WtInit.Mean": "0.5",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
@@ -159,21 +154,13 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#ECToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
-					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtInit.Sym":  "false", // actually works better non-sym
-
-					// hip_bench setting
-					//"Prjn.Learn.Learn": "false", // learning here definitely does NOT work!
-					//"Prjn.WtInit.Mean": "0.9",
-					//"Prjn.WtInit.Var":  "0.01",
-					//"Prjn.WtScale.Rel": "4",
+					"Prjn.WtInit.Var": "0.25",
+					"Prjn.WtInit.Sym": "false", // couldn't see difference
 				}},
 			{Sel: "#ECToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
-					"Prjn.WtInit.Var":  "0.25",
-					"Prjn.WtInit.Sym":  "false",
+					"Prjn.WtInit.Var": "0.25",
+					"Prjn.WtInit.Sym": "false",
 				}},
 			//{Sel: "#Out_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 			//	Params: params.Params{
@@ -183,44 +170,27 @@ var ParamSets = params.Sets{
 			//	}},
 			{Sel: "#OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
 					"Prjn.WtScale.Rel": ".1", // orientation is easier so give it a weaker top-down err
 				}},
 			{Sel: "#VestibularToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
+					//"Prjn.Off":         "true",
 					"Prjn.Learn.Learn": "true",
 					"Prjn.WtInit.Var":  "0.25",
 				}},
 			{Sel: "#Prev_PositionToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
+					"Prjn.WtScale.Rel": "1.5", // zycyc: was 1, lower doesn't work, 1.5 seems great
 					//"Prjn.WtInit.Var":  "0",
 				}},
-			{Sel: "#Prev_OriToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
+			{Sel: "#Prev_OrientationToEC", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
 				Params: params.Params{
-					"Prjn.Learn.Learn": "true",
+					//"Prjn.Off":         "true",
+					//"Prjn.Learn.Learn": "true",
+					"Prjn.WtScale.Rel": ".5", // orientation is easier so give it a weaker bottom-up err
 					//"Prjn.WtInit.Var":  "0",
 				}},
-			//{Sel: "#Out_PositionToOut_Position", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-			//	Params: params.Params{
-			//		//"Prjn.Learn.Learn": "false",
-			//		//"Prjn.WtInit.Var":  "0",
-			//		//"Prjn.WtInit.Mean": "0.8",
-			//		//"Prjn.WtScale.Rel": "0.1", // zycyc experiment
-			//
-			//		// hip_bench setting
-			//		"Prjn.Learn.Momentum.On": "false",
-			//		"Prjn.Learn.Norm.On":     "false",
-			//		"Prjn.Learn.WtBal.On":    "true",
-			//	}},
-			//{Sel: "#OrientationToOrientation", Desc: "DG learning is surprisingly critical: maxed out fast, hebbian works best",
-			//	Params: params.Params{
-			//		"Prjn.Learn.Learn": "false",
-			//		"Prjn.WtInit.Var":  "0",
-			//		"Prjn.WtInit.Mean": "0.8",
-			//		"Prjn.WtScale.Rel": "0.1", // zycyc experiment
-			//	}},
 		},
 	}},
 }
@@ -318,7 +288,6 @@ type Sim struct {
 // EcParams have the entorhinal cortex size and connectivity parameters
 type EcParams struct {
 	ECSize            evec.Vec2i `desc:"size of EC"`
-	LstmSize          evec.Vec2i `desc:"size of EC"`
 	InputSize         evec.Vec2i `desc:"size of Input"`
 	PositionSize      evec.Vec2i `desc:"size of Position"`
 	OrientationSize   evec.Vec2i `desc:"size of Orientation (head direction, 0-360)"`
@@ -350,9 +319,6 @@ var TheSim Sim
 
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
-	//ss.ExcitLateralScale = 0.2 // zycyc: larger inhib circle
-	//ss.InhibLateralScale = 0.2
-	//ss.ExcitLateralLearn = false // zycyc: no learning
 	ss.Net = &leabra.Network{}
 	ss.PoolVocab = patgen.Vocab{}
 	ss.CorticalInput = &etable.Table{}
@@ -381,9 +347,7 @@ func (ss *Sim) New() {
 }
 
 func (ec *EcParams) Defaults() {
-	ec.ECSize.Set(20, 20) // 30 needs lower Pos Gi, but just slightly better compared to 20
-	//ec.LstmSize.Set(12, 12)
-	//ec.InputSize.Set(12, 12) // zycyc: ?? automatic!
+	ec.ECSize.Set(10, 10)       // 30 needs lower Pos Gi, but just slightly better compared to 20
 	ec.PositionSize.Set(12, 12) // Gi needs to change as well??
 	ec.OrientationSize.Set(16, 1)
 	ec.VestibularSize.Set(12, 1)
@@ -395,9 +359,9 @@ func (ec *EcParams) Defaults() {
 	//ec.inhibRadius2D = 10
 	//ec.inhibSigma2D = 10
 
-	ec.excitRadius4D = 3 // was 3, 1
+	ec.excitRadius4D = 3 // def 3, 1 also works
 	ec.excitSigma4D = 2
-	ec.inhibRadius4D = 8 // was 8 (Pos Gi 3.2 works; 3.6 also works?), 5 (Pos Gi 3.6 works)
+	ec.inhibRadius4D = 5 // def 5 (Pos Gi 3.6 works), smaller (5) for dMEC, higher (8) for vMEC
 	ec.inhibSigma4D = 2  // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
 }
 
@@ -428,14 +392,14 @@ func (ss *Sim) ConfigEnv() {
 		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 300  // zycyc, test
-		ss.TestEpcs = 500 // zycyc, test
+		ss.MaxEpcs = 1000  // zycyc, test, 1000
+		ss.TestEpcs = 3000 // zycyc, test, needs to be extra high, 3000
 	}
 	//if ss.MaxTrls == 0 { // allow user override
 	//	ss.MaxTrls = 100
 	//}
 
-	ss.TrainEnv.Config(300) // 1000) // n trials per epoch
+	ss.TrainEnv.Config(500) // 1000) // n trials per epoch
 	ss.TrainEnv.Nm = "TrainEnv"
 	ss.TrainEnv.Dsc = "training params and state"
 	ss.TrainEnv.Run.Max = ss.MaxRuns // note: we are not setting epoch max -- do that manually
@@ -452,10 +416,6 @@ func (ss *Sim) ConfigRFMaps() {
 	ss.RFMaps["Pos"] = mt
 
 	mt = &etensor.Float32{}
-	mt.SetShape([]int{len(ss.TrainEnv.Acts)}, nil, nil)
-	ss.RFMaps["Act"] = mt
-
-	mt = &etensor.Float32{}
 	mt.SetShape([]int{ss.TrainEnv.NRotAngles}, nil, nil)
 	ss.RFMaps["Ang"] = mt
 
@@ -469,12 +429,11 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	net.InitName(net, "can_ec")
 	prevPosition := net.AddLayer2D("Prev_Position", ecParam.PositionSize.Y, ecParam.PositionSize.X, emer.Input)
 	prevPosition.SetClass("Position")
-	prevOri := net.AddLayer2D("Prev_Ori", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)
+	prevOri := net.AddLayer2D("Prev_Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Input)
 	prevOri.SetClass("Orientation")
 
 	vestibular := net.AddLayer2D("Vestibular", ecParam.VestibularSize.Y, ecParam.VestibularSize.X, emer.Input)
 	vestibular.SetClass("Orientation")
-	//lstm := net.AddLayer2D("LSTM", ecParam.LstmSize.Y, ecParam.LstmSize.X, emer.Hidden)
 	ec := net.AddLayer4D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, 2, 2, emer.Hidden)
 	// ec := net.AddLayer2D("EC", 16, 16, emer.Hidden)
 
@@ -484,7 +443,7 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	orientation := net.AddLayer2D("Orientation", ecParam.OrientationSize.Y, ecParam.OrientationSize.X, emer.Target)
 	orientation.SetClass("Orientation")
 
-	//////////////////////////////////////////// EC first for indexing convinience
+	//////////////////////////////////////////// EC first for indexing convenience
 	//ec := net.AddLayer2D("EC", ecParam.ECSize.Y, ecParam.ECSize.X, emer.Hidden) // 2D EC
 
 	// 2D EC
@@ -509,50 +468,41 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//excit.Radius = ecParam.excitRadius4D
 	//excit.Sigma = ecParam.excitSigma4D
 
-	excit := prjn.NewPoolTile()
-	excit.Size.Set(2*ecParam.excitRadius4D+1, 2*ecParam.excitRadius4D+1)
-	excit.Skip.Set(1, 1)
-	excit.Start.Set(-ecParam.excitRadius4D, -ecParam.excitRadius4D)
-	excit.TopoRange.Min = 0.8
-	excit.GaussInPool.On = false
+	if ss.EClateralflag {
+		// no longer need Mexican-hat here
+		//excit := prjn.NewPoolTile()
+		//excit.Size.Set(2*ecParam.excitRadius4D+1, 2*ecParam.excitRadius4D+1)
+		//excit.Skip.Set(1, 1)
+		//excit.Start.Set(-ecParam.excitRadius4D, -ecParam.excitRadius4D)
+		//excit.TopoRange.Min = 0.8
+		//excit.GaussInPool.On = false
 
-	inhib := prjn.NewCircle()
-	inhib.TopoWts = true
-	inhib.Radius = ecParam.inhibRadius4D
-	inhib.Sigma = ecParam.inhibSigma4D
+		inhib := prjn.NewCircle()
+		inhib.TopoWts = true
+		inhib.Radius = ecParam.inhibRadius4D
+		inhib.Sigma = ecParam.inhibSigma4D
 
-	// inhib := prjn.NewPoolTile()
-	// inhib.Size.Set(2*ecParam.inhibRadius4D+1, 2*ecParam.inhibRadius4D+1)
-	// inhib.Skip.Set(1, 1)
-	// inhib.Start.Set(-ecParam.inhibRadius4D, -ecParam.inhibRadius4D)
-	// inhib.GaussInPool.On = false
-	// inhib.TopoRange.Min = 0.8
+		// inhib := prjn.NewPoolTile()
+		// inhib.Size.Set(2*ecParam.inhibRadius4D+1, 2*ecParam.inhibRadius4D+1)
+		// inhib.Skip.Set(1, 1)
+		// inhib.Start.Set(-ecParam.inhibRadius4D, -ecParam.inhibRadius4D)
+		// inhib.GaussInPool.On = false
+		// inhib.TopoRange.Min = 0.8
 
-	// original orientation to ec prjn
-	//oriePrjn := prjn.NewPoolSameUnit()
-	//orie := net.ConnectLayers(orientation, ec, oriePrjn, emer.Forward)
-	//orie.SetClass("OrientationForward")
+		//rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
+		//rec.SetClass("ExciteLateral")
 
-	rec := net.ConnectLayers(ec, ec, excit, emer.Lateral)
-	rec.SetClass("ExciteLateral")
-
-	//inh := net.ConnectLayers(ec, ec, full, emer.Inhib)
-	inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
-	inh.SetClass("InhibLateral")
-
+		//inh := net.ConnectLayers(ec, ec, full, emer.Inhib)
+		inh := net.ConnectLayers(ec, ec, inhib, emer.Inhib)
+		inh.SetClass("InhibLateral")
+	}
 	//////////////////////////////////////////// other connections
 	full := prjn.NewFull()
-	//oriePrjn := prjn.NewPoolSameUnit()
-	//random := prjn.NewUnifRnd()
-
-	//net.ConnectLayers(prevPosition, lstm, full, emer.Forward)
-	//net.ConnectLayers(prevOri, lstm, full, emer.Forward)
-	//net.ConnectLayers(vestibular, lstm, full, emer.Forward)
-	//net.ConnectLayers(lstm, ec, full, emer.Forward)
 
 	net.ConnectLayers(prevPosition, ec, full, emer.Forward)
 	net.ConnectLayers(prevOri, ec, full, emer.Forward)
 	net.ConnectLayers(vestibular, ec, full, emer.Forward)
+
 	net.BidirConnectLayers(ec, outPosition, full)
 	net.BidirConnectLayers(ec, orientation, full)
 
@@ -563,8 +513,7 @@ func (ss *Sim) ConfigNet(net *leabra.Network) {
 	//net.LateralConnectLayer(orientation, one2one)
 
 	prevOri.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Position", YAlign: relpos.Front, Space: 2})
-	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Ori", YAlign: relpos.Front, Space: 2})
-	//lstm.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Prev_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
+	vestibular.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Prev_Orientation", YAlign: relpos.Front, Space: 2})
 	ec.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "Prev_Position", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	outPosition.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: "EC", XAlign: relpos.Left, YAlign: relpos.Front, Space: 0})
 	orientation.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: "Out_Position", YAlign: relpos.Front, Space: 2})
@@ -611,9 +560,11 @@ func (ss *Sim) ReConfigNet() {
 func (ss *Sim) InitWts(net *leabra.Network) {
 	net.InitTopoScales() // needed for gaussian topo Circle wts
 	net.InitWts()
-	if ss.EClateralflag {
-		ss.InitLateralWts(net)
-	}
+
+	// only if we need orientation bias in single EC cells
+	//if ss.EClateralflag {
+	//	ss.InitLateralWts(net)
+	//}
 }
 
 func (ss *Sim) InitLateralWts(net *leabra.Network) {
@@ -884,13 +835,9 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	//ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"}
-	lays := []string{"Vestibular", "Out_Position", "Orientation", "Prev_Position", "Prev_Ori"} // zycyc: input: 16*16; orientation: 1*16 ring????
-	//if !ss.init_pos_assigned1 {
-	//	prevPosition := ss.Net.LayerByName("Prev_Position").(leabra.LeabraLayer).AsLeabra()
-	//	prevPosition.ApplyExt(en.State("Position"))
-	//	ss.init_pos_assigned1 = true
-	//}
+	//states := []string{"Vestibular", "Position", "Angle", "Position", "Angle"} // autoencoder
+	states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"} // predictive learning
+	lays := []string{"Vestibular", "Out_Position", "Orientation", "Prev_Position", "Prev_Orientation"}
 
 	for i, lnm := range lays {
 		lyi := ss.Net.LayerByName(lnm)
@@ -914,8 +861,8 @@ func (ss *Sim) TrainTrial() {
 		ss.NewRun()
 	}
 
-	ss.TakeAction(ss.Net, &ss.TrainEnv) // zycyc: ??
-	ss.TrainEnv.Step()                  // the Env encapsulates and manages all counter state
+	ss.TakeAction(ss.Net, &ss.TrainEnv)
+	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
@@ -962,7 +909,7 @@ func (ss *Sim) RunEnd() {
 	}
 }
 
-// NewRun intializes a new run of the model, using the TrainEnv.Run counter
+// NewRun initializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
 func (ss *Sim) NewRun() {
 	run := ss.TrainEnv.Run.Cur
@@ -1081,56 +1028,6 @@ func (ss *Sim) SaveWeights() {
 	ss.Net.SaveWtsJSON(gi.FileName(fnm))
 }
 
-// OpenRec2Wts opens trained weights w/ rec=0.2
-//func (ss *Sim) OpenRec2Wts() {
-//	ab, err := Asset("v1rf_rec2.wts") // embedded in executable
-//	if err != nil {
-//		log.Println(err)
-//	}
-//	ss.Net.ReadWtsJSON(bytes.NewBuffer(ab))
-//	// ss.Net.OpenWtsJSON("v1rf_rec2.wts.gz")
-//}
-
-//// OpenRec05Wts opens trained weights w/ rec=0.05
-//func (ss *Sim) OpenRec05Wts() {
-//	ab, err := Asset("v1rf_rec05.wts") // embedded in executable
-//	if err != nil {
-//		log.Println(err)
-//	}
-//	ss.Net.ReadWtsJSON(bytes.NewBuffer(ab))
-//	// ss.Net.OpenWtsJSON("v1rf_rec05.wts.gz")
-//}
-
-//func (ss *Sim) ECRFs() {
-//	onVals := ss.EConWts.Values
-//	//offVals := ss.ECoffWts.Values
-//	netVals := ss.ECWts.Values
-//	on := ss.Net.LayerByName("Input").(leabra.LeabraLayer).AsLeabra() // zycyc: ??
-//	//off := ss.Net.LayerByName("LGNoff").(leabra.LeabraLayer).AsLeabra()
-//	isz := on.Shape().Len()
-//	ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-//	ysz := ec.Shape().Dim(0)
-//	xsz := ec.Shape().Dim(1)
-//	for y := 0; y < ysz; y++ {
-//		for x := 0; x < xsz; x++ {
-//			ui := (y*xsz + x)
-//			ust := ui * isz
-//			onvls := onVals[ust : ust+isz]
-//			//offvls := offVals[ust : ust+isz]
-//			netvls := netVals[ust : ust+isz]
-//			on.SendPrjnVals(&onvls, "Wt", ec, ui, "")
-//			//off.SendPrjnVals(&offvls, "Wt", ec, ui, "")
-//			for ui := 0; ui < isz; ui++ {
-//				//netvls[ui] = 1.5 * (onvls[ui] - offvls[ui])
-//				netvls[ui] = 1.5 * (onvls[ui]) // zycyc: not sure what this is ??
-//			}
-//		}
-//	}
-//	if ss.WtsGrid != nil {
-//		ss.WtsGrid.UpdateSig()
-//	}
-//}
-
 func (ss *Sim) ConfigWts(dt *etensor.Float32) {
 	dt.SetShape([]int{14, 14, 12, 12}, nil, nil)
 	dt.SetMetaData("grid-fill", "1")
@@ -1150,8 +1047,6 @@ func (ss *Sim) UpdtARFs() {
 		switch nm {
 		case "Pos":
 			mt.Set([]int{ss.TrainEnv.PosI.Y, ss.TrainEnv.PosI.X}, 1)
-		case "Act":
-			mt.Set1D(ss.TrainEnv.Act, 1)
 		case "Ang":
 			mt.Set1D(ss.TrainEnv.Angle/90, 1)
 		case "Rot":
@@ -1159,8 +1054,11 @@ func (ss *Sim) UpdtARFs() {
 		}
 	}
 
-	naf := len(ss.ARFLayers) * len(ss.RFMaps)
+	naf := len(ss.ARFLayers) * (len(ss.RFMaps) + 1)
 	if len(ss.ARFs.RFs) != naf {
+		ly := ss.Net.LayerByName("Out_Position")
+		vt := ss.ValsTsr("Out_Position")
+		ly.UnitValsTensor(vt, "ActM")
 		for _, lnm := range ss.ARFLayers {
 			ly := ss.Net.LayerByName(lnm)
 			if ly == nil {
@@ -1172,6 +1070,8 @@ func (ss *Sim) UpdtARFs() {
 				af := ss.ARFs.AddRF(lnm+"_"+nm, vt, mt)
 				ss.SetAFMetaData(&af.NormRF)
 			}
+			af := ss.ARFs.AddRF(lnm+"_"+"Out_Position", vt, ss.ValsTsr("Out_Position"))
+			ss.SetAFMetaData(&af.NormRF)
 		}
 	}
 	for _, lnm := range ss.ARFLayers {
@@ -1184,7 +1084,16 @@ func (ss *Sim) UpdtARFs() {
 		for nm, mt := range ss.RFMaps {
 			ss.ARFs.Add(lnm+"_"+nm, vt, mt, 0.01) // thr prevent weird artifacts
 		}
+		ss.ARFs.Add(lnm+"_"+"Out_Position", vt, ss.ValsTsr("Out_Position"), 0.01) // thr prevent weird artifacts
 	}
+}
+
+func (ss *Sim) multiply(array []int) int {
+	sum := 1
+	for i := 0; i < len(array); i++ {
+		sum = sum * array[i]
+	}
+	return sum
 }
 
 // SaveAllARFs saves all ARFs to files
@@ -1250,14 +1159,6 @@ func (ss *Sim) TestTrial(returnOnChg bool) {
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() {
-	//ss.TestEnv.Init(ss.TrainEnv.Run.Cur)
-	//for {
-	//	ss.TestTrial(true) // return on chg, don't present
-	//	_, _, chg := ss.TestEnv.Counter(env.Epoch)
-	//	if chg || ss.StopNow {
-	//		break
-	//	}
-	//} // original code in v1rf
 	ss.StopNow = false
 	curRun := ss.TrainEnv.Run.Cur
 	for {
@@ -1303,15 +1204,6 @@ func (ss *Sim) SetParams(sheet string, setMsg bool) error {
 			err = ss.SetParamsSet(ps, sheet, setMsg)
 		}
 	}
-
-	//nt := ss.Net
-	//ec := nt.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	//elat := ec.RcvPrjns[2].(*leabra.Prjn)
-	//elat.WtScale.Rel = ss.ExcitLateralScale
-	//elat.Learn.Learn = ss.ExcitLateralLearn
-	//ilat := ec.RcvPrjns[3].(*leabra.Prjn)
-	//ilat.WtScale.Abs = ss.InhibLateralScale
-
 	return err
 }
 
@@ -1367,55 +1259,6 @@ func (ss *Sim) SetParamsSet(setNm string, sheet string, setMsg bool) error {
 //	ss.OpenPatAsset(ss.Probes, "probes.tsv", "Probes", "Probe inputs for testing")
 //	// err := dt.OpenCSV("probes.tsv", etable.Tab)
 //}
-
-// zycyc hack function just for developing, will need to move to patgen at one point
-func InitPatsSingle(dt *etable.Table, name, desc string, inputName []string, listSize int, ySize, xSize []int) {
-	dt.SetMetaData("name", name)
-	dt.SetMetaData("desc", desc)
-	dt.SetFromSchema(etable.Schema{
-		{"Name", etensor.STRING, nil, nil},
-		{inputName[0], etensor.FLOAT32, []int{ySize[0], xSize[0]}, []string{"ySize", "xSize"}},
-		//{inputName[1], etensor.FLOAT32, []int{ySize[1], xSize[1]}, []string{"ySize", "xSize"}},
-		//{outputName, etensor.FLOAT32, []int{ySize, xSize}, []string{"ySize", "xSize"}},
-	}, listSize)
-}
-
-// zycyc hack function just for developing, will need to move to patgen at one point
-func InitPats(dt *etable.Table, name, desc string, inputName []string, listSize int, ySize, xSize []int) {
-	dt.SetMetaData("name", name)
-	dt.SetMetaData("desc", desc)
-	dt.SetFromSchema(etable.Schema{
-		{"Name", etensor.STRING, nil, nil},
-		{inputName[0], etensor.FLOAT32, []int{ySize[0], xSize[0]}, []string{"ySize", "xSize"}},
-		{inputName[1], etensor.FLOAT32, []int{ySize[1], xSize[1]}, []string{"ySize", "xSize"}},
-		//{outputName, etensor.FLOAT32, []int{ySize, xSize}, []string{"ySize", "xSize"}},
-	}, listSize)
-}
-
-// zycyc hack function just for developing, will need to move to patgen at one point
-func MixPats(dt *etable.Table, mp patgen.Vocab, colName []string, poolSource []string) error {
-	name := dt.MetaData["name"]
-	listSize := dt.ColByName(colName[0]).Shapes()[0]
-
-	for row := 0; row < listSize; row++ {
-		for iCol := 0; iCol < len(colName); iCol++ {
-			dt.SetCellString("Name", row, fmt.Sprint(name, row))
-			trgPool := dt.CellTensor(colName[iCol], row)
-			vocNm := poolSource[iCol]
-			voc, ok := mp[vocNm]
-			if !ok {
-				err := fmt.Errorf("Vocab not found: %s", vocNm)
-				log.Println(err.Error())
-				return err
-			}
-			vocSize := voc.Shapes()[0]
-			effIdx := row % vocSize // be safe and wrap-around to re-use patterns
-			frmPool := voc.SubSpace([]int{effIdx})
-			trgPool.CopyFrom(frmPool)
-		}
-	}
-	return nil
-}
 
 //func (ss *Sim) ConfigPats() {
 //	ec := &ss.Entorhinal
@@ -2165,16 +2008,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TrnEpcPlot").(*eplot.Plot2D)
 	ss.TrnEpcPlot = ss.ConfigTrnEpcPlot(plt, ss.TrnEpcLog)
 
-	//tg := tv.AddNewTab(etview.KiT_TensorGrid, "Image").(*etview.TensorGrid)
-	//tg.SetStretchMax()
-	//ss.CurImgGrid = tg
-	//tg.SetTensor(&ss.TrainEnv.Vis.ImgTsr)
-
-	//tg = tv.AddNewTab(etview.KiT_TensorGrid, "EC RFs").(*etview.TensorGrid)
-	//tg.SetStretchMax()
-	//ss.WtsGrid = tg
-	//tg.SetTensor(ss.ECWts) // zycyc comment out these two chunks
-
 	plt = tv.AddNewTab(eplot.KiT_Plot2D, "TstTrlPlot").(*eplot.Plot2D)
 	ss.TstTrlPlot = ss.ConfigTstTrlPlot(plt, ss.TstTrlLog)
 
@@ -2244,18 +2077,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	tbar.AddSeparator("spec")
 
-	//tbar.AddAction(gi.ActOpts{Label: "Open Rec=.2 Wts", Icon: "updt", Tooltip: "Open weights trained with excitatory lateral (recurrent) con scale = .2.", UpdateFunc: func(act *gi.Action) {
-	//	act.SetActiveStateUpdt(!ss.IsRunning)
-	//}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	//	ss.OpenRec2Wts()
-	//})
-
-	//tbar.AddAction(gi.ActOpts{Label: "Open Rec=.05 Wts", Icon: "updt", Tooltip: "Open weights trained with excitatory lateral (recurrent) con scale = .05.", UpdateFunc: func(act *gi.Action) {
-	//	act.SetActiveStateUpdt(!ss.IsRunning)
-	//}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	//	ss.OpenRec05Wts()
-	//})
-
 	tbar.AddAction(gi.ActOpts{Label: "Reset ARFs", Icon: "reset", Tooltip: "reset current position activation rfs accumulation data", UpdateFunc: func(act *gi.Action) {
 		act.SetActiveStateUpdt(!ss.IsRunning)
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
@@ -2277,12 +2098,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
 		giv.CallMethod(ss, "OpenAllARFs", vp)
 	})
-
-	//tbar.AddAction(gi.ActOpts{Label: "EC RFs", Icon: "file-image", Tooltip: "Update the EC Receptive Field (Weights) plot in EC RFs tab.", UpdateFunc: func(act *gi.Action) {
-	//	act.SetActiveStateUpdt(!ss.IsRunning)
-	//}}, win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	//	ss.ECRFs()
-	//})
 
 	tbar.AddSeparator("test")
 
@@ -2340,19 +2155,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	emen := win.MainMenu.ChildByName("Edit", 1).(*gi.Action)
 	emen.Menu.AddCopyCutPaste(win)
 
-	// note: Command in shortcuts is automatically translated into Control for
-	// Linux, Windows or Meta for MacOS
-	// fmen := win.MainMenu.ChildByName("File", 0).(*gi.Action)
-	// fmen.Menu.AddAction(gi.ActOpts{Label: "Open", Shortcut: "Command+O"},
-	// 	win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	// 		FileViewOpenSVG(vp)
-	// 	})
-	// fmen.Menu.AddSeparator("csep")
-	// fmen.Menu.AddAction(gi.ActOpts{Label: "Close Window", Shortcut: "Command+W"},
-	// 	win.This(), func(recv, send ki.Ki, sig int64, data interface{}) {
-	// 		win.Close()
-	// 	})
-
 	inQuitPrompt := false
 	gi.SetQuitReqFunc(func() {
 		if inQuitPrompt {
@@ -2369,10 +2171,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 				}
 			})
 	})
-
-	// gi.SetQuitCleanFunc(func() {
-	// 	fmt.Printf("Doing final Quit cleanup here..\n")
-	// })
 
 	inClosePrompt := false
 	win.SetCloseReqFunc(func(w *gi.Window) {

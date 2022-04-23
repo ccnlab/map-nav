@@ -89,7 +89,7 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.Params = make(map[string]float32)
 
 	ev.Disp = false
-	ev.Size.Set(6, 6) // if changing to non-square, reset the popcode2d min
+	ev.Size.Set(200, 200) // if changing to non-square, reset the popcode2d min
 	ev.PatSize.Set(5, 5)
 	ev.PosSize.Set(12, 12)
 	ev.AngInc = 90
@@ -113,7 +113,7 @@ func (ev *XYHDEnv) Config(ntrls int) {
 
 	// uncomment to generate a new world
 	ev.GenWorld()
-	ev.SaveWorld("world.tsv")
+	//ev.SaveWorld("world.tsv")
 }
 
 // ConfigPats configures the bit pattern representations of mats and acts
@@ -481,13 +481,13 @@ func (ev *XYHDEnv) RenderAngle(statenm string, angle int) {
 
 	//as.SetZeros()
 	//if angle == 0 || angle == 360 {
-	//	as.Values = []float32{1, 0, 0, 0}
+	//	as.Values = []float32{0, 1, 0, 1}
 	//} else if angle == 90 {
-	//	as.Values = []float32{0, 1, 0, 0}
+	//	as.Values = []float32{0, 0, 1, 1}
 	//} else if angle == 180 {
-	//	as.Values = []float32{0, 0, 1, 0}
+	//	as.Values = []float32{1, 0, 1, 0}
 	//} else if angle == 270 {
-	//	as.Values = []float32{0, 0, 0, 1}
+	//	as.Values = []float32{1, 1, 0, 0}
 	//}
 
 }

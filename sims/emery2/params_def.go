@@ -13,21 +13,16 @@ var ParamSets = params.Sets{
 		"Network": &params.Sheet{
 			{Sel: "Layer", Desc: "using default 1 inhib for hidden layers",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init":            "0.06",
-					"Layer.Inhib.Layer.Gi":               "1.1",
-					"Layer.Inhib.Pool.FFEx0":             "0.15",
-					"Layer.Inhib.Pool.FFEx":              "0.02", // .05 for lvis
-					"Layer.Inhib.Layer.FFEx0":            "0.15",
-					"Layer.Inhib.Layer.FFEx":             "0.02", //
-					"Layer.Act.Gbar.L":                   "0.2",
-					"Layer.Act.Decay.Act":                "0.2", // todo: explore
-					"Layer.Act.Decay.Glong":              "0.6",
-					"Layer.Act.Clamp.Ge":                 "1.0",   // .6 was
-					"Layer.Learn.ActAvg.MinLrn":          "0.02",  // in lvis: sig improves "top5" hogging in pca strength
-					"Layer.Learn.TrgAvgAct.ErrLrate":     "0.01",  // 0.01 lvis
-					"Layer.Learn.TrgAvgAct.SynScaleRate": "0.005", // 0.005 lvis
-					"Layer.Learn.TrgAvgAct.TrgRange.Min": "0.5",   // .5 best for Lvis, .2 - 2.0 best for objrec
-					"Layer.Learn.TrgAvgAct.TrgRange.Max": "2.0",   // 2.0
+					"Layer.Inhib.ActAvg.Init": "0.06",
+					"Layer.Inhib.Layer.Gi":    "1.1",
+					"Layer.Inhib.Pool.FFEx0":  "0.15",
+					"Layer.Inhib.Pool.FFEx":   "0.02", // .05 for lvis
+					"Layer.Inhib.Layer.FFEx0": "0.15",
+					"Layer.Inhib.Layer.FFEx":  "0.02", //
+					"Layer.Act.Gbar.L":        "0.2",
+					"Layer.Act.Decay.Act":     "0.2", // todo: explore
+					"Layer.Act.Decay.Glong":   "0.6",
+					"Layer.Act.Clamp.Ge":      "1.0", // .6 was
 				}},
 			{Sel: ".Hidden", Desc: "noise? sub-pools",
 				Params: params.Params{
@@ -37,9 +32,6 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Pool.Gi":        "1.1",
 					"Layer.Inhib.Pool.On":        "true",
 					"Layer.Inhib.Layer.On":       "true", // full layer
-					"Layer.Act.Noise.Dist":       "Gaussian",
-					"Layer.Act.Noise.Var":        "0.005",   // 0.005 > 0.01 probably
-					"Layer.Act.Noise.Type":       "NoNoise", // probably not needed!
 				}},
 			{Sel: ".CT", Desc: "corticothalamic context",
 				Params: params.Params{
@@ -221,14 +213,18 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.Lrate.Base":   "0.2",  // ffpred .2 > .1 > .04
-					"Prjn.SWt.Adapt.Lrate":    "0.01", // 0.01 seems to work fine, but .1 maybe more reliable
-					"Prjn.SWt.Adapt.SigGain":  "6",
-					"Prjn.SWt.Adapt.DreamVar": "0.01", // 0.01 is just tolerable
-					"Prjn.SWt.Init.SPct":      "1.0",  // .5 ok here, 1 best for larger nets: objrec, lvis
-					"Prjn.SWt.Init.Mean":      "0.5",  // 0.5 generally good
-					"Prjn.SWt.Limit.Min":      "0.2",
-					"Prjn.SWt.Limit.Max":      "0.8",
+					"Prjn.Learn.Lrate.Base":       "0.04", // .04 for SynSpkTheta
+					"Prjn.SWt.Adapt.Lrate":        "0.01", // 0.01 seems to work fine, but .1 maybe more reliable
+					"Prjn.SWt.Adapt.DreamVar":     "0.01", // 0.01 is just tolerable
+					"Prjn.SWt.Init.SPct":          "1.0",  // .5 ok here, 1 best for larger nets: objrec, lvis
+					"Prjn.Learn.KinaseCa.SpikeG":  "12",   // 12 matches theta exactly, higher dwtavg but ok
+					"Prjn.Learn.KinaseCa.NMDAG":   "1",
+					"Prjn.Learn.KinaseCa.Rule":    "SynSpkTheta",
+					"Prjn.Learn.KinaseCa.MTau":    "5",    // 5 > 10 test more
+					"Prjn.Learn.KinaseCa.UpdtThr": "0.05", // 0.05 -- was LrnThr
+					"Prjn.Learn.XCal.On":          "true",
+					"Prjn.Learn.XCal.PThrMin":     "0.05", // .05 > .01 for PCA for SynSpk, bad for NeurSpk
+					"Prjn.Learn.XCal.LrnThr":      "0.05", // .05 > .01 here but not smaller nets -- should match NeurCa.LrnThr 0.05 also good
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{

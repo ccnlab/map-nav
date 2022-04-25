@@ -926,11 +926,12 @@ func (ss *Sim) Train() { // TODO(refactor): delete, looper
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
 func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with looper
-	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
+	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
-	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
+	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
+	epc, _, chg := epoch.Query()
 	if chg {
 
 		ss.EpochSched(epc)

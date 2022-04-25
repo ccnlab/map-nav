@@ -187,25 +187,25 @@ func (ss *Sim) NewPrjns() {
 
 // Config configures all the elements using the standard functions
 func (ss *Sim) Config() {
-	ss.ConfigEnv()
+	//ss.ConfigEnv()// TODO(DWORLD!)
 	ss.ConfigNet(ss.Net)
 }
 
-func (ss *Sim) ConfigEnv() {
-	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
-	ss.TrainEnv.Nm = "TrainEnv"
-	ss.TrainEnv.Dsc = "training params and state"
-	ss.TrainEnv.Run.Max = ss.MaxRuns
-	ss.TrainEnv.Init(0)
-	ss.TrainEnv.Validate()
-
-	ss.ConfigRFMaps()
-}
+//func (ss *Sim) ConfigEnv() {// TODO(DWORLD!)
+//	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
+//	ss.TrainEnv.Nm = "TrainEnv"
+//	ss.TrainEnv.Dsc = "training params and state"
+//	ss.TrainEnv.Run.Max = ss.MaxRuns
+//	ss.TrainEnv.Init(0)
+//	ss.TrainEnv.Validate()
+//
+//	ss.ConfigRFMaps()
+//}
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
 
-	// DO NOT SUBMIT Not sure these should go here.
+	// DO NOT SUBMIT Not sure these should go here.// TODO(DWORLD!)
 	ss.DepthPools = 8
 	ss.DepthSize = 32
 	ss.NFOVRays = 13 // Not sure this value is right
@@ -615,8 +615,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 // and resets the epoch log table
 func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
-	ss.ConfigEnv() // re-config env just in case a different set of patterns was
-	// selected or patterns have been modified etc
+	//ss.ConfigEnv() // re-config env just in case a different set of patterns was
+	// selected or patterns have been modified etc // TODO(DWORLD!)
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
 }
@@ -715,9 +715,11 @@ func (ss *Sim) ThetaCyc(train bool) {
 func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): call this in looper
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	nact := ss.DecodeAct(ly, ev)
-	gact, urgency := ev.ActGen()
-	ss.NetAction = ev.Acts[nact]
-	ss.GenAction = ev.Acts[gact]
+	//gact, urgency := ev.ActGen() // TODO(DWORLD!)
+	urgency := 0
+	gact := 0
+	ss.NetAction = "Right" // ev.Acts[nact]
+	ss.GenAction = "Right" // ev.Acts[gact]
 	ss.ActMatch = 0
 	if nact == gact {
 		ss.ActMatch = 1
@@ -743,8 +745,8 @@ func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): ca
 func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this go
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
-	act := ev.DecodeAct(vt)
-	return act
+	//act := ev.DecodeAct(vt) // TODO(DWORLD!)
+	return 0
 }
 
 // TrainTrial runs one trial of training using TrainEnv
@@ -800,9 +802,9 @@ func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
-	run := ss.TrainEnv.Run.Cur
+	//run := ss.TrainEnv.Run.Cur
 	ss.PctCortex = 0
-	ss.TrainEnv.Init(run)
+	//ss.TrainEnv.Init(run) // TODO(DWORLD!)
 	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
 	ss.Net.InitWts()

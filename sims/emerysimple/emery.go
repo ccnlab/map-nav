@@ -11,7 +11,6 @@ import (
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
-	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/evec"
@@ -659,8 +658,6 @@ func (ss *Sim) ThetaCyc(train bool) {
 		ss.Net.SynFail(&ss.Time)
 	}
 
-	ev := &ss.TrainEnv
-
 	minusCyc := ss.MinusCycles
 	plusCyc := ss.PlusCycles
 
@@ -690,7 +687,8 @@ func (ss *Sim) ThetaCyc(train bool) {
 
 	}
 	ss.Time.NewPhase(true)
-	ss.TakeAction(ss.Net, ev) // TODO(refactor): this seems different
+	fmt.Println("Taking action! ")
+	//ss.TakeAction(ss.Net, ev) // TODO(DWORLD!)
 
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
 		ss.Net.Cycle(&ss.Time)
@@ -752,11 +750,12 @@ func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this g
 
 // TrainTrial runs one trial of training using TrainEnv
 func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
-	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
+	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
-	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
+	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
+	epc, _, chg := epoch.Query()
 	if chg {
 
 		ss.EpochSched(epc)
@@ -935,16 +934,17 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 	if chg {
 
 		ss.EpochSched(epc)
-		ss.TrainEnv.Event.Cur = 0
+		//ss.TrainEnv.Event.Cur = 0
 
 		if epc >= ss.TestEpcs {
 			return
 		}
 	}
 
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+	// TODO(DWORLD!)
+	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(false) // train
 	// ss.TrialStats(true) // now in alphacyc
 

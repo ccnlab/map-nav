@@ -65,7 +65,6 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
 	RepsInterval     int            `desc:"how often to analyze the representations"`
-	TrainEnv         FWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	OnlyEnv          DWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time      `desc:"axon timing parameters and state"`
 	TrainUpdt        etime.Times    `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
@@ -759,7 +758,7 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 	if chg {
 
 		ss.EpochSched(epc)
-		ss.TrainEnv.Event.Cur = 0
+		//ss.TrainEnv.Event.Cur = 0  // TODO(DWORLD!)
 
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
@@ -780,15 +779,12 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 			}
 		}
 	}
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+	// TODO(DWORLD!)
+	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(true) // train
 	// ss.TrialStats(true) // now in alphacyc
-
-	if ss.RepsInterval > 0 && epc%ss.RepsInterval == 0 {
-
-	}
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc. here

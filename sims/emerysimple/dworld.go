@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/etable/etensor"
@@ -46,7 +47,9 @@ type DWorld struct {
 }
 
 // Init Initializes or reinitialize the world
-func (world *DWorld) Init(details string) {}
+func (world *DWorld) Init(details string) {
+	fmt.Println("Init Dworld: " + details)
+}
 
 // StepN Updates n timesteps (e.g. milliseconds)
 func (world *DWorld) StepN(n int) {}

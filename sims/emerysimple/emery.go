@@ -185,20 +185,13 @@ func (ss *Sim) NewPrjns() {
 
 // Config configures all the elements using the standard functions
 func (ss *Sim) Config() {
-	//ss.ConfigEnv()// TODO(DWORLD!)
+	ss.ConfigEnv()
 	ss.ConfigNet(ss.Net)
 }
 
-//func (ss *Sim) ConfigEnv() {// TODO(DWORLD!)
-//	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
-//	ss.TrainEnv.Nm = "TrainEnv"
-//	ss.TrainEnv.Dsc = "training params and state"
-//	ss.OnlyEnv.GetCounter(etime.Run).Max = ss.MaxRuns
-//	ss.TrainEnv.Init(0)
-//	ss.TrainEnv.Validate()
-//
-//	ss.ConfigRFMaps()
-//}
+func (ss *Sim) ConfigEnv() {
+	ss.OnlyEnv.Init("TODO DWORLD")
+}
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
@@ -613,8 +606,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 // and resets the epoch log table
 func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
-	//ss.ConfigEnv() // re-config env just in case a different set of patterns was
-	// selected or patterns have been modified etc // TODO(DWORLD!)
+	ss.ConfigEnv() // re-config env just in case a different set of patterns was
+	// selected or patterns have been modified etc
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
 }
@@ -622,13 +615,9 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 // Counters returns a string of the current counter state
 // use tabs to achieve a reasonable formatting overall
 // and add a few tabs at the end to allow for expansion.
-func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
-	// if train {
-	return "It's 5 o'clock somewhere!" // TODO(DWORLD!)
-	//return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
-	// } else {
-	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
-	// }
+func (ss *Sim) Counters(train bool) string {
+	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, 0, ss.Time.Cycle, ss.ActAction, ss.NetAction)
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -687,7 +676,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 	}
 	ss.Time.NewPhase(true)
 	fmt.Println("Taking action! ")
-	//ss.TakeAction(ss.Net, ev) // TODO(DWORLD!)
+	//ss.TakeAction(ss.Net, ss.OnlyEnv) // TODO(DWORLD!)
 
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
 		ss.Net.Cycle(&ss.Time)

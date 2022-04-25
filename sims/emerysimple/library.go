@@ -48,10 +48,10 @@ func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TO
 		if lyi == nil {
 			continue
 		}
-		ly := lyi.(axon.AxonLayer).AsAxon()
+		//ly := lyi.(axon.AxonLayer).AsAxon()
 		pats := en.State(states[i])
 		if pats != nil {
-			ly.ApplyExt(pats)
+			//ly.ApplyExt(pats)
 		}
 	}
 }

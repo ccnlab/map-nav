@@ -11,9 +11,9 @@ import (
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
-	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/etime"
+	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
@@ -65,7 +65,7 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
 	RepsInterval     int            `desc:"how often to analyze the representations"`
-	TrainEnv         FWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	OnlyEnv          DWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time      `desc:"axon timing parameters and state"`
 	TrainUpdt        etime.Times    `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
 	TestUpdt         etime.Times    `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
@@ -106,6 +106,15 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Comm         *mpi.Comm                   `view:"-" desc:"mpi communicator"`
 	AllDWts      []float32                   `view:"-" desc:"buffer of all dwt weight changes -- for mpi sharing"`
 	SumDWts      []float32                   `view:"-" desc:"buffer of MPI summed dwt weight changes"`
+
+	// Characteristics of the environment interface.
+	FoveaSize  int        `desc:"number of items on each size of the fovea, in addition to center (0 or more)"`
+	DepthSize  int        `inactive:"+" desc:"number of units in depth population codes"`
+	DepthPools int        `inactive:"+" desc:"number of pools to divide DepthSize into"`
+	PatSize    evec.Vec2i `desc:"size of patterns for mats, acts"`
+	Inters     []string   `desc:"list of interoceptive body states, represented as pop codes"`
+	PopSize    int        `inactive:"+" desc:"number of units in population codes"`
+	NFOVRays   int        `inactive:"+" desc:"total number of FOV rays that are traced"`
 }
 
 // TheSim is the overall state for this simulation
@@ -176,23 +185,32 @@ func (ss *Sim) NewPrjns() {
 
 // Config configures all the elements using the standard functions
 func (ss *Sim) Config() {
-	ss.ConfigEnv()
+	//ss.ConfigEnv()// TODO(DWORLD!)
 	ss.ConfigNet(ss.Net)
 }
 
-func (ss *Sim) ConfigEnv() {
-	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
-	ss.TrainEnv.Nm = "TrainEnv"
-	ss.TrainEnv.Dsc = "training params and state"
-	ss.TrainEnv.Run.Max = ss.MaxRuns
-	ss.TrainEnv.Init(0)
-	ss.TrainEnv.Validate()
-
-	ss.ConfigRFMaps()
-}
+//func (ss *Sim) ConfigEnv() {// TODO(DWORLD!)
+//	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
+//	ss.TrainEnv.Nm = "TrainEnv"
+//	ss.TrainEnv.Dsc = "training params and state"
+//	ss.OnlyEnv.GetCounter(etime.Run).Max = ss.MaxRuns
+//	ss.TrainEnv.Init(0)
+//	ss.TrainEnv.Validate()
+//
+//	ss.ConfigRFMaps()
+//}
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
+
+	// DO NOT SUBMIT Not sure these should go here.// TODO(DWORLD!)
+	ss.DepthPools = 8
+	ss.DepthSize = 32
+	ss.NFOVRays = 13 // Not sure this value is right
+	ss.FoveaSize = 1
+	ss.PopSize = 16
+	ss.Inters = []string{"Energy", "Hydra", "BumpPain", "FoodRew", "WaterRew"}
+	ss.PatSize = evec.Vec2i{X: 5, Y: 5}
 
 	full := prjn.NewFull()
 	sameu := prjn.NewPoolSameUnit()
@@ -206,19 +224,18 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	var parprjn prjn.Pattern
 	parprjn = full
 
-	ev := &ss.TrainEnv
-	fsz := 1 + 2*ev.FoveaSize
+	fsz := 1 + 2*ss.FoveaSize
 	// popsize = 12
 
 	// input / output layers:
-	v2wd, v2wdp := net.AddInputTRC4D("V2Wd", ev.DepthPools, ev.NFOVRays, ev.DepthSize/ev.DepthPools, 1)
-	v2fd, v2fdp := net.AddInputTRC4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1) // FovDepth
+	v2wd, v2wdp := net.AddInputTRC4D("V2Wd", ss.DepthPools, ss.NFOVRays, ss.DepthSize/ss.DepthPools, 1)
+	v2fd, v2fdp := net.AddInputTRC4D("V2Fd", ss.DepthPools, fsz, ss.DepthSize/ss.DepthPools, 1) // FovDepth
 	v2wd.SetClass("Depth")
 	v2wdp.SetClass("Depth")
 	v2fd.SetClass("Depth")
 	v2fdp.SetClass("Depth")
 
-	v1f, v1fp := net.AddInputTRC4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X) // Fovea
+	v1f, v1fp := net.AddInputTRC4D("V1F", 1, fsz, ss.PatSize.Y, ss.PatSize.X) // Fovea
 	v1f.SetClass("Fovea")
 	v1fp.SetClass("Fovea")
 
@@ -226,21 +243,21 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	s1s.SetClass("S1S")
 	s1sp.SetClass("S1S")
 
-	s1v, s1vp := net.AddInputTRC4D("S1V", 1, 2, ev.PopSize, 1) // Vestibular
+	s1v, s1vp := net.AddInputTRC4D("S1V", 1, 2, ss.PopSize, 1) // Vestibular
 	s1v.SetClass("S1V")
 	s1vp.SetClass("S1V")
 
-	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
+	ins := net.AddLayer4D("Ins", 1, len(ss.Inters), ss.PopSize, 1, emer.Input) // Inters = Insula
 	ins.SetClass("Ins")
 
 	m1 := net.AddLayer2D("M1", 10, 10, emer.Hidden)
-	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target)  // Action
-	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
+	vl := net.AddLayer2D("VL", ss.PatSize.Y, ss.PatSize.X, emer.Target)  // Action
+	act := net.AddLayer2D("Act", ss.PatSize.Y, ss.PatSize.X, emer.Input) // Action
 
 	m1p := net.AddTRCLayer2D("M1P", 10, 10)
 	m1p.Driver = "M1"
 
-	mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8)
+	mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ss.DepthPools/2, ss.NFOVRays/2, 8, 8)
 	mstdct.RecvPrjns().SendName(mstd.Name()).SetPattern(p1to1)                                // todo: try ss.Prjn3x3Skp1 orig: p1to1
 	net.ConnectLayers(mstdct, v2wdp, ss.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv2") // 3 is too high
 	net.ConnectLayers(v2wdp, mstd, ss.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
@@ -276,7 +293,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(v1fp, it, full, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(itct, itct, p1to1).SetClass("CTSelf")
 
-	lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8)
+	lip, lipct := net.AddSuperCT4D("LIP", ss.DepthPools/2, 1, 8, 8)
 	lipct.RecvPrjns().SendName(lip.Name()).SetPattern(full)
 	net.ConnectLayers(lipct, v2fdp, ss.Prjn4x3Skp2Recip, emer.Forward).SetClass("CTToPulv3")
 	net.ConnectLayers(v2fdp, lipct, ss.Prjn4x3Skp2, emer.Back).SetClass("FmPulv")
@@ -596,8 +613,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 // and resets the epoch log table
 func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
-	ss.ConfigEnv() // re-config env just in case a different set of patterns was
-	// selected or patterns have been modified etc
+	//ss.ConfigEnv() // re-config env just in case a different set of patterns was
+	// selected or patterns have been modified etc // TODO(DWORLD!)
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
 }
@@ -607,9 +624,10 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 // and add a few tabs at the end to allow for expansion.
 func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
 	// if train {
-	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
+	return "It's 5 o'clock somewhere!" // TODO(DWORLD!)
+	//return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
 	// } else {
-	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
 	// }
 }
 
@@ -638,8 +656,6 @@ func (ss *Sim) ThetaCyc(train bool) {
 	} else {
 		ss.Net.SynFail(&ss.Time)
 	}
-
-	ev := &ss.TrainEnv
 
 	minusCyc := ss.MinusCycles
 	plusCyc := ss.PlusCycles
@@ -670,7 +686,8 @@ func (ss *Sim) ThetaCyc(train bool) {
 
 	}
 	ss.Time.NewPhase(true)
-	ss.TakeAction(ss.Net, ev) // TODO(refactor): this seems different
+	fmt.Println("Taking action! ")
+	//ss.TakeAction(ss.Net, ev) // TODO(DWORLD!)
 
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
 		ss.Net.Cycle(&ss.Time)
@@ -696,9 +713,11 @@ func (ss *Sim) ThetaCyc(train bool) {
 func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): call this in looper
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	nact := ss.DecodeAct(ly, ev)
-	gact, urgency := ev.ActGen()
-	ss.NetAction = ev.Acts[nact]
-	ss.GenAction = ev.Acts[gact]
+	//gact, urgency := ev.ActGen() // TODO(DWORLD!)
+	urgency := 0
+	gact := 0
+	ss.NetAction = "Right" // ev.Acts[nact]
+	ss.GenAction = "Right" // ev.Acts[gact]
 	ss.ActMatch = 0
 	if nact == gact {
 		ss.ActMatch = 1
@@ -724,47 +743,48 @@ func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): ca
 func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this go
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
-	act := ev.DecodeAct(vt)
-	return act
+	//act := ev.DecodeAct(vt) // TODO(DWORLD!)
+	return 0
 }
 
 // TrainTrial runs one trial of training using TrainEnv
 func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
-	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
+	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
-	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
+	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
+	epc, _, chg := epoch.Query()
 	if chg {
 
 		ss.EpochSched(epc)
-		ss.TrainEnv.Event.Cur = 0
+		//ss.TrainEnv.Event.Cur = 0  // TODO(DWORLD!)
 
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
-				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur), ss.Net)
+				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur), ss.Net)
 			}
 			// done with training..
 			if ss.SaveARFs {
 				ss.TestAll()
 			}
 			ss.RunEnd()
-			if ss.TrainEnv.Run.Incr() { // we are done!
+			run := ss.OnlyEnv.GetCounter(etime.Run)
+			run.Incr()
+			_, _, chg = run.Query()
+			if chg { // we are done!
 				return
 			} else {
 				return
 			}
 		}
 	}
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+	// TODO(DWORLD!)
+	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(true) // train
 	// ss.TrialStats(true) // now in alphacyc
-
-	if ss.RepsInterval > 0 && epc%ss.RepsInterval == 0 {
-
-	}
 }
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc. here
@@ -778,12 +798,12 @@ func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 	}
 }
 
-// NewRun intializes a new run of the model, using the TrainEnv.Run counter
+// NewRun intializes a new run of the model, using the OnlyEnv.GetCounter(etime.Run) counter
 // for the new run value
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
-	run := ss.TrainEnv.Run.Cur
+	//run := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	ss.PctCortex = 0
-	ss.TrainEnv.Init(run)
+	//ss.TrainEnv.Init(run) // TODO(DWORLD!)
 	// ss.TestEnv.Init(run)
 	ss.Time.Reset()
 	ss.Net.InitWts()
@@ -839,10 +859,10 @@ func (ss *Sim) TrialStats(accum bool) { // TODO(refactor): looper call
 
 // TrainEpoch runs training trials for remainder of this epoch
 func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
-	curEpc := ss.TrainEnv.Epoch.Cur
+	curEpc := ss.OnlyEnv.GetCounter(etime.Epoch).Cur
 	for {
 		ss.TrainTrial()
-		if ss.TrainEnv.Epoch.Cur != curEpc {
+		if ss.OnlyEnv.GetCounter(etime.Epoch).Cur != curEpc {
 			break
 		}
 	}
@@ -851,10 +871,10 @@ func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
 
 // TrainRun runs training trials for remainder of run
 func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
-	curRun := ss.TrainEnv.Run.Cur
+	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	for {
 		ss.TrainTrial()
-		if ss.TrainEnv.Run.Cur != curRun {
+		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
 			break
 		}
 	}
@@ -901,24 +921,26 @@ func (ss *Sim) Train() { // TODO(refactor): delete, looper
 
 // TestTrial runs one trial of testing -- always sequentially presented inputs
 func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with looper
-	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
+	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
 	// if epoch counter has changed
-	epc, _, chg := ss.TrainEnv.Counter(env.Epoch)
+	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
+	epc, _, chg := epoch.Query()
 	if chg {
 
 		ss.EpochSched(epc)
-		ss.TrainEnv.Event.Cur = 0
+		//ss.TrainEnv.Event.Cur = 0
 
 		if epc >= ss.TestEpcs {
 			return
 		}
 	}
 
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+	// TODO(DWORLD!)
+	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
 	ss.ThetaCyc(false) // train
 	// ss.TrialStats(true) // now in alphacyc
 
@@ -926,10 +948,10 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
-	curRun := ss.TrainEnv.Run.Cur
+	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	for {
 		ss.TestTrial(false)
-		if ss.TrainEnv.Run.Cur != curRun {
+		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
 			break
 		}
 	}

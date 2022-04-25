@@ -14,19 +14,15 @@ import (
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/etime"
-	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor"
-	"github.com/emer/etable/etview"
 	"github.com/emer/etable/pca"
-	"github.com/goki/gi/gi"
 	"log"
 	"math/rand"
-	"os"
 )
 
 func main() {
@@ -46,43 +42,38 @@ func main() {
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 
-	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
-	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
-	ARFs             actrf.RFs                     `view:"no-inline" desc:"activation-based receptive fields"`
-	TrnErrStats      *etable.Table                 `view:"no-inline" desc:"stats on train trials where errors were made"`
-	TrnAggStats      *etable.Table                 `view:"no-inline" desc:"stats on all train trials"`
-	RunStats         *etable.Table                 `view:"no-inline" desc:"aggregate stats on all runs"`
-	MinusCycles      int                           `desc:"number of minus-phase cycles"`
-	PlusCycles       int                           `desc:"number of plus-phase cycles"`
-	AllLaysOnEpc     int                           `desc:"epoch to turn all layers on -- start with some toggled off (TE etc)"`
-	ErrLrMod         axon.LrateMod                 `view:"inline" desc:"learning rate modulation as function of error"`
-	Params           params.Sets                   `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet         string                        `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	Tag              string                        `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
-	Prjn4x4Skp2      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x4Skp2Recip *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn4x3Skp2      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x3Skp2Recip *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn3x3Skp1      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
-	Prjn4x4Skp4      *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
-	Prjn4x4Skp4Recip *prjn.PoolTile                `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
-	MaxRuns          int                           `desc:"maximum number of model runs to perform"`
-	MaxEpcs          int                           `desc:"maximum number of epochs to run per model run"`
-	TestEpcs         int                           `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	RepsInterval     int                           `desc:"how often to analyze the representations"`
-	TrainEnv         FWorld                        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time             axon.Time                     `desc:"axon timing parameters and state"`
-	ViewOn           bool                          `desc:"whether to update the network view while running"`
-	TrainUpdt        etime.Times                   `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt         etime.Times                   `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
-	TestInterval     int                           `desc:"how often to run through all the test patterns, in terms of training epochs"`
-	CosDifActs       []string                      `view:"-" desc:"actions to track CosDif performance by"`
-	InitOffNms       []string                      `desc:"names of layers to turn off initially"`
-	LayStatNms       []string                      `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	ARFLayers        []string                      `desc:"names of layers to compute position activation fields on"`
-	SpikeRecLays     []string                      `desc:"names of layers to record spikes of during testing"`
-	SpikeRasters     map[string]*etensor.Float32   `desc:"spike raster data for different layers"`
-	SpikeRastGrids   map[string]*etview.TensorGrid `desc:"spike raster plots for different layers"`
+	PctCortex        float64        `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax     float64        `desc:"maximum PctCortex, when running on the schedule"`
+	ARFs             actrf.RFs      `view:"no-inline" desc:"activation-based receptive fields"`
+	TrnErrStats      *etable.Table  `view:"no-inline" desc:"stats on train trials where errors were made"`
+	TrnAggStats      *etable.Table  `view:"no-inline" desc:"stats on all train trials"`
+	RunStats         *etable.Table  `view:"no-inline" desc:"aggregate stats on all runs"`
+	MinusCycles      int            `desc:"number of minus-phase cycles"`
+	PlusCycles       int            `desc:"number of plus-phase cycles"`
+	ErrLrMod         axon.LrateMod  `view:"inline" desc:"learning rate modulation as function of error"`
+	Params           params.Sets    `view:"no-inline" desc:"full collection of param sets"`
+	ParamSet         string         `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
+	Tag              string         `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Prjn4x4Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x4Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn4x3Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x3Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn3x3Skp1      *prjn.PoolTile `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Prjn4x4Skp4      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	Prjn4x4Skp4Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
+	MaxRuns          int            `desc:"maximum number of model runs to perform"`
+	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
+	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
+	RepsInterval     int            `desc:"how often to analyze the representations"`
+	TrainEnv         FWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time             axon.Time      `desc:"axon timing parameters and state"`
+	TrainUpdt        etime.Times    `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
+	TestUpdt         etime.Times    `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
+	TestInterval     int            `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	CosDifActs       []string       `view:"-" desc:"actions to track CosDif performance by"`
+	InitOffNms       []string       `desc:"names of layers to turn off initially"`
+	LayStatNms       []string       `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
+	ARFLayers        []string       `desc:"names of layers to compute position activation fields on"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -104,27 +95,11 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	PCA           pca.PCA                     `view:"-" desc:"pca obj"`
 
 	// internal state - view:"-"
-	Win          *gi.Window                  `view:"-" desc:"main GUI window"`
-	NetView      *netview.NetView            `view:"-" desc:"the network viewer"`
-	ToolBar      *gi.ToolBar                 `view:"-" desc:"the master toolbar"`
-	WorldWin     *gi.Window                  `view:"-" desc:"FWorld GUI window"`
-	WorldTabs    *gi.TabView                 `view:"-" desc:"FWorld TabView"`
-	MatColors    []string                    `desc:"color strings in material order"`
-	Trace        *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
-	TraceView    *etview.TensorGrid          `desc:"view of the activity trace"`
-	WorldView    *etview.TensorGrid          `desc:"view of the world"`
-	TrnEpcFile   *os.File                    `view:"-" desc:"log file"`
-	TstEpcFile   *os.File                    `view:"-" desc:"log file"`
-	RunFile      *os.File                    `view:"-" desc:"log file"`
 	PopVals      []float32                   `view:"-" desc:"tmp pop code values"`
 	ValsTsrs     map[string]*etensor.Float32 `view:"-" desc:"for holding layer values"`
 	SaveWts      bool                        `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
 	SaveARFs     bool                        `view:"-" desc:"for command-line run only, auto-save receptive field data"`
-	NoGui        bool                        `view:"-" desc:"if true, runing in no GUI mode"`
 	LogSetParams bool                        `view:"-" desc:"if true, print message for all params that are set"`
-	IsRunning    bool                        `view:"-" desc:"true if sim is running"`
-	StopNow      bool                        `view:"-" desc:"flag to stop running"`
-	NeedsNewRun  bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
 	RndSeed      int64                       `view:"-" desc:"the current random seed"`
 	UseMPI       bool                        `view:"-" desc:"if true, use MPI to distribute computation across nodes"`
 	SaveProcLog  bool                        `view:"-" desc:"if true, save logs per processor"`
@@ -146,21 +121,18 @@ func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.MinusCycles = 150
 	ss.PlusCycles = 50
 	ss.RepsInterval = 10
-	ss.AllLaysOnEpc = 2
 
 	ss.ErrLrMod.Defaults()
 	ss.ErrLrMod.Base = 0.05 // 0.05 >= .01, .1 -- hard to tell
 	ss.ErrLrMod.Range.Set(0.2, 0.8)
 	ss.Params = ParamSets
 	ss.RndSeed = 1
-	ss.ViewOn = true
 	ss.TrainUpdt = etime.AlphaCycle
 	ss.TestUpdt = etime.GammaCycle
 	ss.CosDifActs = []string{"Forward", "Left", "Right"}
 	ss.InitOffNms = []string{"MSTdP", "cIPLCT", "cIPLP", "PCCCT"}
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 	ss.ARFLayers = []string{"MSTd", "cIPL", "PCC", "SMA"}
-	ss.SpikeRecLays = []string{"cIPL", "PCC", "SMA"}
 
 	// Default values
 	ss.PctCortexMax = 0.9 // 0.5 before
@@ -490,7 +462,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(sma, it, full, emer.Back)
 	// net.ConnectLayers(pcc, it, full, emer.Back) // not useful
 
-	net.ConnectLayers(smact, itct, parprjn, emer.Back).SetClass("CTBack") // needs to know how moving..
+	net.ConnectLayers(smact, itct, parprjn, emer.Back).SetClass("CTBack") // needs to know how moving.
 	// net.ConnectLayers(pccct, itct, full, emer.Back).SetClass("CTBack")
 
 	////////////////////
@@ -614,10 +586,6 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		log.Println(err)
 		return
 	}
-	if !ss.NoGui {
-		sr := net.SizeReport()
-		mpi.Printf("%s", sr)
-	}
 	net.InitWts()
 }
 
@@ -630,14 +598,13 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
 	ss.ConfigEnv() // re-config env just in case a different set of patterns was
 	// selected or patterns have been modified etc
-	ss.StopNow = false
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
 }
 
 // Counters returns a string of the current counter state
 // use tabs to achieve a reasonable formatting overall
-// and add a few tabs at the end to allow for expansion..
+// and add a few tabs at the end to allow for expansion.
 func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
 	// if train {
 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
@@ -753,7 +720,7 @@ func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): ca
 	// fmt.Printf("action: %s\n", ev.Acts[act])
 }
 
-// DecodeAct decodes the VL ActM state to find closest action pattern
+// DecodeAct decodes the VL ActM state to find the closest action pattern
 func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this go
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
@@ -763,10 +730,6 @@ func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this g
 
 // TrainTrial runs one trial of training using TrainEnv
 func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
-	if ss.NeedsNewRun {
-		ss.NewRun()
-	}
-
 	ss.TrainEnv.Step() // the Env encapsulates and manages all counter state
 
 	// Key to query counters FIRST because current state is in NEXT epoch
@@ -787,10 +750,8 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 			}
 			ss.RunEnd()
 			if ss.TrainEnv.Run.Incr() { // we are done!
-				ss.StopNow = true
 				return
 			} else {
-				ss.NeedsNewRun = true
 				return
 			}
 		}
@@ -806,7 +767,7 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 	}
 }
 
-// RunEnd is called at the end of a run -- save weights, record final log, etc here
+// RunEnd is called at the end of a run -- save weights, record final log, etc. here
 func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 
 	// if ss.SaveWts { // doing this earlier
@@ -827,8 +788,6 @@ func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	ss.Time.Reset()
 	ss.Net.InitWts()
 	ss.InitStats()
-
-	ss.NeedsNewRun = false
 }
 
 // InitStats initializes all the statistics, especially important for the
@@ -880,11 +839,10 @@ func (ss *Sim) TrialStats(accum bool) { // TODO(refactor): looper call
 
 // TrainEpoch runs training trials for remainder of this epoch
 func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
-	ss.StopNow = false
 	curEpc := ss.TrainEnv.Epoch.Cur
 	for {
 		ss.TrainTrial()
-		if ss.StopNow || ss.TrainEnv.Epoch.Cur != curEpc {
+		if ss.TrainEnv.Epoch.Cur != curEpc {
 			break
 		}
 	}
@@ -893,11 +851,10 @@ func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
 
 // TrainRun runs training trials for remainder of run
 func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
-	ss.StopNow = false
 	curRun := ss.TrainEnv.Run.Cur
 	for {
 		ss.TrainTrial()
-		if ss.StopNow || ss.TrainEnv.Run.Cur != curRun {
+		if ss.TrainEnv.Run.Cur != curRun {
 			break
 		}
 	}
@@ -932,12 +889,8 @@ func (ss *Sim) EpochSched(epc int) { // TODO(refactor): looper callback
 
 // Train runs the full training from this point onward
 func (ss *Sim) Train() { // TODO(refactor): delete, looper
-	ss.StopNow = false
 	for {
 		ss.TrainTrial()
-		if ss.StopNow {
-			break
-		}
 	}
 }
 
@@ -959,7 +912,6 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 		ss.TrainEnv.Event.Cur = 0
 
 		if epc >= ss.TestEpcs {
-			ss.StopNow = true
 			return
 		}
 	}
@@ -974,11 +926,10 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
-	ss.StopNow = false
 	curRun := ss.TrainEnv.Run.Cur
 	for {
 		ss.TestTrial(false)
-		if ss.StopNow || ss.TrainEnv.Run.Cur != curRun {
+		if ss.TrainEnv.Run.Cur != curRun {
 			break
 		}
 	}
@@ -987,9 +938,7 @@ func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
 func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
-	ss.StopNow = false
 	ss.TestAll()
-
 }
 
 //////////////////////////////////////////////

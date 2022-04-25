@@ -33,6 +33,8 @@ type WorldInterface interface {
 	Info() string
 
 	GetCounter(time etime.Times) env.Ctr
+
+	DecodeAndTakeAction(vt *etensor.Float32) string
 }
 
 type DWorld struct {
@@ -49,6 +51,10 @@ type DWorld struct {
 // Init Initializes or reinitialize the world
 func (world *DWorld) Init(details string) {
 	fmt.Println("Init Dworld: " + details)
+}
+
+func (world *DWorld) DecodeAndTakeAction(vt *etensor.Float32) string {
+	return "Taking in info from model and moving forward"
 }
 
 // StepN Updates n timesteps (e.g. milliseconds)

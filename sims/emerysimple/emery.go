@@ -11,7 +11,6 @@ import (
 	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
-	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/params"
@@ -676,7 +675,8 @@ func (ss *Sim) ThetaCyc(train bool) {
 	}
 	ss.Time.NewPhase(true)
 	fmt.Println("Taking action! ")
-	//ss.TakeAction(ss.Net, ss.OnlyEnv) // TODO(DWORLD!)
+
+	ss.SendAction(ss.Net, &ss.OnlyEnv)
 
 	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
 		ss.Net.Cycle(&ss.Time)
@@ -697,43 +697,13 @@ func (ss *Sim) ThetaCyc(train bool) {
 
 }
 
-// TakeAction takes action for this step, using either decoded cortical
+// SendAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
-func (ss *Sim) TakeAction(net *deep.Network, ev *FWorld) { // TODO(refactor): call this in looper
+func (ss *Sim) SendAction(net *deep.Network, ev WorldInterface) { // TODO(refactor): call this in looper
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
-	nact := ss.DecodeAct(ly, ev)
-	//gact, urgency := ev.ActGen() // TODO(DWORLD!)
-	urgency := 0
-	gact := 0
-	ss.NetAction = "Right" // ev.Acts[nact]
-	ss.GenAction = "Right" // ev.Acts[gact]
-	ss.ActMatch = 0
-	if nact == gact {
-		ss.ActMatch = 1
-	}
-	if erand.BoolProb(float64(urgency), -1) {
-		ss.ActAction = ss.GenAction
-	} else if erand.BoolProb(ss.PctCortex, -1) {
-		ss.ActAction = ss.NetAction
-	} else {
-		ss.ActAction = ss.GenAction
-	}
-	ly.SetType(emer.Input)
-	ev.Action(ss.ActAction, nil)
-	ap, ok := ev.Pats[ss.ActAction]
-	if ok {
-		ly.ApplyExt(ap)
-	}
-	ly.SetType(emer.Target)
-	// fmt.Printf("action: %s\n", ev.Acts[act])
-}
-
-// DecodeAct decodes the VL ActM state to find the closest action pattern
-func (ss *Sim) DecodeAct(ly *axon.Layer, ev *FWorld) int { //where should this go
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
-	//act := ev.DecodeAct(vt) // TODO(DWORLD!)
-	return 0
+	ev.DecodeAndTakeAction(vt)
 }
 
 // TrainTrial runs one trial of training using TrainEnv

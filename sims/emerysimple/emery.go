@@ -12,6 +12,7 @@ import (
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/evec"
+	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/empi/mpi"
@@ -26,6 +27,7 @@ func main() {
 	TheSim.New()    // note: not running Config here -- done in CmdArgs for mpi / nogui
 	TheSim.Config() // for GUI case, config then run..
 	TheSim.Init()
+	TheSim.ConfigLoops()
 	TheSim.Train()
 }
 
@@ -39,6 +41,7 @@ func main() {
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 
+	Loops            looper.Set     `view:"no-inline" desc:"contains looper control loops for running sim"`
 	PctCortex        float64        `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64        `desc:"maximum PctCortex, when running on the schedule"`
 	TrnErrStats      *etable.Table  `view:"no-inline" desc:"stats on train trials where errors were made"`
@@ -548,6 +551,106 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	// selected or patterns have been modified etc
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 	ss.NewRun()
+}
+
+// ConfigLoops configures the control loops
+func (ss *Sim) ConfigLoops() {
+	//	trn := looper.NewStackEnv(ss.OnlyEnv)
+	//	ss.Loops.AddStack(trn)
+	//	axon.ConfigLoopsStd(&ss.Loops, &ss.Net.Network, &ss.Time, 150, 50)
+	//	// note: AddCycle0 adds in reverse order of where things end up!
+	//	axon.AddCycle0(&ss.Loops, &ss.Time, "Sim:ApplyInputs", ss.ApplyInputs)
+	//	axon.AddCycle0(&ss.Loops, &ss.Time, "Sim:NewRun", func() {
+	//		if ss.NeedsNewRun {
+	//			ss.NewRun()
+	//		}
+	//	})
+	//	// note: AddLoopCycle adds in reverse order of where things end up!
+	//	if !nogui { // todo: cmdline
+	//		axon.AddLoopCycle(&ss.Loops, "GUI:UpdateNetView", ss.UpdateNetViewCycle)
+	//		axon.AddLoopCycle(&ss.Loops, "GUI:RasterRec", ss.RasterRec)
+	//	}
+	//	tst.Loop(etime.Cycle).Main.InsertAfter("Axon:Cycle:Run", "Log:Test:Cycle", func() {
+	//		ss.Log(etime.Test, etime.Cycle)
+	//	})
+	//	axon.AddLoopCycle(&ss.Loops, "Sim:SaveState", func() {
+	//		if ss.Time.Phase == 0 {
+	//			switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
+	//			case 75:
+	//				ss.Net.ActSt1(&ss.Time)
+	//			case 100:
+	//				ss.Net.ActSt2(&ss.Time)
+	//			}
+	//		}
+	//	})
+	//	axon.AddLoopCycle(&ss.Loops, "Sim:StatCounters", ss.StatCounters) // add last so comes first!
+	//
+	//	axon.AddPhaseMain(&ss.Loops, "Sim:TrialStats", func() {
+	//		if ss.Time.Phase == 1 {
+	//			ss.TrialStats()
+	//		}
+	//	})
+	//	if !nogui {
+	//		// after dwt updated, grab it
+	//		trn.Loop(etime.Phase).End.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
+	//		tst.Loop(etime.Phase).End.Add("GUI:UpdatePlot", func() {
+	//			ss.GUI.UpdatePlot(etime.Test, etime.Cycle) // make sure always updated at end
+	//		})
+	//	}
+	//
+	//	// prepend = before counter is incremented
+	//	trn.Loop(etime.Trial).Main.Prepend("Log:Train:Trial", func() {
+	//		ss.Log(etime.Train, etime.Trial)
+	//	})
+	//	trn.Loop(etime.Epoch).Main.Prepend("Log:Train:Epoch", func() {
+	//		epc := ss.Envs.ByMode(etime.Train).Counter(etime.Epoch).Cur
+	//		if (ss.TestInterval > 0) && (epc%ss.TestInterval == 0) { // note: epc is *next* so won't trigger first time
+	//			ss.TestAll()
+	//		}
+	//		ss.Log(etime.Train, etime.Epoch)
+	//	})
+	//
+	//	trn.Loop(etime.Epoch).Stop.Add("Epoch:NZeroStop", func() bool { // early stopping
+	//		nzero := ss.Args.Int("nzero")
+	//		return nzero > 0 && ss.Stats.Int("NZero") >= nzero
+	//	})
+	//
+	//	trn.Loop(etime.Run).Main.Prepend("Log:Train:Run", func() {
+	//		swts := ss.Args.Bool("wts")
+	//		ss.Log(etime.Train, etime.Run)
+	//		if swts {
+	//			fnm := ss.WeightsFileName()
+	//			fmt.Printf("Saving Weights to: %s\n", fnm)
+	//			ss.Net.SaveWtsJSON(gi.FileName(fnm))
+	//		}
+	//		ss.NeedsNewRun = true // next step will trigger new init
+	//	})
+	//
+	//	tst.Loop(etime.Trial).Main.Add("Log:Test:Trial", func() {
+	//		ss.Log(etime.Test, etime.Trial)
+	//		ss.GUI.NetDataRecord()
+	//	})
+	//	tst.Loop(etime.Epoch).Main.Add("Log:Test:Epoch", func() {
+	//		ss.Log(etime.Test, etime.Epoch)
+	//	})
+	//
+	//	if !nogui {
+	//		trn.Loop(etime.Trial).Main.Prepend("GUI:UpdateNetView", func() {
+	//			ss.UpdateNetViewTime(etime.Trial)
+	//		})
+	//		trn.Loop(etime.Epoch).Main.Prepend("GUI:UpdateNetView", func() {
+	//			ss.UpdateNetViewTime(etime.Epoch)
+	//		})
+	//		tst.Loop(etime.Trial).Main.Prepend("GUI:UpdateNetView", func() {
+	//			ss.UpdateNetViewTime(etime.Trial)
+	//		})
+	//		tst.Loop(etime.Epoch).Main.Prepend("GUI:UpdateNetView", func() {
+	//			ss.UpdateNetViewTime(etime.Epoch)
+	//		})
+	//	}
+	//
+	//	fmt.Println(trn.DocString())
+	//	fmt.Println(tst.DocString())
 }
 
 // Counters returns a string of the current counter state

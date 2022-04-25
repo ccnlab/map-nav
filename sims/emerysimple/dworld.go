@@ -9,47 +9,7 @@ import (
 
 // Proof of concept for replacing the environment with a simpler environment that uses the network.
 
-// WorldInterface is like env.Env.
-type WorldInterface interface {
-	// Init Initializes or reinitialize the world
-	Init(details string)
-
-	// StepN Updates n timesteps (e.g. milliseconds)
-	StepN(n int)
-
-	// Step 1
-	Step()
-
-	// GetObservationSpace describes the shape and names of what the model can expect as inputs
-	GetObservationSpace() map[string][]int
-
-	// GetActionSpace describes the shape and names of what the model can send as outputs
-	GetActionSpace() map[string][]int
-
-	// Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
-	Observe(name string) etensor.Tensor
-
-	// ObserveWithShape Returns a tensor for the named modality. E.g. “x” or “vision” or “reward” but returns a specific shape, like having four eyes versus 2 eyes
-	ObserveWithShape(name string, shape []int) etensor.Tensor
-
-	// Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")
-	Action(action, details string)
-
-	// Done Returns true if episode has ended, e.g. when exiting maze
-	Done() bool
-
-	// Info Returns general information about the world, for debugging purposes. Should not be used for actual learning.
-	Info() string
-
-	GetCounter(time etime.Times) env.Ctr
-
-	DecodeAndTakeAction(vt *etensor.Float32) string
-
-	// Display displays environment to the user
-	Display()
-}
-
-type DWorld struct {
+type ExampleWorld struct {
 	WorldInterface
 	Nm  string `desc:"name of this environment"`
 	Dsc string `desc:"description of this environment"`
@@ -61,56 +21,56 @@ type DWorld struct {
 }
 
 //Display displays the environmnet
-func (world *DWorld) Display() {
+func (world *ExampleWorld) Display() {
 	fmt.Println("This world state")
 }
 
 // Init Initializes or reinitialize the world
-func (world *DWorld) Init(details string) {
+func (world *ExampleWorld) Init(details string) {
 	fmt.Println("Init Dworld: " + details)
 }
 
-func (world *DWorld) GetObservationSpace() map[string][]int {
+func (world *ExampleWorld) GetObservationSpace() map[string][]int {
 	return nil
 }
 
-func (world *DWorld) GetActionSpace() map[string][]int {
+func (world *ExampleWorld) GetActionSpace() map[string][]int {
 	return nil
 }
 
-func (world *DWorld) DecodeAndTakeAction(vt *etensor.Float32) string {
+func (world *ExampleWorld) DecodeAndTakeAction(vt *etensor.Float32) string {
 	return "Taking in info from model and moving forward"
 }
 
 // StepN Updates n timesteps (e.g. milliseconds)
-func (world *DWorld) StepN(n int) {}
+func (world *ExampleWorld) StepN(n int) {}
 
 // Step 1
-func (world *DWorld) Step() {}
+func (world *ExampleWorld) Step() {}
 
 // Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
-func (world *DWorld) Observe(name string) etensor.Tensor {
+func (world *ExampleWorld) Observe(name string) etensor.Tensor {
 	return nil
 }
 
-func (world *DWorld) ObserveWithShape(name string, shape []int) etensor.Tensor {
+func (world *ExampleWorld) ObserveWithShape(name string, shape []int) etensor.Tensor {
 	return etensor.NewFloat32(shape, nil, nil)
 }
 
 // Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")
-func (world *DWorld) Action(action, details string) {}
+func (world *ExampleWorld) Action(action, details string) {}
 
 // Done Returns true if episode has ended, e.g. when exiting maze
-func (world *DWorld) Done() bool {
+func (world *ExampleWorld) Done() bool {
 	return false
 }
 
 // Info Returns general information about the world, for debugging purposes. Should not be used for actual learning.
-func (world *DWorld) Info() string {
+func (world *ExampleWorld) Info() string {
 	return "God is dead"
 }
 
-func (world *DWorld) GetCounter(time etime.Times) env.Ctr {
+func (world *ExampleWorld) GetCounter(time etime.Times) env.Ctr {
 	if time == etime.Epoch {
 		return world.Epoch
 	}

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
-	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/evec"
@@ -43,7 +42,6 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 
 	PctCortex        float64        `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64        `desc:"maximum PctCortex, when running on the schedule"`
-	ARFs             actrf.RFs      `view:"no-inline" desc:"activation-based receptive fields"`
 	TrnErrStats      *etable.Table  `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TrnAggStats      *etable.Table  `view:"no-inline" desc:"stats on all train trials"`
 	RunStats         *etable.Table  `view:"no-inline" desc:"aggregate stats on all runs"`
@@ -64,15 +62,12 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
 	RepsInterval     int            `desc:"how often to analyze the representations"`
-	OnlyEnv          DWorld         `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	OnlyEnv          ExampleWorld   `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time      `desc:"axon timing parameters and state"`
-	TrainUpdt        etime.Times    `desc:"at what time scale to update the display during training?  Anything longer than Epoch updates at Epoch in this model"`
-	TestUpdt         etime.Times    `desc:"at what time scale to update the display during testing?  Anything longer than Epoch updates at Epoch in this model"`
 	TestInterval     int            `desc:"how often to run through all the test patterns, in terms of training epochs"`
 	CosDifActs       []string       `view:"-" desc:"actions to track CosDif performance by"`
 	InitOffNms       []string       `desc:"names of layers to turn off initially"`
 	LayStatNms       []string       `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
-	ARFLayers        []string       `desc:"names of layers to compute position activation fields on"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -135,12 +130,9 @@ func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.ErrLrMod.Range.Set(0.2, 0.8)
 	ss.Params = ParamSets
 	ss.RndSeed = 1
-	ss.TrainUpdt = etime.AlphaCycle
-	ss.TestUpdt = etime.GammaCycle
 	ss.CosDifActs = []string{"Forward", "Left", "Right"}
 	ss.InitOffNms = []string{"MSTdP", "cIPLCT", "cIPLP", "PCCCT"}
 	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
-	ss.ARFLayers = []string{"MSTd", "cIPL", "PCC", "SMA"}
 
 	// Default values
 	ss.PctCortexMax = 0.9 // 0.5 before

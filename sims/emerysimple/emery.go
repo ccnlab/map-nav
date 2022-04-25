@@ -189,13 +189,12 @@ func (ss *Sim) Config() {
 }
 
 func (ss *Sim) ConfigEnv() {
-	ss.OnlyEnv.Init("TODO DWORLD")
+	ss.OnlyEnv.Init("Everything is working, we're done")
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
 
-	// DO NOT SUBMIT Not sure these should go here.// TODO(DWORLD!)
 	ss.DepthPools = 8
 	ss.DepthSize = 32
 	ss.NFOVRays = 13 // Not sure this value is right
@@ -717,7 +716,6 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 	if chg {
 
 		ss.EpochSched(epc)
-		//ss.TrainEnv.Event.Cur = 0  // TODO(DWORLD!)
 
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
@@ -738,10 +736,10 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 			}
 		}
 	}
-	// TODO(DWORLD!)
-	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
 	ss.ThetaCyc(true) // train
 	// ss.TrialStats(true) // now in alphacyc
 }
@@ -762,8 +760,8 @@ func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	//run := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	ss.PctCortex = 0
-	//ss.TrainEnv.Init(run) // TODO(DWORLD!)
-	// ss.TestEnv.Init(run)
+	ss.OnlyEnv.Init("New Run") //TODO: meaningful init info that should be passed
+
 	ss.Time.Reset()
 	ss.Net.InitWts()
 	ss.InitStats()
@@ -896,10 +894,9 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 		}
 	}
 
-	// TODO(DWORLD!)
-	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	//ApplyInputs(ss.Net, &ss.TrainEnv, states, layers)
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
 	ss.ThetaCyc(false) // train
 	// ss.TrialStats(true) // now in alphacyc
 

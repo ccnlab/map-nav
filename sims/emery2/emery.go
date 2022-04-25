@@ -52,7 +52,7 @@ func main() {
 	if len(os.Args) > 1 { // TODO(refactor): This if/else should be a function
 		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
 	} else {
-		TheSim.Config()      // for GUI case, config then run..
+		TheSim.Config() // for GUI case, config then run..
 		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
 			guirun()
 		})
@@ -950,6 +950,7 @@ func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) { // TODO(refactor): l
 			ly.ApplyExt(pats)
 		}
 	}
+
 }
 
 // TrainTrial runs one trial of training using TrainEnv

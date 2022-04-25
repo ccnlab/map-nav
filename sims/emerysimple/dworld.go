@@ -23,6 +23,9 @@ type WorldInterface interface {
 	// Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 	Observe(name string) etensor.Tensor
 
+	// ObserveWithShape Returns a tensor for the named modality. E.g. “x” or “vision” or “reward” but returns a specific shape, like having four eyes versus 2 eyes
+	ObserveWithShape(name string, shape []int) etensor.Tensor
+
 	// Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")
 	Action(action, details string)
 
@@ -66,6 +69,10 @@ func (world *DWorld) Step() {}
 // Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 func (world *DWorld) Observe(name string) etensor.Tensor {
 	return nil
+}
+
+func (world *DWorld) ObserveWithShape(name string, shape []int) etensor.Tensor {
+	return etensor.NewFloat32(shape, nil, nil)
 }
 
 // Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")

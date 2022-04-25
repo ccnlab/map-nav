@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
-	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/params"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etensor"
@@ -37,7 +36,7 @@ func NewRndSeed(randomSeed *int64) { // TODO(refactor): to library
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TODO(refactor): library code
+func ApplyInputs(net *deep.Network, en WorldInterface, states, layers []string) { // TODO(refactor): library code
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
@@ -48,10 +47,10 @@ func ApplyInputs(net *deep.Network, en env.Env, states, layers []string) { // TO
 		if lyi == nil {
 			continue
 		}
-		//ly := lyi.(axon.AxonLayer).AsAxon()
-		pats := en.State(states[i])
+		ly := lyi.(axon.AxonLayer).AsAxon()
+		pats := en.ObserveWithShape(states[i], lyi.Shape().Shp)
 		if pats != nil {
-			//ly.ApplyExt(pats)
+			ly.ApplyExt(pats)
 		}
 	}
 }

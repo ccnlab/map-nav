@@ -20,6 +20,12 @@ type WorldInterface interface {
 	// Step 1
 	Step()
 
+	// GetObservationSpace describes the shape and names of what the model can expect as inputs
+	GetObservationSpace() map[string][]int
+
+	// GetActionSpace describes the shape and names of what the model can send as outputs
+	GetActionSpace() map[string][]int
+
 	// Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 	Observe(name string) etensor.Tensor
 
@@ -38,6 +44,9 @@ type WorldInterface interface {
 	GetCounter(time etime.Times) env.Ctr
 
 	DecodeAndTakeAction(vt *etensor.Float32) string
+
+	// Display displays environment to the user
+	Display()
 }
 
 type DWorld struct {
@@ -51,9 +60,22 @@ type DWorld struct {
 	Trial env.Ctr `view:"inline" desc:"increments for each step of world, loops over epochs -- for general stats-tracking independent of env state"`
 }
 
+//Display displays the environmnet
+func (world *DWorld) Display() {
+	fmt.Println("This world state")
+}
+
 // Init Initializes or reinitialize the world
 func (world *DWorld) Init(details string) {
 	fmt.Println("Init Dworld: " + details)
+}
+
+func (world *DWorld) GetObservationSpace() map[string][]int {
+	return nil
+}
+
+func (world *DWorld) GetActionSpace() map[string][]int {
+	return nil
 }
 
 func (world *DWorld) DecodeAndTakeAction(vt *etensor.Float32) string {

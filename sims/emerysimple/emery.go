@@ -14,7 +14,6 @@ import (
 	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
-	"github.com/emer/emergent/relpos"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etable"
 	"github.com/emer/etable/etensor"
@@ -44,7 +43,6 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	PctCortexMax     float64        `desc:"maximum PctCortex, when running on the schedule"`
 	TrnErrStats      *etable.Table  `view:"no-inline" desc:"stats on train trials where errors were made"`
 	TrnAggStats      *etable.Table  `view:"no-inline" desc:"stats on all train trials"`
-	RunStats         *etable.Table  `view:"no-inline" desc:"aggregate stats on all runs"`
 	MinusCycles      int            `desc:"number of minus-phase cycles"`
 	PlusCycles       int            `desc:"number of plus-phase cycles"`
 	ErrLrMod         axon.LrateMod  `view:"inline" desc:"learning rate modulation as function of error"`
@@ -61,13 +59,9 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxRuns          int            `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	RepsInterval     int            `desc:"how often to analyze the representations"`
 	OnlyEnv          ExampleWorld   `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time      `desc:"axon timing parameters and state"`
 	TestInterval     int            `desc:"how often to run through all the test patterns, in terms of training epochs"`
-	CosDifActs       []string       `view:"-" desc:"actions to track CosDif performance by"`
-	InitOffNms       []string       `desc:"names of layers to turn off initially"`
-	LayStatNms       []string       `desc:"names of layers to collect more detailed stats on (avg act, etc)"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -118,30 +112,35 @@ var TheSim Sim
 func (ss *Sim) New() { // TODO(refactor): Remove a lot
 	ss.Net = &deep.Network{}
 
-	ss.RunStats = &etable.Table{}
-
 	ss.Time.Defaults()
 	ss.MinusCycles = 150
 	ss.PlusCycles = 50
-	ss.RepsInterval = 10
 
 	ss.ErrLrMod.Defaults()
 	ss.ErrLrMod.Base = 0.05 // 0.05 >= .01, .1 -- hard to tell
 	ss.ErrLrMod.Range.Set(0.2, 0.8)
 	ss.Params = ParamSets
 	ss.RndSeed = 1
-	ss.CosDifActs = []string{"Forward", "Left", "Right"}
-	ss.InitOffNms = []string{"MSTdP", "cIPLCT", "cIPLP", "PCCCT"}
-	ss.LayStatNms = []string{"MSTd", "MSTdCT", "SMA", "SMACT"}
 
 	// Default values
 	ss.PctCortexMax = 0.9 // 0.5 before
 	ss.TestInterval = 50000
 
+	// These relate to the shape of the network/environment interface.
+	ss.DepthPools = 8
+	ss.DepthSize = 32
+	ss.NFOVRays = 13
+	ss.FoveaSize = 1
+	ss.PopSize = 16
+	ss.Inters = []string{"Energy", "Hydra", "BumpPain", "FoodRew", "WaterRew"}
+	ss.PatSize = evec.Vec2i{X: 5, Y: 5}
+
+	// This has to be called after those variables are defined, because they're used in here.
 	ss.NewPrjns()
 }
 
 // NewPrjns creates new projections
+// TODO Can this be moved to ConfigNet?
 func (ss *Sim) NewPrjns() {
 	ss.Prjn4x4Skp2 = prjn.NewPoolTile()
 	ss.Prjn4x4Skp2.Size.Set(4, 4)
@@ -159,16 +158,17 @@ func (ss *Sim) NewPrjns() {
 
 	ss.Prjn4x3Skp2Recip = prjn.NewPoolTileRecip(ss.Prjn4x3Skp2)
 
-	ss.Prjn3x3Skp1 = prjn.NewPoolTile()
-	ss.Prjn3x3Skp1.Size.Set(3, 1)
-	ss.Prjn3x3Skp1.Skip.Set(1, 1)
-	ss.Prjn3x3Skp1.Start.Set(-1, -1)
-
-	ss.Prjn4x4Skp4 = prjn.NewPoolTile()
-	ss.Prjn4x4Skp4.Size.Set(4, 1)
-	ss.Prjn4x4Skp4.Skip.Set(4, 1)
-	ss.Prjn4x4Skp4.Start.Set(0, 0)
-	ss.Prjn4x4Skp4Recip = prjn.NewPoolTileRecip(ss.Prjn4x4Skp4)
+	// // It seems like these aren't used?
+	//ss.Prjn3x3Skp1 = prjn.NewPoolTile()
+	//ss.Prjn3x3Skp1.Size.Set(3, 1)
+	//ss.Prjn3x3Skp1.Skip.Set(1, 1)
+	//ss.Prjn3x3Skp1.Start.Set(-1, -1)
+	//
+	//ss.Prjn4x4Skp4 = prjn.NewPoolTile()
+	//ss.Prjn4x4Skp4.Size.Set(4, 1)
+	//ss.Prjn4x4Skp4.Skip.Set(4, 1)
+	//ss.Prjn4x4Skp4.Start.Set(0, 0)
+	//ss.Prjn4x4Skp4Recip = prjn.NewPoolTileRecip(ss.Prjn4x4Skp4)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -186,14 +186,6 @@ func (ss *Sim) ConfigEnv() {
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.InitName(net, "Emery")
-
-	ss.DepthPools = 8
-	ss.DepthSize = 32
-	ss.NFOVRays = 13 // Not sure this value is right
-	ss.FoveaSize = 1
-	ss.PopSize = 16
-	ss.Inters = []string{"Energy", "Hydra", "BumpPain", "FoodRew", "WaterRew"}
-	ss.PatSize = evec.Vec2i{X: 5, Y: 5}
 
 	full := prjn.NewFull()
 	sameu := prjn.NewPoolSameUnit()
@@ -498,51 +490,6 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
 
 	//////////////////////////////////////
-	// position // TODO(refactor): This GUI stuff should maybe be separated? at least it should be commented as GUI
-
-	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wd.Name(), YAlign: relpos.Front, Space: 15})
-	v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: 4})
-	v2wdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2wd.Name(), XAlign: relpos.Left, Space: 4})
-
-	v1fp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: 4})
-	it.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1fp.Name(), XAlign: relpos.Left, Space: 4})
-	itct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: it.Name(), XAlign: relpos.Left, Space: 4})
-
-	v2fd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: 8})
-	v2fdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2fd.Name(), XAlign: relpos.Left, Space: 10})
-	lip.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fdp.Name(), YAlign: relpos.Front, Space: 20})
-	lipct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: lip.Name(), YAlign: relpos.Front, Space: 8})
-
-	s1s.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fd.Name(), YAlign: relpos.Front, Space: 20})
-	s1sp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: 4})
-	s1v.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s1s.Name(), YAlign: relpos.Front, Space: 15})
-	s1vp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1v.Name(), XAlign: relpos.Left, Space: 4})
-
-	ins.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s1v.Name(), YAlign: relpos.Front, Space: 20})
-
-	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: ins.Name(), YAlign: relpos.Front, Space: 10})
-	act.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: vl.Name(), XAlign: relpos.Left, Space: 4})
-
-	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: v2wd.Name(), XAlign: relpos.Left, YAlign: relpos.Front})
-	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstd.Name(), XAlign: relpos.Left, Space: 10})
-	mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstdct.Name(), XAlign: relpos.Left, Space: 10})
-
-	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: 4})
-	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: cipl.Name(), XAlign: relpos.Left, Space: 10})
-	ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: ciplct.Name(), XAlign: relpos.Left, Space: 10})
-
-	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: cipl.Name(), YAlign: relpos.Front, Space: 6})
-	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: pcc.Name(), XAlign: relpos.Left, Space: 10})
-	// pccp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: pccct.Name(), XAlign: relpos.Left, Space: 4})
-
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: pcc.Name(), YAlign: relpos.Front, Space: 10})
-	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: sma.Name(), XAlign: relpos.Left, Space: 10})
-	// smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 4})
-
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: 10})
-	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: 10})
-
-	//////////////////////////////////////
 	// collect // TODO(refactor): this is used for like logging and stuff?
 
 	ss.PulvLays = make([]string, 0, 10)
@@ -579,7 +526,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		smact.SetThread(3)
 	*/
 
-	net.Defaults()                                                             // TODO(refactor): why isn't all this in a function?
+	// TODO(refactor): why isn't all this in a function?
+	net.Defaults()
 	SetParams("Network", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // only set Network params
 	err := net.Build()
 	if err != nil {
@@ -607,7 +555,6 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 // and add a few tabs at the end to allow for expansion.
 func (ss *Sim) Counters(train bool) string {
 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, 0, ss.Time.Cycle, ss.ActAction, ss.NetAction)
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -662,7 +609,6 @@ func (ss *Sim) ThetaCyc(train bool) {
 		if cyc == minusCyc-1 { // do before view update
 			ss.Net.MinusPhase(&ss.Time)
 		}
-
 	}
 	ss.Time.NewPhase(true)
 	fmt.Println("Taking action! ")
@@ -739,12 +685,6 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 // RunEnd is called at the end of a run -- save weights, record final log, etc. here
 func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 
-	// if ss.SaveWts { // doing this earlier
-	// 	ss.SaveWeights()
-	// }
-	if ss.SaveARFs {
-		ss.SaveAllARFs()
-	}
 }
 
 // NewRun intializes a new run of the model, using the OnlyEnv.GetCounter(etime.Run) counter
@@ -866,8 +806,6 @@ func (ss *Sim) Train() { // TODO(refactor): delete, looper
 ////////////////////////////////////////////////////////////////////////////////////////////
 // Testing
 
-// note: using TrainEnv for everything
-
 // TestTrial runs one trial of testing -- always sequentially presented inputs
 func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with looper
 	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
@@ -909,57 +847,4 @@ func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
 func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
 	ss.TestAll()
-}
-
-//////////////////////////////////////////////
-//  TrnTrlRepLog
-
-// CenterPoolsIdxs returns the indexes for 2x2 center pools (including sub-pools):
-// nu = number of units per pool, sis = starting indexes
-func (ss *Sim) CenterPoolsIdxs(ly *axon.Layer) (nu int, sis []int) { // TODO(refactor): Axon code?
-	nu = ly.Shp.Dim(2) * ly.Shp.Dim(3)
-	npy := ly.Shp.Dim(0)
-	npx := ly.Shp.Dim(1)
-	npxact := npx
-	nsp := 1
-	// if ss.SubPools {
-	// 	npy /= 2
-	// 	npx /= 2
-	// 	nsp = 2
-	// }
-	cpy := (npy - 1) / 2
-	cpx := (npx - 1) / 2
-	if npx <= 2 {
-		cpx = 0
-	}
-	if npy <= 2 {
-		cpy = 0
-	}
-
-	for py := 0; py < 2; py++ {
-		for px := 0; px < 2; px++ {
-			for sy := 0; sy < nsp; sy++ {
-				for sx := 0; sx < nsp; sx++ {
-					y := (py+cpy)*nsp + sy
-					x := (px+cpx)*nsp + sx
-					si := (y*npxact + x) * nu
-					sis = append(sis, si)
-				}
-			}
-		}
-	}
-	return
-}
-
-// CopyCenterPools copy 2 center pools of ActM to tensor
-func (ss *Sim) CopyCenterPools(ly *axon.Layer, vl *etensor.Float32) { // TODO(refactor): axon code?
-	nu, sis := ss.CenterPoolsIdxs(ly)
-	vl.SetShape([]int{len(sis) * nu}, nil, nil)
-	ti := 0
-	for _, si := range sis {
-		for ni := 0; ni < nu; ni++ {
-			vl.Values[ti] = ly.Neurons[si+ni].ActM
-			ti++
-		}
-	}
 }

@@ -195,7 +195,7 @@ func (ss *Sim) Config() {
 //	ss.TrainEnv.Config(200) // 1000) // n trials per epoch
 //	ss.TrainEnv.Nm = "TrainEnv"
 //	ss.TrainEnv.Dsc = "training params and state"
-//	ss.TrainEnv.Run.Max = ss.MaxRuns
+//	ss.OnlyEnv.GetCounter(etime.Run).Max = ss.MaxRuns
 //	ss.TrainEnv.Init(0)
 //	ss.TrainEnv.Validate()
 //
@@ -626,9 +626,10 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 // and add a few tabs at the end to allow for expansion.
 func (ss *Sim) Counters(train bool) string { // TODO(refactor): GUI
 	// if train {
-	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
+	return "It's 5 o'clock somewhere!" // TODO(DWORLD!)
+	//return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TrainEnv.Event.Cur, ss.Time.Cycle, ss.ActAction, ss.NetAction)
 	// } else {
-	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
+	// 	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tName:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, ss.TestEnv.Event.Cur, ss.Time.Cycle, ss.TrainEnv.Event.Cur)
 	// }
 }
 
@@ -763,14 +764,17 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
-				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.TrainEnv.Run.Cur, ss.TrainEnv.Epoch.Cur), ss.Net)
+				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur), ss.Net)
 			}
 			// done with training..
 			if ss.SaveARFs {
 				ss.TestAll()
 			}
 			ss.RunEnd()
-			if ss.TrainEnv.Run.Incr() { // we are done!
+			run := ss.OnlyEnv.GetCounter(etime.Run)
+			run.Incr()
+			_, _, chg = run.Query()
+			if chg { // we are done!
 				return
 			} else {
 				return
@@ -799,10 +803,10 @@ func (ss *Sim) RunEnd() { // TODO(refactor): looper call
 	}
 }
 
-// NewRun intializes a new run of the model, using the TrainEnv.Run counter
+// NewRun intializes a new run of the model, using the OnlyEnv.GetCounter(etime.Run) counter
 // for the new run value
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
-	//run := ss.TrainEnv.Run.Cur
+	//run := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	ss.PctCortex = 0
 	//ss.TrainEnv.Init(run) // TODO(DWORLD!)
 	// ss.TestEnv.Init(run)
@@ -860,10 +864,10 @@ func (ss *Sim) TrialStats(accum bool) { // TODO(refactor): looper call
 
 // TrainEpoch runs training trials for remainder of this epoch
 func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
-	curEpc := ss.TrainEnv.Epoch.Cur
+	curEpc := ss.OnlyEnv.GetCounter(etime.Epoch).Cur
 	for {
 		ss.TrainTrial()
-		if ss.TrainEnv.Epoch.Cur != curEpc {
+		if ss.OnlyEnv.GetCounter(etime.Epoch).Cur != curEpc {
 			break
 		}
 	}
@@ -872,10 +876,10 @@ func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
 
 // TrainRun runs training trials for remainder of run
 func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
-	curRun := ss.TrainEnv.Run.Cur
+	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	for {
 		ss.TrainTrial()
-		if ss.TrainEnv.Run.Cur != curRun {
+		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
 			break
 		}
 	}
@@ -947,10 +951,10 @@ func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with loo
 
 // TestAll runs through the full set of testing items
 func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
-	curRun := ss.TrainEnv.Run.Cur
+	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	for {
 		ss.TestTrial(false)
-		if ss.TrainEnv.Run.Cur != curRun {
+		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
 			break
 		}
 	}

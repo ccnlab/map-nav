@@ -19,10 +19,10 @@ type WorldInterface interface {
 	// Step 1
 	Step()
 
-	// GetObservationSpace describes the shape and names of what the model can expect as inputs
+	// GetObservationSpace describes the shape and names of what the model can expect as inputs. This will be constant across the run.
 	GetObservationSpace() map[string][]int
 
-	// GetActionSpace describes the shape and names of what the model can send as outputs
+	// GetActionSpace describes the shape and names of what the model can send as outputs. This will be constant across the run.
 	GetActionSpace() map[string][]int
 
 	// Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
@@ -33,6 +33,10 @@ type WorldInterface interface {
 
 	// Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")
 	Action(action, details string)
+	//ActionContinuous(action string, details []float32)
+
+	// DecodeAndTakeAction takes an action specified by a tensor. // TODO Rename and also take in a string
+	DecodeAndTakeAction(action string, vt *etensor.Float32) string
 
 	// Done Returns true if episode has ended, e.g. when exiting maze
 	Done() bool
@@ -41,8 +45,6 @@ type WorldInterface interface {
 	Info() string
 
 	GetCounter(time etime.Times) env.Ctr
-
-	DecodeAndTakeAction(vt *etensor.Float32) string
 
 	// Display displays environment to the user
 	Display()

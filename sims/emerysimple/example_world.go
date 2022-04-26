@@ -38,7 +38,7 @@ func (world *ExampleWorld) GetActionSpace() map[string][]int {
 	return nil
 }
 
-func (world *ExampleWorld) DecodeAndTakeAction(vt *etensor.Float32) string {
+func (world *ExampleWorld) DecodeAndTakeAction(action string, vt *etensor.Float32) string {
 	return "Taking in info from model and moving forward"
 }
 

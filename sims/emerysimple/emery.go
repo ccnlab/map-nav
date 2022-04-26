@@ -743,7 +743,7 @@ func (ss *Sim) SendAction(net *deep.Network, ev WorldInterface) { // TODO(refact
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
-	ev.DecodeAndTakeAction(vt)
+	ev.DecodeAndTakeAction("action", vt)
 }
 
 // TrainTrial runs one trial of training using TrainEnv

@@ -89,7 +89,7 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.Params = make(map[string]float32)
 
 	ev.Disp = false
-	ev.Size.Set(200, 200) // if changing to non-square, reset the popcode2d min
+	ev.Size.Set(50, 50) // if changing to non-square, reset the popcode2d min
 	ev.PatSize.Set(5, 5)
 	ev.PosSize.Set(12, 12)
 	ev.AngInc = 90
@@ -98,7 +98,7 @@ func (ev *XYHDEnv) Config(ntrls int) {
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
 	ev.PopCode2d.Defaults()
-	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.2) // assume it's a square, 2 is length of walls
+	ev.PopCode2d.SetRange(1/(float32(ev.Size.X)-2), 1, 0.1) // assume it's a square, 2 is length of walls
 	//ev.PopCode2d.SetRange(0, 1, 0.1) // assume it's a square, 2 is length of walls
 	ev.AngCode.Defaults()
 	ev.AngCode.SetRange(0, 1, 0.1) // zycyc experiment
@@ -793,14 +793,14 @@ func (ev *XYHDEnv) ActGen() int {
 		//case frnd < 0.25:
 		//	act = lastact // continue
 		//	ev.ActGenTrace("repeat last act", act)
-		case frnd < 0.15:
+		case frnd < 0.05:
 			if lmat == wall {
 				act = right
 			} else {
 				act = left
 			}
 			ev.ActGenTrace("turn", act)
-		case frnd < 0.3:
+		case frnd < 0.1:
 			if rmat == wall {
 				act = left
 			} else {

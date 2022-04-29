@@ -79,14 +79,14 @@ var ParamSets = params.Sets{
 		"Network": &params.Sheet{
 			{Sel: "Prjn", Desc: "no extra learning factors, hebbian learning",
 				Params: params.Params{
-					"Prjn.Learn.Learn":       "true",
-					"Prjn.Learn.Norm.On":     "false", // works well without
-					"Prjn.Learn.Momentum.On": "false",
-					"Prjn.Learn.WtBal.On":    "true", // this is typically critical
-					// "Prjn.Learn.XCal.MLrn":    "0", // pure hebb -- NO!  doing edl
-					// "Prjn.Learn.XCal.SetLLrn": "true",
-					// "Prjn.Learn.XCal.LLrn":    "1",
-					"Prjn.Learn.WtSig.Gain": "6", // 6 impedes learning..  was 1
+					"Prjn.Learn.Learn":        "true",
+					"Prjn.Learn.Norm.On":      "false", // works well without
+					"Prjn.Learn.Momentum.On":  "false",
+					"Prjn.Learn.WtBal.On":     "true", // this is typically critical
+					"Prjn.Learn.XCal.MLrn":    "1",    // 0: pure hebb -- NO!  doing edl
+					"Prjn.Learn.XCal.SetLLrn": "false",
+					"Prjn.Learn.XCal.LLrn":    "1", // 1 = hebb
+					"Prjn.Learn.WtSig.Gain":   "6", // 6 impedes learning..  was 1
 					//"Prjn.WtInit.Mean":        "0.5",
 					//"Prjn.WtInit.Var":         "0.0", // even .01 causes some issues..
 				}},
@@ -112,7 +112,7 @@ var ParamSets = params.Sets{
 			{Sel: ".ExciteLateral", Desc: "lateral excitatory connection",
 				Params: params.Params{
 					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Mean": "0.5",
+					"Prjn.WtInit.Mean": "0.2",
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
 					"Prjn.WtScale.Rel": "0.2", // this controls the speed -- higher = faster
@@ -121,15 +121,15 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					//"Prjn.Off":         "true",
 					"Prjn.Learn.Learn": "false",
-					"Prjn.WtInit.Mean": "0.5",
+					"Prjn.WtInit.Mean": "0.2", // was 0.5, too much hogging
 					"Prjn.WtInit.Var":  "0",
 					"Prjn.WtInit.Sym":  "false",
-					"Prjn.WtScale.Abs": "0.5", // higher gives better grid
+					"Prjn.WtScale.Abs": "0.5", // higher gives better grid, was 0.5
 				}},
-			{Sel: ".OrientationForward", Desc: "orientation to ec forward connection",
-				Params: params.Params{
-					"Prjn.WtScale.Rel": "0.1",
-				}},
+			//{Sel: ".OrientationForward", Desc: "orientation to ec forward connection",
+			//	Params: params.Params{
+			//		"Prjn.WtScale.Rel": "0.1",
+			//	}},
 			{Sel: "#EC", Desc: "all EC layers: only pools, no layer-level",
 				Params: params.Params{
 					//"Layer.Act.Init.Decay": "0",
@@ -248,41 +248,40 @@ type Sim struct {
 	SumCosDiff    float64                     `view:"-" inactive:"+" desc:"sum to increment as we go through epoch"`
 
 	// internal state - view:"-"
-	Win                *gi.Window                  `view:"-" desc:"main GUI window"`
-	NetView            *netview.NetView            `view:"-" desc:"the network viewer"`
-	ToolBar            *gi.ToolBar                 `view:"-" desc:"the master toolbar"`
-	WorldWin           *gi.Window                  `view:"-" desc:"XYHDEnv GUI window"`
-	WorldTabs          *gi.TabView                 `view:"-" desc:"XYHDEnv TabView"`
-	MatColors          []string                    `desc:"color strings in material order"`
-	Trace              *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
-	TraceView          *etview.TensorGrid          `desc:"view of the activity trace"`
-	dTrace             *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
-	dTraceView         *etview.TensorGrid          `desc:"view of the activity trace"`
-	WorldView          *etview.TensorGrid          `desc:"view of the world"`
-	CurImgGrid         *etview.TensorGrid          `view:"-" desc:"the current image grid view"`
-	WtsGrid            *etview.TensorGrid          `view:"-" desc:"the weights grid view"`
-	TrnTrlPlot         *eplot.Plot2D               `view:"-" desc:"the training trial plot"`
-	TrnEpcPlot         *eplot.Plot2D               `view:"-" desc:"the training epoch plot"`
-	TstEpcPlot         *eplot.Plot2D               `view:"-" desc:"the testing epoch plot"`
-	TstTrlPlot         *eplot.Plot2D               `view:"-" desc:"the test-trial plot"`
-	RunPlot            *eplot.Plot2D               `view:"-" desc:"the run plot"`
-	TrnEpcFile         *os.File                    `view:"-" desc:"log file"`
-	TstEpcFile         *os.File                    `view:"-" desc:"log file"`
-	RunFile            *os.File                    `view:"-" desc:"log file"`
-	ValsTsrs           map[string]*etensor.Float32 `view:"-" desc:"for holding layer values"`
-	EClateralflag      bool                        `view:"-" desc:"flag for EClateral"`
-	IsRunning          bool                        `view:"-" desc:"true if sim is running"`
-	StopNow            bool                        `view:"-" desc:"flag to stop running"`
-	NeedsNewRun        bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
-	UseMPI             bool                        `view:"-" desc:"if true, use MPI to distribute computation across nodes"`
-	SaveWts            bool                        `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
-	SaveARFs           bool                        `view:"-" desc:"for command-line run only, auto-save receptive field data"`
-	NoGui              bool                        `view:"-" desc:"if true, runing in no GUI mode"`
-	RndSeed            int64                       `view:"-" desc:"the current random seed"`
-	init_pos_assigned1 bool                        `view:"-" desc:"true if initial position pattern has been created and applied"`
-	Comm               *mpi.Comm                   `view:"-" desc:"mpi communicator"`
-	AllDWts            []float32                   `view:"-" desc:"buffer of all dwt weight changes -- for mpi sharing"`
-	SumDWts            []float32                   `view:"-" desc:"buffer of MPI summed dwt weight changes"`
+	Win           *gi.Window                  `view:"-" desc:"main GUI window"`
+	NetView       *netview.NetView            `view:"-" desc:"the network viewer"`
+	ToolBar       *gi.ToolBar                 `view:"-" desc:"the master toolbar"`
+	WorldWin      *gi.Window                  `view:"-" desc:"XYHDEnv GUI window"`
+	WorldTabs     *gi.TabView                 `view:"-" desc:"XYHDEnv TabView"`
+	MatColors     []string                    `desc:"color strings in material order"`
+	Trace         *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
+	TraceView     *etview.TensorGrid          `desc:"view of the activity trace"`
+	dTrace        *etensor.Int                `view:"no-inline" desc:"trace of movement for visualization"`
+	dTraceView    *etview.TensorGrid          `desc:"view of the activity trace"`
+	WorldView     *etview.TensorGrid          `desc:"view of the world"`
+	CurImgGrid    *etview.TensorGrid          `view:"-" desc:"the current image grid view"`
+	WtsGrid       *etview.TensorGrid          `view:"-" desc:"the weights grid view"`
+	TrnTrlPlot    *eplot.Plot2D               `view:"-" desc:"the training trial plot"`
+	TrnEpcPlot    *eplot.Plot2D               `view:"-" desc:"the training epoch plot"`
+	TstEpcPlot    *eplot.Plot2D               `view:"-" desc:"the testing epoch plot"`
+	TstTrlPlot    *eplot.Plot2D               `view:"-" desc:"the test-trial plot"`
+	RunPlot       *eplot.Plot2D               `view:"-" desc:"the run plot"`
+	TrnEpcFile    *os.File                    `view:"-" desc:"log file"`
+	TstEpcFile    *os.File                    `view:"-" desc:"log file"`
+	RunFile       *os.File                    `view:"-" desc:"log file"`
+	ValsTsrs      map[string]*etensor.Float32 `view:"-" desc:"for holding layer values"`
+	EClateralflag bool                        `view:"-" desc:"flag for EClateral"`
+	IsRunning     bool                        `view:"-" desc:"true if sim is running"`
+	StopNow       bool                        `view:"-" desc:"flag to stop running"`
+	NeedsNewRun   bool                        `view:"-" desc:"flag to initialize NewRun if last one finished"`
+	UseMPI        bool                        `view:"-" desc:"if true, use MPI to distribute computation across nodes"`
+	SaveWts       bool                        `view:"-" desc:"for command-line run only, auto-save final weights after each run"`
+	SaveARFs      bool                        `view:"-" desc:"for command-line run only, auto-save receptive field data"`
+	NoGui         bool                        `view:"-" desc:"if true, runing in no GUI mode"`
+	RndSeed       int64                       `view:"-" desc:"the current random seed"`
+	Comm          *mpi.Comm                   `view:"-" desc:"mpi communicator"`
+	AllDWts       []float32                   `view:"-" desc:"buffer of all dwt weight changes -- for mpi sharing"`
+	SumDWts       []float32                   `view:"-" desc:"buffer of MPI summed dwt weight changes"`
 }
 
 // EcParams have the entorhinal cortex size and connectivity parameters
@@ -339,7 +338,6 @@ func (ss *Sim) New() {
 	ss.TrainUpdt = leabra.Cycle
 	ss.TestUpdt = leabra.Cycle
 	ss.ARFLayers = []string{"EC", "Orientation", "Out_Position"}
-	ss.init_pos_assigned1 = false
 	ss.EClateralflag = true
 
 	ss.Entorhinal.Defaults()
@@ -361,7 +359,7 @@ func (ec *EcParams) Defaults() {
 
 	ec.excitRadius4D = 3 // def 3, 1 also works
 	ec.excitSigma4D = 2
-	ec.inhibRadius4D = 5 // def 5 (Pos Gi 3.6 works), smaller (5) for dMEC, higher (8) for vMEC
+	ec.inhibRadius4D = 2 // def 5 (Pos Gi 3.6 works), smaller (5) for dMEC, higher (8) for vMEC
 	ec.inhibSigma4D = 2  // not really sure what this should be, seems like as long as it's not too small it's fine, 2 looks best
 }
 
@@ -392,8 +390,8 @@ func (ss *Sim) ConfigEnv() {
 		ss.MaxRuns = 1
 	}
 	if ss.MaxEpcs == 0 { // allow user override
-		ss.MaxEpcs = 1000  // zycyc, test, 1000
-		ss.TestEpcs = 3000 // zycyc, test, needs to be extra high, 3000
+		ss.MaxEpcs = 200   // zycyc, test, 1000
+		ss.TestEpcs = 1000 // zycyc, test, needs to be extra high, 3000
 	}
 	//if ss.MaxTrls == 0 { // allow user override
 	//	ss.MaxTrls = 100
@@ -671,7 +669,6 @@ func (ss *Sim) InitLateralWts(net *leabra.Network) {
 func (ss *Sim) Init() {
 	rand.Seed(ss.RndSeed)
 	ss.StopNow = false
-	ss.init_pos_assigned1 = false
 	ss.SetParams("", false) // all sheets
 	ss.ReConfigNet()
 	ss.ConfigEnv() // re-config env just in case a different set of patterns was
@@ -730,33 +727,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 		ss.Net.WtFmDWt()
 	}
 
-	// note: this is bad!  setting the input projections to 0!
-	// ec := ss.Net.LayerByName("EC").(leabra.LeabraLayer).AsLeabra()
-	// if ss.EClateralflag {
-	// 	ec.Act.Clamp.Hard = false
-	// } else {
-	// 	late := ec.RecvPrjn(0).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
-	// 	lati := ec.RecvPrjn(1).(leabra.LeabraPrjn).AsLeabra() // ?? zycyc: fix this
-	// 	late.WtScale.Rel = 0
-	// 	lati.WtScale.Rel = 0
-	// }
-
-	//pos := ss.Net.LayerByName("Out_Position").(leabra.LeabraLayer).AsLeabra()
-	//ori := ss.Net.LayerByName("Orientation").(leabra.LeabraLayer).AsLeabra()
-	//
-	//PosFmEC := pos.RcvPrjns.SendName("EC").(leabra.LeabraPrjn).AsLeabra()
-	//OriFmEC := ori.RcvPrjns.SendName("EC").(leabra.LeabraPrjn).AsLeabra()
-	//PosFmEC.WtScale.Rel = 0
-	//OriFmEC.WtScale.Rel = 0
-	//
-	//PosFmPos := pos.RcvPrjns.SendName("Out_Position").(leabra.LeabraPrjn).AsLeabra()
-	//OriFmOri := ori.RcvPrjns.SendName("Orientation").(leabra.LeabraPrjn).AsLeabra()
-	//PosFmPos.WtScale.Rel = 1
-	//OriFmOri.WtScale.Rel = 1
-
 	ss.Net.AlphaCycInit(train)
 	ss.Time.AlphaCycStart()
-
 	for qtr := 0; qtr < 4; qtr++ {
 		for cyc := 0; cyc < ss.Time.CycPerQtr; cyc++ {
 			ss.Net.Cycle(&ss.Time)
@@ -774,18 +746,8 @@ func (ss *Sim) AlphaCyc(train bool) {
 				}
 			}
 		}
-		//switch qtr + 1 {
-		//case 1: // Third Quarters: CA1 is driven by CA3 recall
-		//	PosFmEC.WtScale.Rel = 1
-		//	//OriFmEC.WtScale.Rel = 1
-		//	//PosFmPos.WtScale.Rel = 0
-		//	//OriFmOri.WtScale.Rel = 0
-		//	ss.Net.GScaleFmAvgAct() // update computed scaling factors
-		//	ss.Net.InitGInc()       // scaling params change, so need to recompute all netins
-		//}
 		ss.Net.QuarterFinal(&ss.Time)
 		ss.Time.QuarterInc()
-		//ss.QuarterInc()
 		if ss.ViewOn {
 			switch {
 			case viewUpdt <= leabra.Quarter:
@@ -820,9 +782,17 @@ func (ss *Sim) AlphaCyc(train bool) {
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
 func (ss *Sim) TakeAction(net *leabra.Network, ev *XYHDEnv) {
-	gact := ev.ActGen()
-	ss.ActAction = ev.Acts[gact]
-	ev.Action(ss.ActAction, nil)
+	////one step per trial
+	//gact := ev.ActGen()
+	//ss.ActAction = ev.Acts[gact]
+	//ev.Action(ss.ActAction, nil)
+
+	//multiple steps per trial
+	for i := 1; i <= rand.Intn(10)+10; i++ {
+		gact := ev.ActGen()
+		ss.ActAction = ev.Acts[gact]
+		ev.Action(ss.ActAction, nil)
+	}
 
 	// fmt.Printf("action: %s\n", ev.Acts[act])
 }
@@ -835,8 +805,8 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 	//ss.Net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	//states := []string{"Vestibular", "Position", "Angle", "Position", "Angle"} // autoencoder
-	states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"} // predictive learning
+	states := []string{"Vestibular", "Position", "Angle", "Position", "Angle"} // autoencoder
+	//states := []string{"Vestibular", "Position", "Angle", "PrevPosition", "PrevAngle"} // predictive learning
 	lays := []string{"Vestibular", "Out_Position", "Orientation", "Prev_Position", "Prev_Orientation"}
 
 	for i, lnm := range lays {
@@ -856,7 +826,6 @@ func (ss *Sim) ApplyInputs(en env.Env) {
 
 // TrainTrial runs one trial of training using TrainEnv
 func (ss *Sim) TrainTrial() {
-
 	if ss.NeedsNewRun {
 		ss.NewRun()
 	}
@@ -961,7 +930,6 @@ func (ss *Sim) TrialStats(accum bool) {
 	} else {
 		ss.UpdtARFs()
 	}
-
 	return
 }
 

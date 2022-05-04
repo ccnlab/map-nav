@@ -41,30 +41,30 @@ func main() {
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 
-	Loops            looper.Set     `view:"no-inline" desc:"contains looper control loops for running sim"`
-	PctCortex        float64        `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
-	PctCortexMax     float64        `desc:"maximum PctCortex, when running on the schedule"`
-	TrnErrStats      *etable.Table  `view:"no-inline" desc:"stats on train trials where errors were made"`
-	TrnAggStats      *etable.Table  `view:"no-inline" desc:"stats on all train trials"`
-	MinusCycles      int            `desc:"number of minus-phase cycles"`
-	PlusCycles       int            `desc:"number of plus-phase cycles"`
-	ErrLrMod         axon.LrateMod  `view:"inline" desc:"learning rate modulation as function of error"`
-	Params           params.Sets    `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet         string         `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	Tag              string         `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
-	Prjn4x4Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x4Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn4x3Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x3Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn3x3Skp1      *prjn.PoolTile `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
-	Prjn4x4Skp4      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
-	Prjn4x4Skp4Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
-	MaxRuns          int            `desc:"maximum number of model runs to perform"`
-	MaxEpcs          int            `desc:"maximum number of epochs to run per model run"`
-	TestEpcs         int            `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	OnlyEnv          ExampleWorld   `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time             axon.Time      `desc:"axon timing parameters and state"`
-	TestInterval     int            `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	Loops            *looper.LoopManager `view:"no-inline" desc:"contains looper control loops for running sim"`
+	PctCortex        float64             `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax     float64             `desc:"maximum PctCortex, when running on the schedule"`
+	TrnErrStats      *etable.Table       `view:"no-inline" desc:"stats on train trials where errors were made"`
+	TrnAggStats      *etable.Table       `view:"no-inline" desc:"stats on all train trials"`
+	MinusCycles      int                 `desc:"number of minus-phase cycles"`
+	PlusCycles       int                 `desc:"number of plus-phase cycles"`
+	ErrLrMod         axon.LrateMod       `view:"inline" desc:"learning rate modulation as function of error"`
+	Params           params.Sets         `view:"no-inline" desc:"full collection of param sets"`
+	ParamSet         string              `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
+	Tag              string              `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Prjn4x4Skp2      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x4Skp2Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn4x3Skp2      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x3Skp2Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn3x3Skp1      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Prjn4x4Skp4      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	Prjn4x4Skp4Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
+	MaxRuns          int                 `desc:"maximum number of model runs to perform"`
+	MaxEpcs          int                 `desc:"maximum number of epochs to run per model run"`
+	TestEpcs         int                 `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
+	OnlyEnv          ExampleWorld        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time             axon.Time           `desc:"axon timing parameters and state"`
+	TestInterval     int                 `desc:"how often to run through all the test patterns, in terms of training epochs"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -553,104 +553,162 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	ss.NewRun()
 }
 
+func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
+	// Net Cycle
+	for m, _ := range manager.Stacks {
+		manager.Stacks[m].Loops[etime.Cycle].Main.Add("Axon:Cycle:RunAndIncrement", func() {
+			ss.Net.Cycle(&ss.Time)
+			ss.Time.CycleInc()
+		})
+	}
+
+	//todo are we still using testall, and should we handle it differently
+	// Add Testing
+	trainEpoch := manager.GetLoop(etime.Train, etime.Epoch)
+	trainEpoch.OnStart.Add("Log:Train:TestAtInterval", func() {
+		if (ss.TestInterval > 0) && ((trainEpoch.Counter.Cur+1)%ss.TestInterval == 0) {
+			// Note the +1 so that it doesn't occur at the 0th timestep.
+			ss.TestAll()
+		}
+	})
+
+	//todo is this neccesary
+	// Set variables on ss that are referenced elsewhere, such as ApplyInputs.
+	for m, loops := range manager.Stacks {
+		curMode := m // For closures.
+		for t, loop := range loops.Loops {
+			curTime := t
+			loop.OnStart.Add(curMode.String()+":"+curTime.String()+":"+"SetTimeVal", func() {
+				ss.Time.Mode = curMode.String()
+			})
+		}
+	}
+}
+
+func (ss *Sim) AddDefaultLoggingCallbacks(manager *looper.LoopManager) {
+	for m, loops := range manager.Stacks {
+		curMode := m // For closures.
+		for t, loop := range loops.Loops {
+			curTime := t
+
+			// Actual logging
+			loop.OnEnd.Add(curMode.String()+":"+curTime.String()+":"+"Log", func() {
+				//ss.Log(curMode, curTime) //todo add logging back in
+			})
+
+			// Reset logs at level one deeper
+			levelToReset := etime.AllTimes
+			for i, tt := range loops.Order {
+				if tt == t && i+1 < len(loops.Order) {
+					levelToReset = loops.Order[i+1]
+				}
+			}
+			if levelToReset != etime.AllTimes {
+				loop.OnEnd.Add(curMode.String()+":"+curTime.String()+":"+"ResetLog"+levelToReset.String(), func() {
+					//ss.Logs.ResetLog(curMode, levelToReset) //todo adding log reste backin
+				})
+			}
+		}
+
+		// Save State
+		manager.GetLoop(curMode, etime.Cycle).OnEnd.Add("Sim:SaveState", ss.SaveStateBeta)
+	}
+}
+
+func (ss *Sim) SaveStateBeta() {
+	switch ss.Time.Cycle {
+	// save states at beta-frequency -- not used computationally
+	case 75:
+		ss.Net.ActSt1(&ss.Time)
+	case 100:
+		ss.Net.ActSt2(&ss.Time)
+	}
+}
+
+func (ss *Sim) AddDefaultGUICallbacks(manager *looper.LoopManager) {
+	for _, m := range []etime.Modes{etime.Train, etime.Test} {
+		curMode := m // For closures.
+		for _, t := range []etime.Times{etime.Trial, etime.Epoch} {
+			curTime := t
+			if manager.GetLoop(curMode, curTime).OnEnd.HasNameLike("UpdateNetView") {
+				// There might be a case where another function also Updates the NetView, and we don't want to do it twice. In particular, Net.WtFmDWt clears some values at the end of Trial, and it wants to update the view before doing so.
+				continue
+			}
+			manager.GetLoop(curMode, curTime).OnEnd.Add("GUI:UpdateNetView", func() {
+				//ss.UpdateNetViewTime(curTime) todo add gui functinoality back in
+			})
+		}
+	}
+}
+
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
-	//	trn := looper.NewStackEnv(ss.OnlyEnv)
-	//	ss.Loops.AddStack(trn)
-	//	axon.ConfigLoopsStd(&ss.Loops, &ss.Net.Network, &ss.Time, 150, 50)
-	//	// note: AddCycle0 adds in reverse order of where things end up!
-	//	axon.AddCycle0(&ss.Loops, &ss.Time, "Sim:ApplyInputs", ss.ApplyInputs)
-	//	axon.AddCycle0(&ss.Loops, &ss.Time, "Sim:NewRun", func() {
-	//		if ss.NeedsNewRun {
-	//			ss.NewRun()
-	//		}
+
+	manager := looper.LoopManager{}.Init()
+	manager.Stacks[etime.Train] = &looper.LoopStack{}
+	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 30).AddTime(etime.Cycle, 200)
+	minusPhase := looper.LoopSegment{Name: "MinusPhase", Duration: 150, IsPlusPhase: false}
+	minusPhase.PhaseStart.Add("Sim:MinusPhase:Start", func() {
+		ss.Time.PlusPhase = false
+		ss.Time.NewPhase(false)
+	})
+	minusPhase.PhaseEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
+	plusPhase := looper.LoopSegment{Name: "PlusPhase", Duration: 50, IsPlusPhase: true}
+	plusPhase.PhaseStart.Add("Sim:PlusPhase:Start", func() {
+		ss.Time.PlusPhase = true
+		ss.Time.NewPhase(true)
+	})
+	plusPhase.PhaseEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
+	// Add both to train and test, by copy
+	manager.AddPhaseAllModes(etime.Cycle, minusPhase)
+	manager.AddPhaseAllModes(etime.Cycle, plusPhase)
+
+	// Trial Stats and Apply Input
+	for m, _ := range manager.Stacks {
+		mode := m // For closures
+		stack := manager.Stacks[m]
+		stack.Loops[etime.Trial].OnStart.Add("Sim:ResetState", func() {
+			ss.Net.NewState()
+			ss.Time.NewState(mode.String())
+		})
+		//stack.Loops[etime.Trial].OnStart.Add("Sim:ApplyInputs", ss.ApplyInputs) //todo put backin
+		//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
+		//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin
+		stack.Loops[etime.Trial].OnEnd.Add("Sim:Env:Step", func() {
+			//ss.Envs[mode.String()].Step() //todo putback in
+		})
+	}
+
+	manager.GetLoop(etime.Train, etime.Run).OnStart.Add("Sim:NewRun", ss.NewRun)
+
+	ss.AddDefaultLoopSimLogic(manager)
+	ss.AddDefaultLoggingCallbacks(manager)
+
+	//todo put back in add default guii callbacks, need to compare to base version
+	ss.AddDefaultGUICallbacks(manager)
+	//if ss.Args.Bool("nogui") == false { //todo put back in
+	//ss.AddDefaultGUICallbacks(manager) //todo add gui logic back in
+	//todo add gui logic backin
+	//for mode, _ := range manager.Stacks {
+	//	manager.GetLoop(mode, etime.Cycle).OnStart.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
+	//	manager.GetLoop(mode, etime.Cycle).OnStart.Add("GUI:RasterRec", ss.RasterRec)
+	//}
+	//for _, phase := range manager.GetLoop(etime.Train, etime.Cycle).Phases {
+	//	phase.PhaseEnd.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
+	//	phase.PhaseEnd.Add("GUI:UpdatePlot", func() {
+	//		ss.GUI.UpdatePlot(etime.Test, etime.Cycle) // make sure always updated at end
 	//	})
-	//	// note: AddLoopCycle adds in reverse order of where things end up!
-	//	if !nogui { // todo: cmdline
-	//		axon.AddLoopCycle(&ss.Loops, "GUI:UpdateNetView", ss.UpdateNetViewCycle)
-	//		axon.AddLoopCycle(&ss.Loops, "GUI:RasterRec", ss.RasterRec)
-	//	}
-	//	tst.Loop(etime.Cycle).Main.InsertAfter("Axon:Cycle:Run", "Log:Test:Cycle", func() {
-	//		ss.Log(etime.Test, etime.Cycle)
-	//	})
-	//	axon.AddLoopCycle(&ss.Loops, "Sim:SaveState", func() {
-	//		if ss.Time.Phase == 0 {
-	//			switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
-	//			case 75:
-	//				ss.Net.ActSt1(&ss.Time)
-	//			case 100:
-	//				ss.Net.ActSt2(&ss.Time)
-	//			}
-	//		}
-	//	})
-	//	axon.AddLoopCycle(&ss.Loops, "Sim:StatCounters", ss.StatCounters) // add last so comes first!
-	//
-	//	axon.AddPhaseMain(&ss.Loops, "Sim:TrialStats", func() {
-	//		if ss.Time.Phase == 1 {
-	//			ss.TrialStats()
-	//		}
-	//	})
-	//	if !nogui {
-	//		// after dwt updated, grab it
-	//		trn.Loop(etime.Phase).End.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
-	//		tst.Loop(etime.Phase).End.Add("GUI:UpdatePlot", func() {
-	//			ss.GUI.UpdatePlot(etime.Test, etime.Cycle) // make sure always updated at end
-	//		})
-	//	}
-	//
-	//	// prepend = before counter is incremented
-	//	trn.Loop(etime.Trial).Main.Prepend("Log:Train:Trial", func() {
-	//		ss.Log(etime.Train, etime.Trial)
-	//	})
-	//	trn.Loop(etime.Epoch).Main.Prepend("Log:Train:Epoch", func() {
-	//		epc := ss.Envs.ByMode(etime.Train).Counter(etime.Epoch).Cur
-	//		if (ss.TestInterval > 0) && (epc%ss.TestInterval == 0) { // note: epc is *next* so won't trigger first time
-	//			ss.TestAll()
-	//		}
-	//		ss.Log(etime.Train, etime.Epoch)
-	//	})
-	//
-	//	trn.Loop(etime.Epoch).Stop.Add("Epoch:NZeroStop", func() bool { // early stopping
-	//		nzero := ss.Args.Int("nzero")
-	//		return nzero > 0 && ss.Stats.Int("NZero") >= nzero
-	//	})
-	//
-	//	trn.Loop(etime.Run).Main.Prepend("Log:Train:Run", func() {
-	//		swts := ss.Args.Bool("wts")
-	//		ss.Log(etime.Train, etime.Run)
-	//		if swts {
-	//			fnm := ss.WeightsFileName()
-	//			fmt.Printf("Saving Weights to: %s\n", fnm)
-	//			ss.Net.SaveWtsJSON(gi.FileName(fnm))
-	//		}
-	//		ss.NeedsNewRun = true // next step will trigger new init
-	//	})
-	//
-	//	tst.Loop(etime.Trial).Main.Add("Log:Test:Trial", func() {
-	//		ss.Log(etime.Test, etime.Trial)
-	//		ss.GUI.NetDataRecord()
-	//	})
-	//	tst.Loop(etime.Epoch).Main.Add("Log:Test:Epoch", func() {
-	//		ss.Log(etime.Test, etime.Epoch)
-	//	})
-	//
-	//	if !nogui {
-	//		trn.Loop(etime.Trial).Main.Prepend("GUI:UpdateNetView", func() {
-	//			ss.UpdateNetViewTime(etime.Trial)
-	//		})
-	//		trn.Loop(etime.Epoch).Main.Prepend("GUI:UpdateNetView", func() {
-	//			ss.UpdateNetViewTime(etime.Epoch)
-	//		})
-	//		tst.Loop(etime.Trial).Main.Prepend("GUI:UpdateNetView", func() {
-	//			ss.UpdateNetViewTime(etime.Trial)
-	//		})
-	//		tst.Loop(etime.Epoch).Main.Prepend("GUI:UpdateNetView", func() {
-	//			ss.UpdateNetViewTime(etime.Epoch)
-	//		})
-	//	}
-	//
-	//	fmt.Println(trn.DocString())
-	//	fmt.Println(tst.DocString())
+	//}
+	//manager.GetLoop(etime.Test, etime.Trial).Main.Add("Log:Test:Trial", func() {
+	//	ss.GUI.NetDataRecord()
+	//})
+	//}
+
+	// Initialize and print loop structure, then add to Sim
+	manager.Steps.Init(manager)
+	fmt.Println(manager.DocString())
+	ss.Loops = manager
+
 }
 
 // Counters returns a string of the current counter state

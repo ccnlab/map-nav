@@ -38,10 +38,6 @@ func NewRndSeed(randomSeed *int64) { // TODO(refactor): to library
 // (training, testing, etc).
 func ApplyInputs(net *deep.Network, en WorldInterface, states, layers []string) { // TODO(refactor): library code
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
-	// going to the same layers, but good practice and cheap anyway
-
-	//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	//lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
 	for i, lnm := range layers {
 		lyi := net.LayerByName(lnm)
 		if lyi == nil {

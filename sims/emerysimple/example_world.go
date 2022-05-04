@@ -46,7 +46,10 @@ func (world *ExampleWorld) DecodeAndTakeAction(vt *etensor.Float32) string {
 func (world *ExampleWorld) StepN(n int) {}
 
 // Step 1
-func (world *ExampleWorld) Step() {}
+func (world *ExampleWorld) Step() {
+	fmt.Println("I'm taking a step")
+
+}
 
 // Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 func (world *ExampleWorld) Observe(name string) etensor.Tensor {

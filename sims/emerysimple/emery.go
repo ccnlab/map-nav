@@ -29,7 +29,8 @@ func main() {
 	TheSim.Config() // for GUI case, config then run..
 	TheSim.Init()
 	TheSim.ConfigLoops()
-	TheSim.Train()
+	//
+	TheSim.Loops.Steps.Run()
 }
 
 // see params_def.go for default params
@@ -551,7 +552,6 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	ss.ConfigEnv() // re-config env just in case a different set of patterns was
 	// selected or patterns have been modified etc
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
-	ss.NewRun()
 }
 
 func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
@@ -576,52 +576,12 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 	}
 }
 
-func (ss *Sim) AddDefaultLoggingCallbacks(manager *looper.LoopManager) {
-	for m, loops := range manager.Stacks {
-		curMode := m // For closures.
-		for t, loop := range loops.Loops {
-			curTime := t
-
-			// Actual logging
-			loop.OnEnd.Add(curMode.String()+":"+curTime.String()+":"+"Log", func() {
-				//ss.Log(curMode, curTime) //todo add logging back in
-			})
-
-			// Reset logs at level one deeper
-			levelToReset := etime.AllTimes
-			for i, tt := range loops.Order {
-				if tt == t && i+1 < len(loops.Order) {
-					levelToReset = loops.Order[i+1]
-				}
-			}
-			if levelToReset != etime.AllTimes {
-				loop.OnEnd.Add(curMode.String()+":"+curTime.String()+":"+"ResetLog"+levelToReset.String(), func() {
-					//ss.Logs.ResetLog(curMode, levelToReset) //todo adding log reste backin
-				})
-			}
-		}
-
-		// Save State
-		manager.GetLoop(curMode, etime.Cycle).OnEnd.Add("Sim:SaveState", ss.SaveStateBeta)
-	}
-}
-
-func (ss *Sim) SaveStateBeta() {
-	switch ss.Time.Cycle {
-	// save states at beta-frequency -- not used computationally
-	case 75:
-		ss.Net.ActSt1(&ss.Time)
-	case 100:
-		ss.Net.ActSt2(&ss.Time)
-	}
-}
-
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
 
 	manager := looper.LoopManager{}.Init()
 	manager.Stacks[etime.Train] = &looper.LoopStack{}
-	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 30).AddTime(etime.Cycle, 200)
+	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
 	minusPhase := looper.LoopSegment{Name: "MinusPhase", Duration: 150, IsPlusPhase: false}
 	minusPhase.PhaseStart.Add("Sim:MinusPhase:Start", func() {
 		ss.Time.PlusPhase = false
@@ -629,10 +589,17 @@ func (ss *Sim) ConfigLoops() {
 	})
 	minusPhase.PhaseEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
 	plusPhase := looper.LoopSegment{Name: "PlusPhase", Duration: 50, IsPlusPhase: true}
+
 	plusPhase.PhaseStart.Add("Sim:PlusPhase:Start", func() {
 		ss.Time.PlusPhase = true
 		ss.Time.NewPhase(true)
 	})
+
+	plusPhase.PhaseStart.Add("Sim:PlusPhase:SendActionsThenStep", func() {
+		ss.SendAction(ss.Net, &ss.OnlyEnv) //todo shouldn't this be called at the END of the plus phase?
+		ss.OnlyEnv.Step()                  //this should be called right after i send an action
+	})
+
 	plusPhase.PhaseEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
 	// Add both to train and test, by copy
 	manager.AddPhaseAllModes(etime.Cycle, minusPhase)
@@ -646,31 +613,24 @@ func (ss *Sim) ConfigLoops() {
 			ss.Net.NewState()
 			ss.Time.NewState(mode.String())
 		})
-		//stack.Loops[etime.Trial].OnStart.Add("Sim:ApplyInputs", ss.ApplyInputs) //todo put backin
+		stack.Loops[etime.Trial].OnStart.Add("Sim:Observe",
+			func() {
+				states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+				layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+				ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
+			}) //todo put backin
 		//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
 		//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin
-		stack.Loops[etime.Trial].OnEnd.Add("Sim:Env:Step", func() {
-			//ss.Envs[mode.String()].Step() //todo putback in
-		})
 	}
 
 	manager.GetLoop(etime.Train, etime.Run).OnStart.Add("Sim:NewRun", ss.NewRun)
-
 	ss.AddDefaultLoopSimLogic(manager)
-	ss.AddDefaultLoggingCallbacks(manager)
 
 	// Initialize and print loop structure, then add to Sim
 	manager.Steps.Init(manager)
 	fmt.Println(manager.DocString())
 	ss.Loops = manager
 
-}
-
-// Counters returns a string of the current counter state
-// use tabs to achieve a reasonable formatting overall
-// and add a few tabs at the end to allow for expansion.
-func (ss *Sim) Counters(train bool) string {
-	return fmt.Sprintf("Run:\t%d\tEpoch:\t%d\tEvent:\t%d\tCycle:\t%d\tAct:\t%v\tNet:\t%v\t\t\t", ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur, 0, ss.Time.Cycle, ss.ActAction, ss.NetAction)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -768,8 +728,6 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
 	epc, _, chg := epoch.Query()
 	if chg {
-
-		ss.EpochSched(epc)
 
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
@@ -880,37 +838,4 @@ func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
 		}
 	}
 
-}
-
-// EpochSched implements the learning rate schedule etc.
-func (ss *Sim) EpochSched(epc int) { // TODO(refactor): looper callback
-	if epc > 1 && epc%10 == 0 {
-		ss.PctCortex = float64(epc) / 100
-		if ss.PctCortex > ss.PctCortexMax {
-			ss.PctCortex = ss.PctCortexMax
-		} else {
-			fmt.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, epc)
-		}
-	}
-	switch epc {
-	// case ss.AllLaysOnEpc:
-	// 	ss.ToggleLaysOff(false) // on
-	// 	mpi.Printf("toggled layers on at epoch: %d\n", epc)
-	case 150:
-		ss.Net.LrateSched(0.5)
-		fmt.Printf("dropped lrate 0.5 at epoch: %d\n", epc)
-	case 250:
-		ss.Net.LrateSched(0.2)
-		fmt.Printf("dropped lrate 0.2 at epoch: %d\n", epc)
-	case 350:
-		ss.Net.LrateSched(0.1)
-		fmt.Printf("dropped lrate 0.1 at epoch: %d\n", epc)
-	}
-}
-
-// Train runs the full training from this point onward
-func (ss *Sim) Train() { // TODO(refactor): delete, looper
-	for {
-		ss.TrainTrial()
-	}
 }

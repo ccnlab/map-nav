@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
+	"github.com/emer/emergent/egui"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/evec"
@@ -39,8 +40,8 @@ func main() {
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
-	Net *deep.Network `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-
+	Net              *deep.Network       `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	GUI              egui.GUI            `view:"-" desc:"manages all the gui elements"`
 	Loops            *looper.LoopManager `view:"no-inline" desc:"contains looper control loops for running sim"`
 	PctCortex        float64             `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64             `desc:"maximum PctCortex, when running on the schedule"`
@@ -562,16 +563,6 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 		})
 	}
 
-	//todo are we still using testall, and should we handle it differently
-	// Add Testing
-	trainEpoch := manager.GetLoop(etime.Train, etime.Epoch)
-	trainEpoch.OnStart.Add("Log:Train:TestAtInterval", func() {
-		if (ss.TestInterval > 0) && ((trainEpoch.Counter.Cur+1)%ss.TestInterval == 0) {
-			// Note the +1 so that it doesn't occur at the 0th timestep.
-			ss.TestAll()
-		}
-	})
-
 	//todo is this neccesary
 	// Set variables on ss that are referenced elsewhere, such as ApplyInputs.
 	for m, loops := range manager.Stacks {
@@ -625,22 +616,6 @@ func (ss *Sim) SaveStateBeta() {
 	}
 }
 
-func (ss *Sim) AddDefaultGUICallbacks(manager *looper.LoopManager) {
-	for _, m := range []etime.Modes{etime.Train, etime.Test} {
-		curMode := m // For closures.
-		for _, t := range []etime.Times{etime.Trial, etime.Epoch} {
-			curTime := t
-			if manager.GetLoop(curMode, curTime).OnEnd.HasNameLike("UpdateNetView") {
-				// There might be a case where another function also Updates the NetView, and we don't want to do it twice. In particular, Net.WtFmDWt clears some values at the end of Trial, and it wants to update the view before doing so.
-				continue
-			}
-			manager.GetLoop(curMode, curTime).OnEnd.Add("GUI:UpdateNetView", func() {
-				//ss.UpdateNetViewTime(curTime) todo add gui functinoality back in
-			})
-		}
-	}
-}
-
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
 
@@ -683,26 +658,6 @@ func (ss *Sim) ConfigLoops() {
 
 	ss.AddDefaultLoopSimLogic(manager)
 	ss.AddDefaultLoggingCallbacks(manager)
-
-	//todo put back in add default guii callbacks, need to compare to base version
-	ss.AddDefaultGUICallbacks(manager)
-	//if ss.Args.Bool("nogui") == false { //todo put back in
-	//ss.AddDefaultGUICallbacks(manager) //todo add gui logic back in
-	//todo add gui logic backin
-	//for mode, _ := range manager.Stacks {
-	//	manager.GetLoop(mode, etime.Cycle).OnStart.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
-	//	manager.GetLoop(mode, etime.Cycle).OnStart.Add("GUI:RasterRec", ss.RasterRec)
-	//}
-	//for _, phase := range manager.GetLoop(etime.Train, etime.Cycle).Phases {
-	//	phase.PhaseEnd.Add("GUI:UpdateNetView", ss.UpdateNetViewCycle)
-	//	phase.PhaseEnd.Add("GUI:UpdatePlot", func() {
-	//		ss.GUI.UpdatePlot(etime.Test, etime.Cycle) // make sure always updated at end
-	//	})
-	//}
-	//manager.GetLoop(etime.Test, etime.Trial).Main.Add("Log:Test:Trial", func() {
-	//	ss.GUI.NetDataRecord()
-	//})
-	//}
 
 	// Initialize and print loop structure, then add to Sim
 	manager.Steps.Init(manager)
@@ -819,10 +774,6 @@ func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
 		if epc >= ss.MaxEpcs {
 			if ss.SaveWts { // doing this earlier
 				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur), ss.Net)
-			}
-			// done with training..
-			if ss.SaveARFs {
-				ss.TestAll()
 			}
 			ss.RunEnd()
 			run := ss.OnlyEnv.GetCounter(etime.Run)
@@ -962,50 +913,4 @@ func (ss *Sim) Train() { // TODO(refactor): delete, looper
 	for {
 		ss.TrainTrial()
 	}
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-// Testing
-
-// TestTrial runs one trial of testing -- always sequentially presented inputs
-func (ss *Sim) TestTrial(returnOnChg bool) { // TODO(refactor): replace with looper
-	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
-
-	// Key to query counters FIRST because current state is in NEXT epoch
-	// if epoch counter has changed
-	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
-	epc, _, chg := epoch.Query()
-	if chg {
-
-		ss.EpochSched(epc)
-		//ss.TrainEnv.Event.Cur = 0
-
-		if epc >= ss.TestEpcs {
-			return
-		}
-	}
-
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
-	ss.ThetaCyc(false) // train
-	// ss.TrialStats(true) // now in alphacyc
-
-}
-
-// TestAll runs through the full set of testing items
-func (ss *Sim) TestAll() { // TODO(refactor): replace with looper
-	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
-	for {
-		ss.TestTrial(false)
-		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
-			break
-		}
-	}
-
-}
-
-// RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
-func (ss *Sim) RunTestAll() { // TODO(refactor): delete, looper
-	ss.TestAll()
 }

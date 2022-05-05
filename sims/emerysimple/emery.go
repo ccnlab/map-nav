@@ -588,28 +588,28 @@ func (ss *Sim) ConfigLoops() {
 	manager := looper.LoopManager{}.Init()
 	manager.Stacks[etime.Train] = &looper.LoopStack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
-	minusPhase := looper.LoopSegment{Name: "MinusPhase", Duration: 150, IsPlusPhase: false}
-	minusPhase.PhaseStart.Add("Sim:MinusPhase:Start", func() {
+	minusPhase := looper.LoopSegment{Name: "MinusPhase", Duration: 150}
+	minusPhase.OnStart.Add("Sim:MinusPhase:Start", func() {
 		ss.Time.PlusPhase = false
 		ss.Time.NewPhase(false)
 	})
-	minusPhase.PhaseEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
-	plusPhase := looper.LoopSegment{Name: "PlusPhase", Duration: 50, IsPlusPhase: true}
+	minusPhase.OnEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
+	plusPhase := looper.LoopSegment{Name: "PlusPhase", Duration: 50}
 
-	plusPhase.PhaseStart.Add("Sim:PlusPhase:Start", func() {
+	plusPhase.OnStart.Add("Sim:PlusPhase:Start", func() {
 		ss.Time.PlusPhase = true
 		ss.Time.NewPhase(true)
 	})
 
-	plusPhase.PhaseStart.Add("Sim:PlusPhase:SendActionsThenStep", func() {
+	plusPhase.OnStart.Add("Sim:PlusPhase:SendActionsThenStep", func() {
 		ss.SendAction(ss.Net, &ss.OnlyEnv) //todo shouldn't this be called at the END of the plus phase?
-		ss.OnlyEnv.Step()                  //this should be called right after i send an action
+		ss.OnlyEnv.Step()                  //this should be called right after I send an action
 	})
 
-	plusPhase.PhaseEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
+	plusPhase.OnEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
 	// Add both to train and test, by copy
-	manager.AddPhaseAllModes(etime.Cycle, minusPhase)
-	manager.AddPhaseAllModes(etime.Cycle, plusPhase)
+	manager.AddSegmentAllModes(etime.Cycle, minusPhase)
+	manager.AddSegmentAllModes(etime.Cycle, plusPhase)
 
 	// Trial Stats and Apply Input
 	for m, _ := range manager.Stacks {

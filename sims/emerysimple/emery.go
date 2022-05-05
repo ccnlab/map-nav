@@ -562,6 +562,12 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 			ss.Time.CycleInc()
 		})
 	}
+	// Weight updates.
+	// Note that the substring "UpdateNetView" in the name is important here, because it's checked in AddDefaultGUICallbacks.
+	manager.GetLoop(etime.Train, etime.Trial).OnEnd.Add("Axon:LoopSegment:UpdateWeightsAndUpdateNetView" /*DO NOT CHANGE NAME*/, func() {
+		ss.Net.DWt(&ss.Time)
+		ss.Net.WtFmDWt(&ss.Time)
+	})
 
 	//todo is this neccesary
 	// Set variables on ss that are referenced elsewhere, such as ApplyInputs.
@@ -615,6 +621,7 @@ func (ss *Sim) ConfigLoops() {
 		})
 		stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe",
 			func() {
+				//Todo this should actually include v2wd, and others, i'm probably not passing enoguh activaiton
 				//Todo need to create a mapping between layers and states, or defined API for this
 				//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
 				//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
@@ -651,74 +658,74 @@ func (ss *Sim) ConfigLoops() {
 // using ApplyExt method on relevant layers (see TrainTrial, TestTrial).
 // If train is true, then learning DWt or WtFmDWt calls are made.
 // Handles netview updating within scope of ThetaCycle
-func (ss *Sim) ThetaCyc(train bool) {
-	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
-
-	mode := etime.Train.String()
-	if !train {
-		mode = etime.Test.String()
-	}
-
-	// update prior weight changes at start, so any DWt values remain visible at end
-	// you might want to do this less frequently to achieve a mini-batch update
-	// in which case, move it out to the TrainTrial method where the relevant
-	// counters are being dealt with.
-	if train {
-		ss.Net.WtFmDWt(&ss.Time)
-	} else {
-		ss.Net.SynFail(&ss.Time)
-	}
-
-	minusCyc := ss.MinusCycles
-	plusCyc := ss.PlusCycles
-
-	ss.Net.NewState()
-	ss.Time.NewState(mode)
-
-	for cyc := 0; cyc < minusCyc; cyc++ { // do the minus phase
-		ss.Net.Cycle(&ss.Time)
-
-		ss.Time.CycleInc()
-		switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
-		case 75:
-			ss.Net.ActSt1(&ss.Time)
-			// if erand.BoolProb(float64(ss.PAlphaPlus), -1) {
-			// 	ss.Net.TargToExt()
-			// 	ss.Time.PlusPhase = true
-			// }
-		case 100:
-			ss.Net.ActSt2(&ss.Time)
-			ss.Net.ClearTargExt()
-			ss.Time.PlusPhase = false
-		}
-
-		if cyc == minusCyc-1 { // do before view update
-			ss.Net.MinusPhase(&ss.Time)
-		}
-	}
-	ss.Time.NewPhase(true)
-	fmt.Println("Taking action! ")
-
-	ss.SendAction(ss.Net, &ss.OnlyEnv)
-
-	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
-		ss.Net.Cycle(&ss.Time)
-
-		ss.Time.CycleInc()
-
-		if cyc == plusCyc-1 { // do before view update
-			ss.Net.PlusPhase(&ss.Time)
-		}
-
-	}
-
-	ss.TrialStats(train) // need stats for lrmod
-
-	if train {
-		ss.Net.DWt(&ss.Time)
-	}
-
-}
+//func (ss *Sim) ThetaCyc(train bool) {
+//	// ss.Win.PollEvents() // this can be used instead of running in a separate goroutine
+//
+//	mode := etime.Train.String()
+//	if !train {
+//		mode = etime.Test.String()
+//	}
+//
+//	// update prior weight changes at start, so any DWt values remain visible at end
+//	// you might want to do this less frequently to achieve a mini-batch update
+//	// in which case, move it out to the TrainTrial method where the relevant
+//	// counters are being dealt with.
+//	if train {
+//		ss.Net.WtFmDWt(&ss.Time)
+//	} else {
+//		ss.Net.SynFail(&ss.Time)
+//	}
+//
+//	minusCyc := ss.MinusCycles
+//	plusCyc := ss.PlusCycles
+//
+//	ss.Net.NewState()
+//	ss.Time.NewState(mode)
+//
+//	for cyc := 0; cyc < minusCyc; cyc++ { // do the minus phase
+//		ss.Net.Cycle(&ss.Time)
+//
+//		ss.Time.CycleInc()
+//		switch ss.Time.Cycle { // save states at beta-frequency -- not used computationally
+//		case 75:
+//			ss.Net.ActSt1(&ss.Time)
+//			// if erand.BoolProb(float64(ss.PAlphaPlus), -1) {
+//			// 	ss.Net.TargToExt()
+//			// 	ss.Time.PlusPhase = true
+//			// }
+//		case 100:
+//			ss.Net.ActSt2(&ss.Time)
+//			ss.Net.ClearTargExt()
+//			ss.Time.PlusPhase = false
+//		}
+//
+//		if cyc == minusCyc-1 { // do before view update
+//			ss.Net.MinusPhase(&ss.Time)
+//		}
+//	}
+//	ss.Time.NewPhase(true)
+//	fmt.Println("Taking action! ")
+//
+//	ss.SendAction(ss.Net, &ss.OnlyEnv)
+//
+//	for cyc := 0; cyc < plusCyc; cyc++ { // do the plus phase
+//		ss.Net.Cycle(&ss.Time)
+//
+//		ss.Time.CycleInc()
+//
+//		if cyc == plusCyc-1 { // do before view update
+//			ss.Net.PlusPhase(&ss.Time)
+//		}
+//
+//	}
+//
+//	ss.TrialStats(train) // need stats for lrmod
+//
+//	if train {
+//		ss.Net.DWt(&ss.Time)
+//	}
+//
+//}
 
 // SendAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
@@ -730,37 +737,37 @@ func (ss *Sim) SendAction(net *deep.Network, ev WorldInterface) { // TODO(refact
 }
 
 // TrainTrial runs one trial of training using TrainEnv
-func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
-	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
-
-	// Key to query counters FIRST because current state is in NEXT epoch
-	// if epoch counter has changed
-	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
-	epc, _, chg := epoch.Query()
-	if chg {
-
-		if epc >= ss.MaxEpcs {
-			if ss.SaveWts { // doing this earlier
-				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur), ss.Net)
-			}
-			ss.RunEnd()
-			run := ss.OnlyEnv.GetCounter(etime.Run)
-			run.Incr()
-			_, _, chg = run.Query()
-			if chg { // we are done!
-				return
-			} else {
-				return
-			}
-		}
-	}
-
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-	ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
-	ss.ThetaCyc(true) // train
-	// ss.TrialStats(true) // now in alphacyc
-}
+//func (ss *Sim) TrainTrial() { // TODO(refactor): looper code
+//	ss.OnlyEnv.Step() // the Env encapsulates and manages all counter state
+//
+//	// Key to query counters FIRST because current state is in NEXT epoch
+//	// if epoch counter has changed
+//	epoch := ss.OnlyEnv.GetCounter(etime.Epoch)
+//	epc, _, chg := epoch.Query()
+//	if chg {
+//
+//		if epc >= ss.MaxEpcs {
+//			if ss.SaveWts { // doing this earlier
+//				SaveWeights(WeightsFileName(ss.Net.Nm, ss.Tag, ss.ParamSet, ss.OnlyEnv.GetCounter(etime.Run).Cur, ss.OnlyEnv.GetCounter(etime.Epoch).Cur), ss.Net)
+//			}
+//			ss.RunEnd()
+//			run := ss.OnlyEnv.GetCounter(etime.Run)
+//			run.Incr()
+//			_, _, chg = run.Query()
+//			if chg { // we are done!
+//				return
+//			} else {
+//				return
+//			}
+//		}
+//	}
+//
+//	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+//	layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+//	ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
+//	ss.ThetaCyc(true) // train
+//	// ss.TrialStats(true) // now in alphacyc
+//}
 
 // RunEnd is called at the end of a run -- save weights, record final log, etc. here
 func (ss *Sim) RunEnd() { // TODO(refactor): looper call
@@ -824,28 +831,4 @@ func (ss *Sim) TrialStats(accum bool) { // TODO(refactor): looper call
 		ss.UpdtARFs() // only in testing
 	}
 	return
-}
-
-// TrainEpoch runs training trials for remainder of this epoch
-func (ss *Sim) TrainEpoch() { // TODO(refactor): replace with looper
-	curEpc := ss.OnlyEnv.GetCounter(etime.Epoch).Cur
-	for {
-		ss.TrainTrial()
-		if ss.OnlyEnv.GetCounter(etime.Epoch).Cur != curEpc {
-			break
-		}
-	}
-
-}
-
-// TrainRun runs training trials for remainder of run
-func (ss *Sim) TrainRun() { // TODO(refactor): replace with looper
-	curRun := ss.OnlyEnv.GetCounter(etime.Run).Cur
-	for {
-		ss.TrainTrial()
-		if ss.OnlyEnv.GetCounter(etime.Run).Cur != curRun {
-			break
-		}
-	}
-
 }

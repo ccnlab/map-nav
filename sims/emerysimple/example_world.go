@@ -74,6 +74,9 @@ func (world *ExampleWorld) Step() {
 
 // Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 func (world *ExampleWorld) Observe(name string) etensor.Tensor {
+	//constantly rnadomize this input, i know it says Act, but it is treated as an input, confusing?, need to V2wdp, etc
+	//to do, make less sparse input
+	world.observations["Act"] = etensor.NewFloat32(world.observationShape["Act"], nil, nil)
 	return world.observations[name]
 }
 

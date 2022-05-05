@@ -43,7 +43,7 @@ func (world *ExampleWorld) Init(details string) {
 	world.observations["Act"] = etensor.NewFloat32(world.observationShape["Act"], nil, nil)
 
 	patgen.PermutedBinaryRows(world.observations["VL"], 1, 1, 0)
-	patgen.PermutedBinaryRows(world.observations["Act"], 5, 1, 0)
+	patgen.PermutedBinaryRows(world.observations["Act"], 3, 1, 0)
 
 }
 
@@ -59,7 +59,7 @@ func (world *ExampleWorld) DecodeAndTakeAction(action string, vt *etensor.Float3
 	fmt.Printf("Prediciton of the network")
 	fmt.Printf(vt.String())
 	fmt.Println("\n Expected Output")
-	fmt.Printf(world.observations["Act"].String())
+	fmt.Printf(world.observations["VL"].String())
 	return "Taking in info from model and moving forward"
 }
 

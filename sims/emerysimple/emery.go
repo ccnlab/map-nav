@@ -625,7 +625,7 @@ func (ss *Sim) ConfigLoops() {
 
 		stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
 			func() { //
-				loss := ss.Net.LayerByName("Act").(axon.AxonLayer).AsAxon().PctUnitErr()
+				loss := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon().PctUnitErr()
 				s := fmt.Sprintf("%f", loss)
 				fmt.Println("the pctuniterror is " + s)
 			}) //todo put backin

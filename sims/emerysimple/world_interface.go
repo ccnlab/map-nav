@@ -36,7 +36,7 @@ type WorldInterface interface {
 	Action(action, details string)
 	//ActionContinuous(action string, details []float32)
 
-	// DecodeAndTakeAction takes an action specified by a tensor. // TODO Rename and also take in a string
+	// DecodeAndTakeAction takes an action specified by a tensor. // TODO Rename
 	DecodeAndTakeAction(action string, vt *etensor.Float32) string
 
 	// Done Returns true if episode has ended, e.g. when exiting maze

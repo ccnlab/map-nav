@@ -596,7 +596,6 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
-
 	manager := looper.LoopManager{}.Init()
 	manager.Stacks[etime.Train] = &looper.LoopStack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)

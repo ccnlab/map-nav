@@ -613,11 +613,21 @@ func (ss *Sim) ConfigLoops() {
 			ss.Net.NewState()
 			ss.Time.NewState(mode.String())
 		})
-		stack.Loops[etime.Trial].OnStart.Add("Sim:Observe",
+		stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe",
 			func() {
-				states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-				layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+				//Todo need to create a mapping between layers and states, or defined API for this
+				//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+				//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+				states := []string{"VL", "Act"}
+				layers := []string{"VL", "Act"}
 				ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
+			}) //todo put backing
+
+		stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
+			func() { //
+				loss := ss.Net.LayerByName("Act").(axon.AxonLayer).AsAxon().PctUnitErr()
+				s := fmt.Sprintf("%f", loss)
+				fmt.Println("the pctuniterror is " + s)
 			}) //todo put backin
 		//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
 		//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin

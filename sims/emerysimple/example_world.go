@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/emer/emergent/env"
 	"github.com/emer/emergent/etime"
+	"github.com/emer/emergent/patgen"
 	"github.com/emer/etable/etensor"
 )
 
@@ -18,6 +19,9 @@ type ExampleWorld struct {
 	Run   env.Ctr `view:"inline" desc:"current run of model as provided during Init"`
 	Epoch env.Ctr `view:"inline" desc:"increments over arbitrary fixed number of trials, for general stats-tracking"`
 	Trial env.Ctr `view:"inline" desc:"increments for each step of world, loops over epochs -- for general stats-tracking independent of env state"`
+
+	observationShape map[string][]int
+	observations     map[string]*etensor.Float32
 }
 
 //Display displays the environmnet
@@ -25,13 +29,26 @@ func (world *ExampleWorld) Display() {
 	fmt.Println("This world state")
 }
 
-// Init Initializes or reinitialize the world
+// Init Initializes or reinitialize the world, todo, change from being hardcoded for emery
 func (world *ExampleWorld) Init(details string) {
 	fmt.Println("Init Dworld: " + details)
+
+	world.observationShape = make(map[string][]int)
+	world.observations = make(map[string]*etensor.Float32)
+
+	world.observationShape["VL"] = []int{5, 5}
+	world.observationShape["Act"] = []int{5, 5}
+
+	world.observations["VL"] = etensor.NewFloat32(world.observationShape["VL"], nil, nil)
+	world.observations["Act"] = etensor.NewFloat32(world.observationShape["Act"], nil, nil)
+
+	patgen.PermutedBinaryRows(world.observations["VL"], 1, 1, 0)
+	patgen.PermutedBinaryRows(world.observations["Act"], 5, 1, 0)
+
 }
 
 func (world *ExampleWorld) GetObservationSpace() map[string][]int {
-	return nil
+	return world.observationShape //todo need to instantitate
 }
 
 func (world *ExampleWorld) GetActionSpace() map[string][]int {
@@ -39,6 +56,10 @@ func (world *ExampleWorld) GetActionSpace() map[string][]int {
 }
 
 func (world *ExampleWorld) DecodeAndTakeAction(action string, vt *etensor.Float32) string {
+	fmt.Printf("Prediciton of the network")
+	fmt.Printf(vt.String())
+	fmt.Println("\n Expected Output")
+	fmt.Printf(world.observations["Act"].String())
 	return "Taking in info from model and moving forward"
 }
 
@@ -53,11 +74,11 @@ func (world *ExampleWorld) Step() {
 
 // Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”
 func (world *ExampleWorld) Observe(name string) etensor.Tensor {
-	return nil
+	return world.observations[name]
 }
 
 func (world *ExampleWorld) ObserveWithShape(name string, shape []int) etensor.Tensor {
-	return etensor.NewFloat32(shape, nil, nil)
+	return world.observations[name]
 }
 
 // Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")

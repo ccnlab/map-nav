@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/emer/emergent/env"
-	"github.com/emer/emergent/etime"
 	"github.com/emer/etable/etensor"
 )
 
@@ -46,8 +44,6 @@ type WorldInterface interface {
 
 	// Info Returns general information about the world, for debugging purposes. Should not be used for actual learning.
 	Info() string
-
-	GetCounter(time etime.Times) env.Ctr
 
 	// Display displays environment to the user
 	Display()

@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/emer/emergent/env"
-	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/patgen"
 	"github.com/emer/etable/etensor"
 )
@@ -14,11 +12,6 @@ type ExampleWorld struct {
 	WorldInterface
 	Nm  string `desc:"name of this environment"`
 	Dsc string `desc:"description of this environment"`
-
-	// Counters
-	Run   env.Ctr `view:"inline" desc:"current run of model as provided during Init"`
-	Epoch env.Ctr `view:"inline" desc:"increments over arbitrary fixed number of trials, for general stats-tracking"`
-	Trial env.Ctr `view:"inline" desc:"increments for each step of world, loops over epochs -- for general stats-tracking independent of env state"`
 
 	observationShape map[string][]int
 	observations     map[string]*etensor.Float32
@@ -108,18 +101,4 @@ func (world *ExampleWorld) Done() bool {
 // Info Returns general information about the world, for debugging purposes. Should not be used for actual learning.
 func (world *ExampleWorld) Info() string {
 	return "God is dead"
-}
-
-func (world *ExampleWorld) GetCounter(time etime.Times) env.Ctr {
-	if time == etime.Epoch {
-		return world.Epoch
-	}
-	if time == etime.Trial {
-		return world.Trial
-	}
-	if time == etime.Run {
-		return world.Run
-	}
-	print("You passed in a bad time request :(")
-	return world.Trial
 }

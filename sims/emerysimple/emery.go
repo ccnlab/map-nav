@@ -29,8 +29,19 @@ func main() {
 	TheSim.Config() // for GUI case, config then run..
 	TheSim.Init()
 	TheSim.ConfigLoops()
-	//
-	TheSim.Loops.Steps.Run()
+
+	userInterface := UserInterface{
+		Looper:        TheSim.Loops,
+		Network:       TheSim.Net.AsAxon(),
+		AppName:       "Emery",
+		AppTitle:      "Emery simulated rat / cat",
+		AppAbout:      `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`,
+		InitCallback:  TheSim.Init,
+		GUI:           &TheSim.GUI,
+		StructForView: &TheSim,
+	}.Init()
+	userInterface.CreateAndRunGui()
+	// gimain.Main blocks, so don't put any code after this.
 }
 
 // see params_def.go for default params
@@ -564,8 +575,9 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 	}
 	// Weight updates.
 	// Note that the substring "UpdateNetView" in the name is important here, because it's checked in AddDefaultGUICallbacks.
-	manager.GetLoop(etime.Train, etime.Trial).OnEnd.Add("Axon:LoopSegment:UpdateWeightsAndUpdateNetView" /*DO NOT CHANGE NAME*/, func() {
+	manager.GetLoop(etime.Train, etime.Trial).OnEnd.Add("Axon:LoopSegment:UpdateWeights", func() {
 		ss.Net.DWt(&ss.Time)
+		// TODO Need to update net view here to accurately display weight changes.
 		ss.Net.WtFmDWt(&ss.Time)
 	})
 

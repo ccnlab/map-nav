@@ -29,6 +29,9 @@ type WorldInterface interface {
 	// ObserveWithShape Returns a tensor for the named modality. E.g. “x” or “vision” or “reward” but returns a specific shape, like having four eyes versus 2 eyes
 	ObserveWithShape(name string, shape []int) etensor.Tensor
 
+	// ObserveWithShape Returns a tensor for the named modality. E.g. “x” or “vision” or “reward” but returns a specific shape, like having four eyes versus 2 eyes
+	ObserveWithShapeStride(name string, shape, stride []int) etensor.Tensor
+
 	// Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")
 	Action(action, details string)
 	//ActionContinuous(action string, details []float32)

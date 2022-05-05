@@ -635,11 +635,11 @@ func (ss *Sim) ConfigLoops() {
 			func() {
 				//Todo this should actually include v2wd, and others, i'm probably not passing enoguh activaiton
 				//Todo need to create a mapping between layers and states, or defined API for this
-				//states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-				//layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-				states := []string{"VL", "Act"}
-				layers := []string{"VL", "Act"}
-				ApplyInputs(ss.Net, &ss.OnlyEnv, states, layers)
+				states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+				layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+				//states := []string{"VL", "Act"}
+				//layers := []string{"VL", "Act"}
+				ApplyInputsWithStrideAndShape(ss.Net, &ss.OnlyEnv, states, layers)
 			}) //todo put backing
 
 		stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",

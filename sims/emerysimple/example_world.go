@@ -33,10 +33,10 @@ func (world *ExampleWorld) Init(details string) {
 	world.observationShape["Act"] = []int{5, 5}
 
 	world.observations["VL"] = etensor.NewFloat32(world.observationShape["VL"], nil, nil)
-	world.observations["Act"] = etensor.NewFloat32(world.observationShape["Act"], nil, nil)
+	//world.observations["Act"] = etensor.NewFloat32(world.observationShape["Act"], nil, nil)
 
 	patgen.PermutedBinaryRows(world.observations["VL"], 1, 1, 0)
-	patgen.PermutedBinaryRows(world.observations["Act"], 3, 1, 0)
+	//patgen.PermutedBinaryRows(world.observations["Act"], 3, 1, 0)
 
 }
 
@@ -75,6 +75,19 @@ func (world *ExampleWorld) Observe(name string) etensor.Tensor {
 
 func (world *ExampleWorld) ObserveWithShape(name string, shape []int) etensor.Tensor {
 	return world.observations[name]
+}
+
+func (world *ExampleWorld) ObserveWithShapeStride(name string, shape []int, strides []int) etensor.Tensor {
+	if name == "VL" { //if type target
+		return world.observations[name]
+	} else { //if an input
+		if world.observations[name] == nil {
+			fmt.Println("CALLED ONCE")
+			world.observations[name] = etensor.NewFloat32(shape, strides, nil)
+			patgen.PermutedBinaryRows(world.observations[name], 1, 1, 0)
+		}
+		return world.observations[name]
+	}
 }
 
 // Action Output action to the world with details. Details might contain a number or array. So this might be Action(“move”, “left”) or Action(“LeftElbow”, “0.4”) or Action("Log", "[0.1, 0.9]")

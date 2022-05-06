@@ -34,7 +34,7 @@ func main() {
 		GUI:           &TheSim.GUI,
 		StructForView: &TheSim,
 		Looper:        TheSim.Loops,
-		Network:       TheSim.Net.AsAxon(),
+		Network:       TheSim.Net.EmerNet,
 		AppName:       "Emery",
 		AppTitle:      "Emery simulated rat / cat",
 		AppAbout:      `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`,

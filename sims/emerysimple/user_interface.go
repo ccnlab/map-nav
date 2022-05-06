@@ -3,9 +3,9 @@ package main
 // TODO Move to emergent/egui
 
 import (
-	"github.com/emer/axon/axon"
 	"github.com/emer/emergent/egui"
 	"github.com/emer/emergent/elog"
+	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/estats"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
@@ -17,7 +17,7 @@ import (
 // UserInterface automatically handles creation of the GUI if requested, otherwise runs on the command line.
 type UserInterface struct {
 	Looper        *looper.DataManager
-	Network       *axon.Network // TODO Is there a general interface for all these?
+	Network       emer.Network
 	Logs          *elog.Logs
 	Stats         *estats.Stats
 	GUI           *egui.GUI `desc:"More directly handles graphical elements."`

@@ -31,17 +31,17 @@ func main() {
 	TheSim.ConfigLoops()
 
 	userInterface := UserInterface{
+		GUI:           &TheSim.GUI,
+		StructForView: &TheSim,
 		Looper:        TheSim.Loops,
 		Network:       TheSim.Net.AsAxon(),
 		AppName:       "Emery",
 		AppTitle:      "Emery simulated rat / cat",
 		AppAbout:      `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`,
 		InitCallback:  TheSim.Init,
-		GUI:           &TheSim.GUI,
-		StructForView: &TheSim,
-	}.Init()
+	}
 	userInterface.CreateAndRunGui()
-	// gimain.Main blocks, so don't put any code after this.
+	// CreateAndRunGui blocks, so don't put any code after this.
 }
 
 // see params_def.go for default params
@@ -54,7 +54,7 @@ func main() {
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net              *deep.Network       `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	GUI              egui.GUI            `view:"-" desc:"manages all the gui elements"`
-	Loops            *looper.LoopManager `view:"no-inline" desc:"contains looper control loops for running sim"`
+	Loops            *looper.DataManager `view:"no-inline" desc:"contains looper control loops for running sim"`
 	PctCortex        float64             `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64             `desc:"maximum PctCortex, when running on the schedule"`
 	TrnErrStats      *etable.Table       `view:"no-inline" desc:"stats on train trials where errors were made"`
@@ -565,7 +565,7 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 }
 
-func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
+func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.DataManager) {
 	// Net Cycle
 	for m, _ := range manager.Stacks {
 		manager.Stacks[m].Loops[etime.Cycle].Main.Add("Axon:Cycle:RunAndIncrement", func() {
@@ -596,16 +596,16 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.LoopManager) {
 
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
-	manager := looper.LoopManager{}.Init()
-	manager.Stacks[etime.Train] = &looper.LoopStack{}
+	manager := looper.DataManager{}.Init()
+	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
-	minusPhase := looper.LoopSegment{Name: "MinusPhase", Duration: 150}
+	minusPhase := looper.Span{Name: "MinusPhase", Duration: 150}
 	minusPhase.OnStart.Add("Sim:MinusPhase:Start", func() {
 		ss.Time.PlusPhase = false
 		ss.Time.NewPhase(false)
 	})
 	minusPhase.OnEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
-	plusPhase := looper.LoopSegment{Name: "PlusPhase", Duration: 50}
+	plusPhase := looper.Span{Name: "PlusPhase", Duration: 50}
 
 	plusPhase.OnStart.Add("Sim:PlusPhase:Start", func() {
 		ss.Time.PlusPhase = true
@@ -619,8 +619,8 @@ func (ss *Sim) ConfigLoops() {
 
 	plusPhase.OnEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
 	// Add both to train and test, by copy
-	manager.AddSegmentAllModes(etime.Cycle, minusPhase)
-	manager.AddSegmentAllModes(etime.Cycle, plusPhase)
+	manager.AddSpanAllModes(etime.Cycle, minusPhase)
+	manager.AddSpanAllModes(etime.Cycle, plusPhase)
 
 	// Trial Stats and Apply Input
 	for m, _ := range manager.Stacks {

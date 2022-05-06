@@ -11,7 +11,7 @@ type WorldInterface interface {
 	// Init Initializes or reinitialize the world
 	Init(details string)
 
-	// StepN Updates n timesteps (e.g. milliseconds)
+	// StepN Updates n timesteps (e.g. milliseconds). // TODO This could just be part of the action.
 	StepN(n int)
 
 	// Step 1

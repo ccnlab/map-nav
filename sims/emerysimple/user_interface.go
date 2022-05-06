@@ -1,6 +1,6 @@
 package main
 
-// TODO Move to emergent/
+// TODO Move to emergent/egui
 
 import (
 	"github.com/emer/axon/axon"
@@ -16,7 +16,7 @@ import (
 
 // UserInterface automatically handles creation of the GUI if requested, otherwise runs on the command line.
 type UserInterface struct {
-	Looper        *looper.LoopManager
+	Looper        *looper.DataManager
 	Network       *axon.Network // TODO Is there a general interface for all these?
 	Logs          *elog.Logs
 	Stats         *estats.Stats
@@ -33,11 +33,7 @@ type UserInterface struct {
 	guiEnabled bool
 }
 
-func (ui UserInterface) Init() *UserInterface {
-	return &ui
-}
-
-func AddDefaultGUICallbacks(manager *looper.LoopManager, gui *egui.GUI) {
+func AddDefaultGUICallbacks(manager *looper.DataManager, gui *egui.GUI) {
 	for _, m := range []etime.Modes{etime.Train} {
 		curMode := m // For closures.
 		for _, t := range []etime.Times{etime.Trial} {

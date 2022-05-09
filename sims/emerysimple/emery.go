@@ -599,28 +599,30 @@ func (ss *Sim) ConfigLoops() {
 	manager := looper.DataManager{}.Init()
 	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
-	minusPhase := looper.Span{Name: "MinusPhase", Duration: 150}
-	minusPhase.OnStart.Add("Sim:MinusPhase:Start", func() {
+	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}
+	minusPhase.OnEvent.Add("Sim:MinusPhase:Start", func() {
 		ss.Time.PlusPhase = false
 		ss.Time.NewPhase(false)
 	})
-	minusPhase.OnEnd.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
-	plusPhase := looper.Span{Name: "PlusPhase", Duration: 50}
+	plusPhase := looper.Event{Name: "PlusPhase", AtCtr: 150}
+	plusPhase.OnEvent.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
 
-	plusPhase.OnStart.Add("Sim:PlusPhase:Start", func() {
+	plusPhase.OnEvent.Add("Sim:PlusPhase:Start", func() {
 		ss.Time.PlusPhase = true
 		ss.Time.NewPhase(true)
 	})
 
-	plusPhase.OnStart.Add("Sim:PlusPhase:SendActionsThenStep", func() {
+	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
 		ss.SendAction(ss.Net, &ss.OnlyEnv) //todo shouldn't this be called at the END of the plus phase?
 		ss.OnlyEnv.Step()                  //this should be called right after I send an action
 	})
 
-	plusPhase.OnEnd.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
+	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
+	plusPhaseEnd.OnEvent.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
 	// Add both to train and test, by copy
-	manager.AddSpanAllModes(etime.Cycle, minusPhase)
-	manager.AddSpanAllModes(etime.Cycle, plusPhase)
+	manager.AddEventAllModes(etime.Cycle, minusPhase)
+	manager.AddEventAllModes(etime.Cycle, plusPhase)
+	manager.AddEventAllModes(etime.Cycle, plusPhaseEnd)
 
 	// Trial Stats and Apply Input
 	for m, _ := range manager.Stacks {
@@ -658,7 +660,6 @@ func (ss *Sim) ConfigLoops() {
 	manager.Steps.Init(manager)
 	fmt.Println(manager.DocString())
 	ss.Loops = manager
-
 }
 
 // SendAction takes action for this step, using either decoded cortical

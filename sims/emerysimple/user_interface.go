@@ -51,6 +51,10 @@ func AddDefaultGUICallbacks(manager *looper.DataManager, gui *egui.GUI) {
 
 // EnableGui creates a GUI, with which the user can control the application. It will loop forever.
 func (ui *UserInterface) CreateAndRunGui() {
+	ui.CreateAndRunGuiWithAdditionalConfig(func(_ *egui.GUI) {})
+}
+
+func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.GUI)) {
 	ui.guiEnabled = true
 
 	AddDefaultGUICallbacks(ui.Looper, ui.GUI)
@@ -95,10 +99,14 @@ func (ui *UserInterface) CreateAndRunGui() {
 		modes := []etime.Modes{}
 		for m, _ := range ui.Looper.Stacks {
 			modes = append(modes, m)
-		} // Agh why you no have .keys
+		} // ui.Looper.Stacks.Keys()
 		ui.GUI.AddLooperCtrl(ui.Looper, modes)
 
+		ui.positionNetworkLayers() // DO NOT SUBMIT unless working
+
 		ui.GUI.FinalizeGUI(false)
+
+		config(ui.GUI)
 
 		ui.GUI.Win.StartEventLoop()
 	})
@@ -108,4 +116,13 @@ func (ui *UserInterface) CreateAndRunGui() {
 func (ui *UserInterface) RunWithoutGui() {
 	// TODO Something something command line here?
 	ui.Looper.Steps.Run()
+}
+
+func (ui *UserInterface) positionNetworkLayers() {
+	var i float32
+	for _, ln := range ui.Network.LayersByClass() {
+		layer := ui.Network.LayerByName(ln)
+		layer.SetPos(mat32.Vec3{5 * i, 5 * i, 5 * i})
+		i += 1
+	}
 }

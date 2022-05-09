@@ -8,10 +8,10 @@ import "github.com/emer/etable/etensor"
 // It should *either* be continuous with a Shape or discrete, but not both. If both are set, treat it as continuous, using Shape.
 type Shape struct {
 	// Continuous
-	ContinuousShape []int `desc:"The dimensions of an array. For example, [3,2] would be a 3 by 2 array. [1] would be a single value."`
-	Stride          []int // TODO Describe
-	Min             float `desc:"The minimum continuous value."`
-	Max             float `desc:"The maximum continuous value."`
+	ContinuousShape []int   `desc:"The dimensions of an array. For example, [3,2] would be a 3 by 2 array. [1] would be a single value."`
+	Stride          []int   // TODO Describe
+	Min             float32 `desc:"The minimum continuous value."`
+	Max             float32 `desc:"The maximum continuous value."`
 
 	// Discrete
 	DiscreteLabels []string `desc:"The names of the discrete possibilities, such as ['left', 'right']. The length of this is the number of discrete possibilities that this shape encapsulates."`

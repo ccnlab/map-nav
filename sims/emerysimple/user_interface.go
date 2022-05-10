@@ -5,10 +5,10 @@ package main
 import (
 	"github.com/emer/emergent/egui"
 	"github.com/emer/emergent/elog"
-	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/estats"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
+	"github.com/emer/emergent/relpos"
 	"github.com/goki/gi/gi"
 	"github.com/goki/gi/gimain"
 	"github.com/goki/mat32"
@@ -24,7 +24,7 @@ type UserInterface struct {
 	AppName       string
 	AppAbout      string
 	AppTitle      string
-	StructForView *Sim `desc:"This might be Sim."` // TODO Make interface{}. Ask Randy how this interacts with reflection.
+	StructForView interface{} `desc:"This might be Sim or any other object you want to display to the user."`
 
 	// Callbacks
 	InitCallback func()
@@ -62,7 +62,7 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.G
 	gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
 		title := ui.AppTitle
 		//cat := struct{ Name string }{Name: "Cat"}
-		ui.GUI.MakeWindow(&ui.StructForView, ui.AppName, title, ui.AppAbout)
+		ui.GUI.MakeWindow(ui.StructForView, ui.AppName, title, ui.AppAbout)
 		ui.GUI.CycleUpdateInterval = 10
 
 		if ui.Network != nil {
@@ -104,9 +104,10 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.G
 
 		ui.positionNetworkLayers() // DO NOT SUBMIT unless working
 
-		ui.GUI.FinalizeGUI(false)
-
+		// Run custom code to configure the GUI.
 		config(ui.GUI)
+
+		ui.GUI.FinalizeGUI(false)
 
 		ui.GUI.Win.StartEventLoop()
 	})
@@ -118,11 +119,14 @@ func (ui *UserInterface) RunWithoutGui() {
 	ui.Looper.Steps.Run()
 }
 
-func (ui *UserInterface) positionNetworkLayers() {
+func (net emer.Network) PositionNetworkLayers() {
 	var i float32
-	for _, ln := range ui.Network.LayersByClass() {
-		layer := ui.Network.LayerByName(ln)
-		layer.SetPos(mat32.Vec3{5 * i, 5 * i, 5 * i})
+	var diff float32
+	diff = 500
+	for i = 0; int(i) < ui.Network.NLayers(); i++ {
+		layer := ui.Network.Layer(int(i))
+		layer.SetRelPos(relpos.Rel{Rel: relpos.NoRel})
+		layer.SetPos(mat32.Vec3{diff * i, diff * i, diff * i}) // DO NOT SUBMIT Does not work because of RelPos
 		i += 1
 	}
 }

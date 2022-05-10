@@ -52,32 +52,32 @@ func main() {
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct { // TODO(refactor): Remove a lot of this stuff
-	Net              *deep.Network       `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	GUI              egui.GUI            `view:"-" desc:"manages all the gui elements"`
-	Loops            *looper.DataManager `view:"no-inline" desc:"contains looper control loops for running sim"`
-	PctCortex        float64             `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
-	PctCortexMax     float64             `desc:"maximum PctCortex, when running on the schedule"`
-	TrnErrStats      *etable.Table       `view:"no-inline" desc:"stats on train trials where errors were made"`
-	TrnAggStats      *etable.Table       `view:"no-inline" desc:"stats on all train trials"`
-	MinusCycles      int                 `desc:"number of minus-phase cycles"`
-	PlusCycles       int                 `desc:"number of plus-phase cycles"`
-	ErrLrMod         axon.LrateMod       `view:"inline" desc:"learning rate modulation as function of error"`
-	Params           params.Sets         `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet         string              `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	Tag              string              `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
-	Prjn4x4Skp2      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x4Skp2Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn4x3Skp2      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
-	Prjn4x3Skp2Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
-	Prjn3x3Skp1      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
-	Prjn4x4Skp4      *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
-	Prjn4x4Skp4Recip *prjn.PoolTile      `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
-	MaxRuns          int                 `desc:"maximum number of model runs to perform"`
-	MaxEpcs          int                 `desc:"maximum number of epochs to run per model run"`
-	TestEpcs         int                 `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	OnlyEnv          ExampleWorld        `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time             axon.Time           `desc:"axon timing parameters and state"`
-	TestInterval     int                 `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	Net              *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	GUI              egui.GUI        `view:"-" desc:"manages all the gui elements"`
+	Loops            *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`
+	PctCortex        float64         `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax     float64         `desc:"maximum PctCortex, when running on the schedule"`
+	TrnErrStats      *etable.Table   `view:"no-inline" desc:"stats on train trials where errors were made"`
+	TrnAggStats      *etable.Table   `view:"no-inline" desc:"stats on all train trials"`
+	MinusCycles      int             `desc:"number of minus-phase cycles"`
+	PlusCycles       int             `desc:"number of plus-phase cycles"`
+	ErrLrMod         axon.LrateMod   `view:"inline" desc:"learning rate modulation as function of error"`
+	Params           params.Sets     `view:"no-inline" desc:"full collection of param sets"`
+	ParamSet         string          `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
+	Tag              string          `desc:"extra tag string to add to any file names output from sim (e.g., weights files, log files, params for run)"`
+	Prjn4x4Skp2      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x4Skp2Recip *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn4x3Skp2      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x3Skp2Recip *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn3x3Skp1      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Prjn4x4Skp4      *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	Prjn4x4Skp4Recip *prjn.PoolTile  `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
+	MaxRuns          int             `desc:"maximum number of model runs to perform"`
+	MaxEpcs          int             `desc:"maximum number of epochs to run per model run"`
+	TestEpcs         int             `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
+	OnlyEnv          ExampleWorld    `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time             axon.Time       `desc:"axon timing parameters and state"`
+	TestInterval     int             `desc:"how often to run through all the test patterns, in terms of training epochs"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -542,6 +542,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		smact.SetThread(3)
 	*/
 
+	PositionNetworkLayersAutomatically(net, 100)
+
 	// TODO(refactor): why isn't all this in a function?
 	net.Defaults()
 	SetParams("Network", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // only set Network params
@@ -565,7 +567,7 @@ func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 }
 
-func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.DataManager) {
+func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.Manager) {
 	// Net Cycle
 	for m, _ := range manager.Stacks {
 		manager.Stacks[m].Loops[etime.Cycle].Main.Add("Axon:Cycle:RunAndIncrement", func() {
@@ -596,7 +598,7 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.DataManager) {
 
 // ConfigLoops configures the control loops
 func (ss *Sim) ConfigLoops() {
-	manager := looper.DataManager{}.Init()
+	manager := looper.Manager{}.Init()
 	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
 	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}
@@ -657,7 +659,7 @@ func (ss *Sim) ConfigLoops() {
 	ss.AddDefaultLoopSimLogic(manager)
 
 	// Initialize and print loop structure, then add to Sim
-	manager.Steps.Init(manager)
+	manager.Init()
 	fmt.Println(manager.DocString())
 	ss.Loops = manager
 }

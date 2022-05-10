@@ -105,8 +105,6 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.G
 		} // ui.Looper.Stacks.Keys()
 		ui.GUI.AddLooperCtrl(ui.Looper, modes)
 
-		//ui.positionNetworkLayers() // DO NOT SUBMIT unless working
-
 		// Run custom code to configure the GUI.
 		config(ui.GUI)
 
@@ -201,21 +199,19 @@ func scoreNet(net emer.Network, pctDone float32) float32 {
 // numSettlingIterations is the number of random moves it tries for each layer. Larger values will generally get better results but compute time grows linearly.
 func PositionNetworkLayersAutomatically(net emer.Network, numSettlingIterations int) {
 	size := float32(50) // The size of the positioning area
-	jiggleSize := float32(5)
+	wiggleSize := float32(5)
 	// Initially randomize layers
 	for j := 0; j < net.NLayers(); j++ {
 		layer := net.Layer(int(j))
 		layer.SetRelPos(relpos.Rel{Rel: relpos.NoRel})
 		layer.SetPos(mat32.Vec3{rand.Float32() * size, 0, rand.Float32() * size})
 	}
-	offsets := map[emer.Layer]mat32.Vec3{} // TODO Not needed, maybe useful for some more clever search.
 	for i := 0; i < numSettlingIterations; i++ {
 		for j := 0; j < net.NLayers(); j++ {
 			layer := net.Layer(int(j))
 			pos := layer.Pos()
 			// Make a random change and see if it improves things.
-			offset := mat32.Vec3{rand.Float32()*jiggleSize - jiggleSize/2, 0, rand.Float32()*jiggleSize - jiggleSize/2}
-			offsets[layer] = offset
+			offset := mat32.Vec3{rand.Float32()*wiggleSize - wiggleSize/2, 0, rand.Float32()*wiggleSize - wiggleSize/2}
 			beforeScore := scoreNet(net, float32(i)/float32(numSettlingIterations))
 			newPos := mat32.Vec3{pos.X + offset.X, pos.Y + offset.Y, pos.Z + offset.Z}
 			layer.SetPos(newPos)
@@ -226,6 +222,6 @@ func PositionNetworkLayersAutomatically(net emer.Network, numSettlingIterations 
 			}
 		}
 		// Simulated annealing.
-		jiggleSize = jiggleSize * (1 - 1/float32(numSettlingIterations))
+		wiggleSize = wiggleSize * (1 - 1/float32(numSettlingIterations))
 	}
 }

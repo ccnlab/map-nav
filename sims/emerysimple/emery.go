@@ -25,10 +25,10 @@ import (
 )
 
 func main() {
-	// TODO Delete some of these
-	TheSim.New()    // note: not running Config here -- done in CmdArgs for mpi / nogui
-	TheSim.Config() // for GUI case, config then run..
-	TheSim.Init()
+	TheSim.New()
+	TheSim.ConfigEnv()
+	TheSim.ConfigNet(TheSim.Net)
+	TheSim.Init() // Call after ConfigNet because it applies params.
 	TheSim.ConfigLoops()
 
 	userInterface := UserInterface{
@@ -41,7 +41,22 @@ func main() {
 		AppAbout:      `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/emer/emergent">emergent on GitHub</a>.</p>`,
 		InitCallback:  TheSim.Init,
 	}
-	userInterface.CreateAndRunGui()
+	userInterface.CreateAndRunGuiWithAdditionalConfig(func() {
+		userInterface.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Start Server", Icon: "step",
+			Tooltip: "Start a server.",
+			Active:  egui.ActiveStopped,
+			Func: func() {
+				userInterface.GUI.IsRunning = true
+				userInterface.GUI.ToolBar.UpdateActions() // Disable GUI
+				go func() {
+					server := SocketAgentServer{Loops: userInterface.Looper}
+					server.StartServer()
+					// The server probably runs forever.
+					userInterface.GUI.Stopped() // Reenable GUI
+				}()
+			},
+		})
+	})
 	// CreateAndRunGui blocks, so don't put any code after this.
 }
 
@@ -76,7 +91,7 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxRuns          int             `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int             `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int             `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	OnlyEnv          WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	WorldEnv         WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time       `desc:"axon timing parameters and state"`
 	TestInterval     int             `desc:"how often to run through all the test patterns, in terms of training epochs"`
 
@@ -191,14 +206,8 @@ func (ss *Sim) NewPrjns() {
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Configs
 
-// Config configures all the elements using the standard functions
-func (ss *Sim) Config() {
-	ss.ConfigEnv()
-	ss.ConfigNet(ss.Net)
-}
-
 func (ss *Sim) ConfigEnv() {
-	ss.OnlyEnv = &SocketWorld{}
+	ss.WorldEnv = &SocketWorld{}
 	//ss.OnlyEnv.Init("Everything is working, we're done") // TODO I think this doesn't need to be done, because it happens on NewRun
 }
 
@@ -544,7 +553,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		smact.SetThread(3)
 	*/
 
-	PositionNetworkLayersAutomatically(net, 100)
+	PositionNetworkLayersAutomatically(net, 10)
 
 	// TODO(refactor): why isn't all this in a function?
 	net.Defaults()
@@ -615,7 +624,7 @@ func (ss *Sim) ConfigLoops() {
 	})
 
 	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
-		ss.SendActionAndStep(ss.Net, ss.OnlyEnv) //TODO shouldn't this be called at the END of the plus phase?
+		ss.SendActionAndStep(ss.Net, ss.WorldEnv) //TODO shouldn't this be called at the END of the plus phase?
 	})
 
 	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
@@ -640,7 +649,7 @@ func (ss *Sim) ConfigLoops() {
 			layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
 			//states := []string{"VL", "Act"}
 			//layers := []string{"VL", "Act"}
-			ApplyInputsWithStrideAndShape(ss.Net, ss.OnlyEnv, states, layers)
+			ApplyInputsWithStrideAndShape(ss.Net, ss.WorldEnv, states, layers)
 		}) //todo put backing
 
 	stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
@@ -663,13 +672,13 @@ func (ss *Sim) ConfigLoops() {
 
 // SendAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
-func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) { // TODO(refactor): call this in looper
+func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) {
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
 	//ev.DecodeAndTakeAction("action", vt)
 	actions := map[string]Action{"action": Action{Vector: vt}}
-	_, debug := ev.Step(actions)
+	_, _, debug := ev.Step(actions, false)
 	if debug != "" {
 		fmt.Println("Got debug from Step: " + debug)
 	}
@@ -680,7 +689,7 @@ func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) { // TODO
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	//run := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	ss.PctCortex = 0
-	ss.OnlyEnv.Init("New Run") //TODO: meaningful init info that should be passed
+	ss.WorldEnv.Init("New Run") //TODO: meaningful init info that should be passed
 
 	ss.Time.Reset()
 	ss.Net.InitWts()

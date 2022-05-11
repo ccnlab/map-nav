@@ -17,7 +17,7 @@ type WorldInterface interface {
 	// The actions should conform to the action space specification.
 	// The observations can be expected to conform to the observation space specification. The observations will be cached such that a separate function can get them before the next time Step is called.
 	// The debug string should not be used for actual training.
-	Step(actions map[string]Action) (map[string]etensor.Tensor, string)
+	Step(actions map[string]Action, agentDone bool) (map[string]etensor.Tensor, bool, string)
 
 	// Observe Returns a tensor for the named modality. E.g. “x” or “vision” or “reward”. This just returns a cached entry into the map gotten the last time Step was called.
 	Observe(name string) etensor.Tensor

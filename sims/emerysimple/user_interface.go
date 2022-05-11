@@ -54,10 +54,10 @@ func AddDefaultGUICallbacks(manager *looper.Manager, gui *egui.GUI) {
 
 // EnableGui creates a GUI, with which the user can control the application. It will loop forever.
 func (ui *UserInterface) CreateAndRunGui() {
-	ui.CreateAndRunGuiWithAdditionalConfig(func(_ *egui.GUI) {})
+	ui.CreateAndRunGuiWithAdditionalConfig(func() {})
 }
 
-func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.GUI)) {
+func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func()) {
 	ui.guiEnabled = true
 
 	AddDefaultGUICallbacks(ui.Looper, ui.GUI)
@@ -106,7 +106,7 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.G
 		ui.GUI.AddLooperCtrl(ui.Looper, modes)
 
 		// Run custom code to configure the GUI.
-		config(ui.GUI)
+		config()
 
 		ui.GUI.FinalizeGUI(false)
 

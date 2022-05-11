@@ -5,6 +5,8 @@ import (
 	"github.com/emer/etable/etensor"
 )
 
+// TODO Merge with agent server
+
 // TODO Comments
 
 type SocketWorld struct {
@@ -12,15 +14,17 @@ type SocketWorld struct {
 	CachedObservations map[string]etensor.Tensor `desc:"Observations from the last step."`
 }
 
+// Init sets up a server and waits for the agent to handshake with it for initiation.
 func (world *SocketWorld) Init(details string) (map[string]SpaceSpec, map[string]SpaceSpec) {
 	// TODO Communicate over the network with World.
 	return nil, nil // Return action space and observation space.
 }
 
-func (world *SocketWorld) Step(actions map[string]Action) (map[string]etensor.Tensor, string) {
+func (world *SocketWorld) Step(actions map[string]Action, agentDone bool) (map[string]etensor.Tensor, bool, string) {
 	// TODO Communicate actions over the network with World.
 	// TODO Cache observations in CachedObservations
-	return nil, "" // Return observations and debug string.
+	world.CachedObservations = nil
+	return nil, false, "" // Return observations, done, and debug string.
 }
 
 func (world *SocketWorld) Observe(name string) etensor.Tensor {

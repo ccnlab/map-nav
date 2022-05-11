@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/patgen"
 	"github.com/emer/etable/etensor"
 )
@@ -47,4 +48,14 @@ func getRandomTensor(shape SpaceSpec) etensor.Tensor {
 func (world *SocketWorld) ObserveWithShape(name string, shape SpaceSpec) etensor.Tensor {
 	// TODO Actually call Observe and reshape it.
 	return getRandomTensor(shape)
+}
+
+func (world *SocketWorld) GetServerFunc(loops *looper.Manager) func() {
+	return func() {
+		server := SocketAgentServer{
+			Loops: loops,
+			World: world,
+		}
+		server.StartServer()
+	}
 }

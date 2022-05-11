@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
-	"github.com/emer/emergent/egui"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
@@ -33,24 +32,11 @@ func main() {
 		AppAbout:      `A simple agent that can handle an arbitrary world.`,
 	}
 	userInterface.CreateAndRunGuiWithAdditionalConfig(
-		// This function is only necessary if you want the network to exist in a separate thread, and you want the agent to provide a server that serves intelligent actions. It adds a button to start the server.
 		func() {
-			userInterface.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Start Server", Icon: "play",
-				Tooltip: "Start a server.",
-				Active:  egui.ActiveStopped,
-				Func: func() {
-					userInterface.GUI.IsRunning = true
-					userInterface.GUI.ToolBar.UpdateActions() // Disable GUI
-					go func() {
-						server := SocketAgentServer{
-							Loops: userInterface.Looper,
-							World: sim.WorldEnv.(*SocketWorld),
-						}
-						server.StartServer()        // The server probably runs forever.
-						userInterface.GUI.Stopped() // Reenable GUI
-					}()
-				},
-			})
+			sw, ok := sim.WorldEnv.(*SocketWorld)
+			if ok { // This is only if you're using a SocketWorld
+				userInterface.AddServerButton(sw.GetServerFunc(sim.Loops))
+			}
 		})
 	// CreateAndRunGui blocks, so don't put any code after this.
 }

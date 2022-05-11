@@ -117,6 +117,22 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func()) {
 	})
 }
 
+func (ui *UserInterface) AddServerButton(serverRunFunc func()) {
+	// This function is only necessary if you want the network to exist in a separate thread, and you want the agent to provide a server that serves intelligent actions. It adds a button to start the server.
+	ui.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Start Server", Icon: "play",
+		Tooltip: "Start a server.",
+		Active:  egui.ActiveStopped,
+		Func: func() {
+			ui.GUI.IsRunning = true
+			ui.GUI.ToolBar.UpdateActions() // Disable GUI
+			go func() {
+				serverRunFunc()  // The server probably runs forever.
+				ui.GUI.Stopped() // Reenable GUI
+			}()
+		},
+	})
+}
+
 func (ui *UserInterface) RunWithoutGui() {
 	// TODO Something something command line here?
 	ui.Looper.Run()

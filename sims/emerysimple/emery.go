@@ -20,12 +20,11 @@ import (
 
 func main() {
 	var sim Sim
-	sim.ConfigEnv()
+	sim.WorldEnv = sim.ConfigEnv()
 	sim.Net = sim.ConfigNet()
-	sim.ConfigLoops()
+	sim.Loops = sim.ConfigLoops()
 
 	userInterface := UserInterface{
-		GUI:           &sim.GUI,
 		StructForView: &sim,
 		Looper:        sim.Loops,
 		Network:       sim.Net.EmerNet,
@@ -56,19 +55,16 @@ func main() {
 	// CreateAndRunGui blocks, so don't put any code after this.
 }
 
-// Sim encapsulates the entire simulation model, and we define all the
-// functionality as methods on this struct.  This structure keeps all relevant
-// state information organized and available without having to pass everything around.
+// Sim encapsulates the simulation model, and we define all the functionality as methods on this struct. This structure keeps all relevant state information organized and available without having to pass everything around.
 type Sim struct {
 	Net      *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	GUI      egui.GUI        `view:"-" desc:"manages all the gui elements"`
 	Loops    *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`
 	WorldEnv WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time     axon.Time       `desc:"axon timing parameters and state"`
 }
 
-func (ss *Sim) ConfigEnv() {
-	ss.WorldEnv = &SocketWorld{}
+func (ss *Sim) ConfigEnv() WorldInterface {
+	return &SocketWorld{}
 }
 
 func (ss *Sim) ConfigNet() *deep.Network {
@@ -96,15 +92,12 @@ func (ss *Sim) ConfigNet() *deep.Network {
 	return net
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// 	    Init, utils
-
 func (ss *Sim) NewRun() {
 	ss.Net.InitWts()
 }
 
 // ConfigLoops configures the control loops
-func (ss *Sim) ConfigLoops() {
+func (ss *Sim) ConfigLoops() *looper.Manager {
 	manager := looper.Manager{}.Init()
 	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
@@ -151,5 +144,5 @@ func (ss *Sim) ConfigLoops() {
 	// Initialize and print loop structure, then add to Sim
 	manager.Init()
 	fmt.Println(manager.DocString())
-	ss.Loops = manager
+	return manager
 }

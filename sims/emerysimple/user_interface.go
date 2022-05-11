@@ -58,6 +58,9 @@ func (ui *UserInterface) CreateAndRunGui() {
 }
 
 func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func()) {
+	if ui.GUI == nil {
+		ui.GUI = &egui.GUI{}
+	}
 	ui.guiEnabled = true
 
 	AddDefaultGUICallbacks(ui.Looper, ui.GUI)

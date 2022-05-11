@@ -15,7 +15,6 @@ import (
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/prjn"
-	"github.com/emer/etable/etensor"
 	"log"
 )
 
@@ -60,7 +59,7 @@ func main() {
 // Sim encapsulates the entire simulation model, and we define all the
 // functionality as methods on this struct.  This structure keeps all relevant
 // state information organized and available without having to pass everything around.
-type Sim struct { // TODO(refactor): Remove a lot of this stuff
+type Sim struct {
 	Net      *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	GUI      egui.GUI        `view:"-" desc:"manages all the gui elements"`
 	Loops    *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`
@@ -109,6 +108,8 @@ func (ss *Sim) ConfigLoops() {
 	manager := looper.Manager{}.Init()
 	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
+
+	// The minus and plus phases of the theta cycle, which help the network learn.
 	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}
 	minusPhase.OnEvent.Add("Sim:MinusPhase:Start", func() {
 		ss.Time.PlusPhase = false
@@ -116,16 +117,14 @@ func (ss *Sim) ConfigLoops() {
 	})
 	plusPhase := looper.Event{Name: "PlusPhase", AtCtr: 150}
 	plusPhase.OnEvent.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
-
 	plusPhase.OnEvent.Add("Sim:PlusPhase:Start", func() {
 		ss.Time.PlusPhase = true
 		ss.Time.NewPhase(true)
 	})
-
 	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
-		ss.SendActionAndStep(ss.Net, ss.WorldEnv) //TODO shouldn't this be called at the END of the plus phase?
+		// Check the action at the beginning of the Plus phase, before the teaching signal is introduced. TODO Make sure that's right.
+		ss.SendActionAndStep(ss.Net, ss.WorldEnv)
 	})
-
 	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
 	plusPhaseEnd.OnEvent.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
 	// Add both to train and test, by copy
@@ -146,15 +145,6 @@ func (ss *Sim) ConfigLoops() {
 			ApplyInputsWithStrideAndShape(ss.Net, ss.WorldEnv, layers, layers)
 		})
 
-	stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
-		func() { //
-			//loss := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon().PctUnitErr()
-			//s := fmt.Sprintf("%f", loss)
-			//fmt.Println("the pctuniterror is " + s)
-		}) //todo put backin
-	//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
-	//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin
-
 	manager.GetLoop(etime.Train, etime.Run).OnStart.Add("Sim:NewRun", ss.NewRun)
 	ss.AddDefaultLoopSimLogic(manager)
 
@@ -162,19 +152,4 @@ func (ss *Sim) ConfigLoops() {
 	manager.Init()
 	fmt.Println(manager.DocString())
 	ss.Loops = manager
-}
-
-// SendActionAndStep takes action for this step, using either decoded cortical
-// or reflexive subcortical action from env.
-func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) {
-	// Get the first Target (output) layer
-	ly := net.LayerByName(net.LayersByClass(emer.Target.String())[0]).(axon.AxonLayer).AsAxon()
-	vt := &etensor.Float32{}
-	ly.UnitValsTensor(vt, "ActM")
-	//ev.DecodeAndTakeAction("action", vt)
-	actions := map[string]Action{"action": {Vector: vt}}
-	_, _, debug := ev.Step(actions, false)
-	if debug != "" {
-		fmt.Println("Got debug from Step: " + debug)
-	}
 }

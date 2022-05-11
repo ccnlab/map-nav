@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
+	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/params"
@@ -13,6 +14,8 @@ import (
 	"log"
 	"time"
 )
+
+// TODO This library should be broken up and sent to different places.
 
 // LogPrec is precision for saving float values in logs
 const LogPrec = 4 // TODO(refactor): Logs library
@@ -42,6 +45,23 @@ func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.Manager) {
 				ss.Time.Mode = curMode.String()
 			})
 		}
+	}
+}
+
+// SendActionAndStep takes action for this step, using either decoded cortical
+// or reflexive subcortical action from env.
+func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) {
+	// Get the first Target (output) layer
+	actions := map[string]Action{}
+	for _, lnm := range net.LayersByClass(emer.Target.String()) {
+		ly := net.LayerByName(lnm).(axon.AxonLayer).AsAxon()
+		vt := &etensor.Float32{}
+		ly.UnitValsTensor(vt, "ActM")
+		actions[lnm] = Action{Vector: vt}
+	}
+	_, _, debug := ev.Step(actions, false)
+	if debug != "" {
+		fmt.Println("Got debug from Step: " + debug)
 	}
 }
 

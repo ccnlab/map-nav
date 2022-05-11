@@ -1,0 +1,46 @@
+package main
+
+import (
+	"github.com/emer/emergent/patgen"
+	"github.com/emer/etable/etensor"
+)
+
+// TODO Comments
+
+type SocketWorld struct {
+	WorldInterface
+	CachedObservations map[string]etensor.Tensor `desc:"Observations from the last step."`
+}
+
+func (world *SocketWorld) Init(details string) (map[string]SpaceSpec, map[string]SpaceSpec) {
+	// TODO Communicate over the network with World.
+	return nil, nil // Return action space and observation space.
+}
+
+func (world *SocketWorld) Step(actions map[string]Action) (map[string]etensor.Tensor, string) {
+	// TODO Communicate actions over the network with World.
+	// TODO Cache observations in CachedObservations
+	return nil, "" // Return observations and debug string.
+}
+
+func (world *SocketWorld) Observe(name string) etensor.Tensor {
+	if world.CachedObservations == nil {
+		return nil
+	}
+	obs, ok := world.CachedObservations[name]
+	if ok {
+		return obs
+	}
+	return nil
+}
+
+func getRandomTensor(shape SpaceSpec) etensor.Tensor {
+	rt := etensor.NewFloat32(shape.ContinuousShape, shape.Stride, nil)
+	patgen.PermutedBinaryRows(rt, 1, 1, 0)
+	return rt
+}
+
+func (world *SocketWorld) ObserveWithShape(name string, shape SpaceSpec) etensor.Tensor {
+	// TODO Actually call Observe and reshape it.
+	return getRandomTensor(shape)
+}

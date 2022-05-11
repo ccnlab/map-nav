@@ -44,8 +44,9 @@ func ApplyInputs(net *deep.Network, en WorldInterface, states, layers []string) 
 			continue
 		}
 		ly := lyi.(axon.AxonLayer).AsAxon()
-		pats := en.ObserveWithShape(states[i], lyi.Shape().Shp)
-		lyi.Shape().Strides()
+		ss := SpaceSpec{ContinuousShape: lyi.Shape().Shp, Stride: lyi.Shape().Strd}
+		pats := en.ObserveWithShape(states[i], ss)
+		//lyi.Shape().Strides()
 		if pats != nil {
 			ly.ApplyExt(pats)
 		}
@@ -60,7 +61,8 @@ func ApplyInputsWithStrideAndShape(net *deep.Network, en WorldInterface, states,
 			continue
 		}
 		ly := lyi.(axon.AxonLayer).AsAxon()
-		pats := en.ObserveWithShapeStride(states[i], lyi.Shape().Shp, lyi.Shape().Strides())
+		ss := SpaceSpec{ContinuousShape: lyi.Shape().Shp, Stride: lyi.Shape().Strd}
+		pats := en.ObserveWithShape(states[i], ss)
 		lyi.Shape().Strides()
 		if pats != nil {
 			ly.ApplyExt(pats)

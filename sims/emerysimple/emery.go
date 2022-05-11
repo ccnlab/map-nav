@@ -25,6 +25,7 @@ import (
 )
 
 func main() {
+	// TODO Delete some of these
 	TheSim.New()    // note: not running Config here -- done in CmdArgs for mpi / nogui
 	TheSim.Config() // for GUI case, config then run..
 	TheSim.Init()
@@ -75,7 +76,7 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxRuns          int             `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int             `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int             `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	OnlyEnv          ExampleWorld    `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	OnlyEnv          WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time             axon.Time       `desc:"axon timing parameters and state"`
 	TestInterval     int             `desc:"how often to run through all the test patterns, in terms of training epochs"`
 
@@ -197,7 +198,8 @@ func (ss *Sim) Config() {
 }
 
 func (ss *Sim) ConfigEnv() {
-	ss.OnlyEnv.Init("Everything is working, we're done")
+	ss.OnlyEnv = &SocketWorld{}
+	//ss.OnlyEnv.Init("Everything is working, we're done") // TODO I think this doesn't need to be done, because it happens on NewRun
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
@@ -562,8 +564,6 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 // and resets the epoch log table
 func (ss *Sim) Init() { // TODO(refactor): this should be broken up
 	rand.Seed(ss.RndSeed)
-	ss.ConfigEnv() // re-config env just in case a different set of patterns was
-	// selected or patterns have been modified etc
 	SetParams("", ss.LogSetParams, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
 }
 
@@ -615,8 +615,7 @@ func (ss *Sim) ConfigLoops() {
 	})
 
 	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
-		ss.SendAction(ss.Net, &ss.OnlyEnv) //todo shouldn't this be called at the END of the plus phase?
-		ss.OnlyEnv.Step()                  //this should be called right after I send an action
+		ss.SendActionAndStep(ss.Net, ss.OnlyEnv) //TODO shouldn't this be called at the END of the plus phase?
 	})
 
 	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
@@ -627,33 +626,31 @@ func (ss *Sim) ConfigLoops() {
 	manager.AddEventAllModes(etime.Cycle, plusPhaseEnd)
 
 	// Trial Stats and Apply Input
-	for m, _ := range manager.Stacks {
-		mode := m // For closures
-		stack := manager.Stacks[m]
-		stack.Loops[etime.Trial].OnStart.Add("Sim:ResetState", func() {
-			ss.Net.NewState()
-			ss.Time.NewState(mode.String())
-		})
-		stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe",
-			func() {
-				//Todo this should actually include v2wd, and others, i'm probably not passing enoguh activaiton
-				//Todo need to create a mapping between layers and states, or defined API for this
-				states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-				layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
-				//states := []string{"VL", "Act"}
-				//layers := []string{"VL", "Act"}
-				ApplyInputsWithStrideAndShape(ss.Net, &ss.OnlyEnv, states, layers)
-			}) //todo put backing
+	mode := etime.Train // For closures
+	stack := manager.Stacks[mode]
+	stack.Loops[etime.Trial].OnStart.Add("Sim:ResetState", func() {
+		ss.Net.NewState()
+		ss.Time.NewState(mode.String())
+	})
+	stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe",
+		func() {
+			//Todo this should actually include v2wd, and others, i'm probably not passing enoguh activaiton
+			//Todo need to create a mapping between layers and states, or defined API for this
+			states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
+			layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+			//states := []string{"VL", "Act"}
+			//layers := []string{"VL", "Act"}
+			ApplyInputsWithStrideAndShape(ss.Net, ss.OnlyEnv, states, layers)
+		}) //todo put backing
 
-		stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
-			func() { //
-				loss := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon().PctUnitErr()
-				s := fmt.Sprintf("%f", loss)
-				fmt.Println("the pctuniterror is " + s)
-			}) //todo put backin
-		//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
-		//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin
-	}
+	stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
+		func() { //
+			//loss := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon().PctUnitErr()
+			//s := fmt.Sprintf("%f", loss)
+			//fmt.Println("the pctuniterror is " + s)
+		}) //todo put backin
+	//stack.Loops[etime.Trial].OnEnd.Add("Sim:StatCounters", ss.StatCounters) //todo put backin
+	//stack.Loops[etime.Trial].OnEnd.Add("Sim:TrialStats", ss.TrialStats) //todo put backin
 
 	manager.GetLoop(etime.Train, etime.Run).OnStart.Add("Sim:NewRun", ss.NewRun)
 	ss.AddDefaultLoopSimLogic(manager)
@@ -666,11 +663,16 @@ func (ss *Sim) ConfigLoops() {
 
 // SendAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
-func (ss *Sim) SendAction(net *deep.Network, ev WorldInterface) { // TODO(refactor): call this in looper
+func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) { // TODO(refactor): call this in looper
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	vt := ValsTsr(&ss.ValsTsrs, "VL")
 	ly.UnitValsTensor(vt, "ActM")
-	ev.DecodeAndTakeAction("action", vt)
+	//ev.DecodeAndTakeAction("action", vt)
+	actions := map[string]Action{"action": Action{Vector: vt}}
+	_, debug := ev.Step(actions)
+	if debug != "" {
+		fmt.Println("Got debug from Step: " + debug)
+	}
 }
 
 // NewRun intializes a new run of the model, using the OnlyEnv.GetCounter(etime.Run) counter

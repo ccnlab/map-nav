@@ -24,6 +24,8 @@ type Action struct {
 	DiscreteOption int            `desc:"Choice from among the DiscreteLabels in Continuous."`
 }
 
+// TODO AgentInterface maybe doesn't need to be in this dir, but action and SpaceSpec do.
+
 // AgentInterface allows the Agent to provide actions given observations. This allows the agent to be embedded within a world.
 type AgentInterface interface {
 	// Init passes variables to the Agent: Action space, Observation space, and initial Observation. It receives any specification in the form of a string which the agent chooses to provide. Agent should reinitialize the network for the beginning of a new run.

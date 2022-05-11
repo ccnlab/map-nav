@@ -114,12 +114,12 @@ func (ui *UserInterface) CreateAndRunGuiWithAdditionalConfig(config func(*egui.G
 	})
 }
 
-// TODO What does this do if GUI is enabled?
 func (ui *UserInterface) RunWithoutGui() {
 	// TODO Something something command line here?
 	ui.Looper.Run()
 }
 
+// TODO All of the following is for automatically placing layers. It works OK but it's probably overcomplicated.
 func computeLayerOverlap(lay1 emer.Layer, lay2 emer.Layer) float32 {
 	s1 := lay1.Size()
 	s2 := lay2.Size()

@@ -14,29 +14,25 @@ import (
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
-	"github.com/emer/emergent/params"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/etable/etensor"
 	"log"
-	"math/rand"
 )
 
 func main() {
-	TheSim.New()
-	TheSim.ConfigEnv()
-	TheSim.ConfigNet(TheSim.Net)
-	TheSim.Init() // Call after ConfigNet because it applies params.
-	TheSim.ConfigLoops()
+	var sim Sim
+	sim.ConfigEnv()
+	sim.Net = sim.ConfigNet()
+	sim.ConfigLoops()
 
 	userInterface := UserInterface{
-		GUI:           &TheSim.GUI,
-		StructForView: &TheSim,
-		Looper:        TheSim.Loops,
-		Network:       TheSim.Net.EmerNet,
+		GUI:           &sim.GUI,
+		StructForView: &sim,
+		Looper:        sim.Loops,
+		Network:       sim.Net.EmerNet,
 		AppName:       "Agent",
 		AppTitle:      "Simple Agent",
 		AppAbout:      `A simple agent that can handle an arbitrary world.`,
-		InitCallback:  TheSim.Init,
 	}
 	userInterface.CreateAndRunGuiWithAdditionalConfig(
 		// This function is only necessary if you want the network to exist in a separate thread, and you want the agent to provide a server that serves intelligent actions. It adds a button to start the server.
@@ -50,7 +46,7 @@ func main() {
 					go func() {
 						server := SocketAgentServer{
 							Loops: userInterface.Looper,
-							World: TheSim.WorldEnv.(*SocketWorld),
+							World: sim.WorldEnv.(*SocketWorld),
 						}
 						server.StartServer()        // The server probably runs forever.
 						userInterface.GUI.Stopped() // Reenable GUI
@@ -68,35 +64,17 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	Net      *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	GUI      egui.GUI        `view:"-" desc:"manages all the gui elements"`
 	Loops    *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`
-	Params   params.Sets     `view:"no-inline" desc:"full collection of param sets"`
-	ParamSet string          `desc:"which set of *additional* parameters to use -- always applies Base and optionaly this next if set"`
-	// TODO Switch back to interface.
-	WorldEnv WorldInterface `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time     axon.Time      `desc:"axon timing parameters and state"`
+	WorldEnv WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time     axon.Time       `desc:"axon timing parameters and state"`
 }
-
-// TheSim is the overall state for this simulation
-var TheSim Sim
-
-// New creates new blank elements and initializes defaults
-func (ss *Sim) New() { // TODO(refactor): Remove a lot
-	ss.Net = &deep.Network{}
-
-	ss.Time.Defaults()
-
-	// see params_def.go for default params
-	ss.Params = ParamSets
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////
-// 		Configs
 
 func (ss *Sim) ConfigEnv() {
 	ss.WorldEnv = &SocketWorld{}
 }
 
-func (ss *Sim) ConfigNet(net *deep.Network) {
+func (ss *Sim) ConfigNet() *deep.Network {
 	// A simple network for demonstration purposes.
+	net := &deep.Network{}
 	net.InitName(net, "Emery")
 	inp := net.AddLayer2D("Input", 5, 5, emer.Input)
 	hid1 := net.AddLayer2D("Hidden1", 10, 10, emer.Hidden)
@@ -107,59 +85,23 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.BidirConnectLayers(hid1, hid2, full)
 	net.BidirConnectLayers(hid2, out, full)
 
-	// TODO(refactor): why isn't all this in a function?
 	net.Defaults()
-	SetParams("Network", true, ss.Net, &ss.Params, ss.ParamSet, ss) // only set Network params
+	// see params_def.go for default params
+	SetParams("Network", true, net, &ParamSets, "", ss)
 	err := net.Build()
 	if err != nil {
 		log.Println(err)
-		return
+		return nil
 	}
 	net.InitWts()
+	return net
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // 	    Init, utils
 
-// Init restarts the run, and initializes everything, including network weights
-// and resets the epoch log table
-func (ss *Sim) Init() { // TODO(refactor): this should be broken up
-	rand.Seed(1)
-	SetParams("", true, ss.Net, &ss.Params, ss.ParamSet, ss) // all sheets
-}
-
 func (ss *Sim) NewRun() {
 	ss.Net.InitWts()
-}
-
-// TODO Move to library.
-func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.Manager) {
-	// Net Cycle
-	for m, _ := range manager.Stacks {
-		manager.Stacks[m].Loops[etime.Cycle].Main.Add("Axon:Cycle:RunAndIncrement", func() {
-			ss.Net.Cycle(&ss.Time)
-			ss.Time.CycleInc()
-		})
-	}
-	// Weight updates.
-	// Note that the substring "UpdateNetView" in the name is important here, because it's checked in AddDefaultGUICallbacks.
-	manager.GetLoop(etime.Train, etime.Trial).OnEnd.Add("Axon:LoopSegment:UpdateWeights", func() {
-		ss.Net.DWt(&ss.Time)
-		// TODO Need to update net view here to accurately display weight changes.
-		ss.Net.WtFmDWt(&ss.Time)
-	})
-
-	//todo is this neccesary
-	// Set variables on ss that are referenced elsewhere, such as ApplyInputs.
-	for m, loops := range manager.Stacks {
-		curMode := m // For closures.
-		for t, loop := range loops.Loops {
-			curTime := t
-			loop.OnStart.Add(curMode.String()+":"+curTime.String()+":"+"SetTimeVal", func() {
-				ss.Time.Mode = curMode.String()
-			})
-		}
-	}
 }
 
 // ConfigLoops configures the control loops
@@ -222,16 +164,15 @@ func (ss *Sim) ConfigLoops() {
 	ss.Loops = manager
 }
 
-// SendAction takes action for this step, using either decoded cortical
+// SendActionAndStep takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
 func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) {
 	// Get the first Target (output) layer
 	ly := net.LayerByName(net.LayersByClass(emer.Target.String())[0]).(axon.AxonLayer).AsAxon()
-	//ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
-	vt := &etensor.Float32{} //ValsTsr(&ss.ValsTsrs, "VL") // TODO Hopefully this doesn't crash
+	vt := &etensor.Float32{}
 	ly.UnitValsTensor(vt, "ActM")
 	//ev.DecodeAndTakeAction("action", vt)
-	actions := map[string]Action{"action": Action{Vector: vt}}
+	actions := map[string]Action{"action": {Vector: vt}}
 	_, _, debug := ev.Step(actions, false)
 	if debug != "" {
 		fmt.Println("Got debug from Step: " + debug)

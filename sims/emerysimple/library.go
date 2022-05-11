@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
+	"github.com/emer/emergent/etime"
+	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/params"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etensor"
@@ -14,6 +16,34 @@ import (
 
 // LogPrec is precision for saving float values in logs
 const LogPrec = 4 // TODO(refactor): Logs library
+
+func (ss *Sim) AddDefaultLoopSimLogic(manager *looper.Manager) {
+	// Net Cycle
+	for m, _ := range manager.Stacks {
+		manager.Stacks[m].Loops[etime.Cycle].Main.Add("Axon:Cycle:RunAndIncrement", func() {
+			ss.Net.Cycle(&ss.Time)
+			ss.Time.CycleInc()
+		})
+	}
+	// Weight updates.
+	// Note that the substring "UpdateNetView" in the name is important here, because it's checked in AddDefaultGUICallbacks.
+	manager.GetLoop(etime.Train, etime.Trial).OnEnd.Add("Axon:LoopSegment:UpdateWeights", func() {
+		ss.Net.DWt(&ss.Time)
+		// TODO Need to update net view here to accurately display weight changes.
+		ss.Net.WtFmDWt(&ss.Time)
+	})
+
+	// Set variables on ss that are referenced elsewhere, such as ApplyInputs.
+	for m, loops := range manager.Stacks {
+		curMode := m // For closures.
+		for t, loop := range loops.Loops {
+			curTime := t
+			loop.OnStart.Add(curMode.String()+":"+curTime.String()+":"+"SetTimeVal", func() {
+				ss.Time.Mode = curMode.String()
+			})
+		}
+	}
+}
 
 func ToggleLayersOff(net *axon.Network, layerNames []string, off bool) { // TODO(refactor): move to library
 	for _, lnm := range layerNames {

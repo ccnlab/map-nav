@@ -26,6 +26,7 @@ func (agent *SocketAgentServer) StartServer() {
 }
 
 func (agent *SocketAgentServer) Init(actionSpace map[string]SpaceSpec, observationSpace map[string]SpaceSpec) string {
+	// TODO If you want, you could add a callback here to reconfigure the network based on the action and observation spaces.
 	agent.Loops.Init()
 	return "" // Return agent name or type or requests for the environment or something.
 }

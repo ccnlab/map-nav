@@ -41,7 +41,7 @@ func main() {
 	// CreateAndRunGui blocks, so don't put any code after this.
 }
 
-// Sim encapsulates the simulation model, and we define all the functionality as methods on this struct. This structure keeps all relevant state information organized and available without having to pass everything around.
+// Sim encapsulates working data for the simulation model, keeping all relevant state information organized and available without having to pass everything around.
 type Sim struct {
 	Net      *deep.Network   `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	Loops    *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`

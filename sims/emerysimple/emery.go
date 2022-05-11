@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// TODO Move to Astera-org/models
+
 // emery2 is a simulated virtual rat / cat, using axon spiking model
 package main
 
@@ -49,7 +51,10 @@ func main() {
 				userInterface.GUI.IsRunning = true
 				userInterface.GUI.ToolBar.UpdateActions() // Disable GUI
 				go func() {
-					server := SocketAgentServer{Loops: userInterface.Looper}
+					server := SocketAgentServer{
+						Loops: userInterface.Looper,
+						World: &TheSim.WorldEnv,
+					}
 					server.StartServer()
 					// The server probably runs forever.
 					userInterface.GUI.Stopped() // Reenable GUI
@@ -91,9 +96,10 @@ type Sim struct { // TODO(refactor): Remove a lot of this stuff
 	MaxRuns          int             `desc:"maximum number of model runs to perform"`
 	MaxEpcs          int             `desc:"maximum number of epochs to run per model run"`
 	TestEpcs         int             `desc:"number of epochs of testing to run, cumulative after MaxEpcs of training"`
-	WorldEnv         WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
-	Time             axon.Time       `desc:"axon timing parameters and state"`
-	TestInterval     int             `desc:"how often to run through all the test patterns, in terms of training epochs"`
+	// TODO Switch back to interface.
+	WorldEnv     SocketWorld `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
+	Time         axon.Time   `desc:"axon timing parameters and state"`
+	TestInterval int         `desc:"how often to run through all the test patterns, in terms of training epochs"`
 
 	// statistics: note use float64 as that is best for etable.Table
 	RFMaps        map[string]*etensor.Float32 `view:"no-inline" desc:"maps for plotting activation-based receptive fields"`
@@ -207,7 +213,7 @@ func (ss *Sim) NewPrjns() {
 // 		Configs
 
 func (ss *Sim) ConfigEnv() {
-	ss.WorldEnv = &SocketWorld{}
+	ss.WorldEnv = SocketWorld{}
 	//ss.OnlyEnv.Init("Everything is working, we're done") // TODO I think this doesn't need to be done, because it happens on NewRun
 }
 
@@ -624,7 +630,7 @@ func (ss *Sim) ConfigLoops() {
 	})
 
 	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
-		ss.SendActionAndStep(ss.Net, ss.WorldEnv) //TODO shouldn't this be called at the END of the plus phase?
+		ss.SendActionAndStep(ss.Net, &ss.WorldEnv) //TODO shouldn't this be called at the END of the plus phase?
 	})
 
 	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
@@ -649,7 +655,7 @@ func (ss *Sim) ConfigLoops() {
 			layers := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
 			//states := []string{"VL", "Act"}
 			//layers := []string{"VL", "Act"}
-			ApplyInputsWithStrideAndShape(ss.Net, ss.WorldEnv, states, layers)
+			ApplyInputsWithStrideAndShape(ss.Net, &ss.WorldEnv, states, layers)
 		}) //todo put backing
 
 	stack.Loops[etime.Trial].OnEnd.Add("Sim:Trial:QuickScore",
@@ -689,7 +695,7 @@ func (ss *Sim) SendActionAndStep(net *deep.Network, ev WorldInterface) {
 func (ss *Sim) NewRun() { // TODO(refactor): looper call
 	//run := ss.OnlyEnv.GetCounter(etime.Run).Cur
 	ss.PctCortex = 0
-	ss.WorldEnv.Init("New Run") //TODO: meaningful init info that should be passed
+	ss.WorldEnv.Init("New Run") //TODO: The world is in charge of initing itself.
 
 	ss.Time.Reset()
 	ss.Net.InitWts()

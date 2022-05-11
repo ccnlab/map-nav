@@ -6,9 +6,12 @@ import (
 	"github.com/emer/etable/etensor"
 )
 
+// TODO Document the pairing between this class and Socket World. Maybe rename one or both.
+
 type SocketAgentServer struct {
 	AgentInterface
 	Loops *looper.Manager
+	World *SocketWorld `desc:"World represents the World to the agent. It can masquerade as a WorldInterface. It holds actions that the agent has taken, and holds observations for the agent."`
 }
 
 // StartServer blocks, and sometimes calls Init or Step.
@@ -24,12 +27,12 @@ func (agent *SocketAgentServer) StartServer() {
 
 func (agent *SocketAgentServer) Init(actionSpace map[string]SpaceSpec, observationSpace map[string]SpaceSpec) string {
 	agent.Loops.Init()
-	return ""
+	return "" // Return agent name or type or requests for the environment or something.
 }
 
 func (agent *SocketAgentServer) Step(observations map[string]etensor.Tensor, debug string) map[string]Action {
-	// TODO Pass observations in, get Actions out.
+	agent.World.CachedObservations = observations // Record observations for this timestep for the world to report.
 	agent.Loops.Step(1, etime.Trial)
 	// After 1 trial has been stepped, a new action will be ready to return.
-	return nil // TODO Return action.
+	return agent.World.CachedActions
 }

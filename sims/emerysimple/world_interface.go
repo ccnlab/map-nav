@@ -9,6 +9,7 @@ import (
 // WorldInterface is like env.Env. // TODO Give better comment here.
 type WorldInterface interface {
 	// Init Initializes or reinitialize the world. This blocks until it hears from the world that it has been initialized. It returns the specifications for the action and observation spaces as its two return arguments.
+	// NOTE: If the world is asynchronous over the network, this probably does nothing.
 	// The Observation Space describes the shape and names of what the model can expect as inputs. This will be constant across the run.
 	// The Action Space describes the shape and names of what the model can send as outputs. This will be constant across the run.
 	Init(details string) (map[string]SpaceSpec, map[string]SpaceSpec)

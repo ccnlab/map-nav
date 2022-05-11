@@ -53,7 +53,7 @@ func ApplyInputs(net *deep.Network, en WorldInterface, states, layers []string) 
 	}
 }
 
-func ApplyInputsWithStrideAndShape(net *deep.Network, en WorldInterface, states, layers []string) { // TODO(refactor): library code
+func ApplyInputsWithStrideAndShape(net *deep.Network, en WorldInterface, states, layers []string) {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	for i, lnm := range layers {
 		lyi := net.LayerByName(lnm)

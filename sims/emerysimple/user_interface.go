@@ -3,12 +3,15 @@ package main
 // TODO Move to emergent/egui
 
 import (
+	"github.com/emer/axon/axon"
 	"github.com/emer/emergent/egui"
 	"github.com/emer/emergent/elog"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/estats"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
+	"github.com/emer/etable/agg"
+	"github.com/emer/etable/etensor"
 	"github.com/goki/gi/gi"
 	"github.com/goki/gi/gimain"
 	"github.com/goki/mat32"
@@ -154,6 +157,100 @@ func (ui *UserInterface) log(mode etime.Modes, time etime.Times, loop looper.Loo
 	}
 }
 
+func (ui *UserInterface) addCommonLogItems() {
+	// Record time in logs
+	for m, st := range ui.Looper.Stacks {
+		mode := m
+		for t, l := range st.Loops {
+			time := t
+			loop := l
+			ui.Logs.AddItem(&elog.Item{
+				Name: "Epoch",
+				Type: etensor.INT64,
+				Plot: elog.DFalse,
+				Write: elog.WriteMap{
+					etime.Scopes([]etime.Modes{mode}, []etime.Times{time}): func(ctx *elog.Context) {
+						ctx.SetInt(loop.Counter.Cur)
+					}}})
+		}
+	}
+	ui.Logs.AddItem(&elog.Item{
+		Name: "Trial",
+		Type: etensor.INT64,
+		Write: elog.WriteMap{
+			etime.Scope(etime.AllModes, etime.Trial): func(ctx *elog.Context) {
+				ctx.SetStatInt("Trial")
+			}}})
+	ui.Logs.AddItem(&elog.Item{
+		Name: "TrialName",
+		Type: etensor.STRING,
+		Write: elog.WriteMap{
+			etime.Scope(etime.AllModes, etime.Trial): func(ctx *elog.Context) {
+				ctx.SetStatString("TrialName")
+			}}})
+	ui.Logs.AddItem(&elog.Item{
+		Name: "Cycle",
+		Type: etensor.INT64,
+		Write: elog.WriteMap{
+			etime.Scope(etime.AllModes, etime.Cycle): func(ctx *elog.Context) {
+				ctx.SetStatInt("Cycle")
+			}}})
+
+	// Error for output layers
+	for _, olnm := range ui.Network.LayersByClass(emer.Target.String()) {
+		out := ui.Network.LayerByName(olnm).(axon.AxonLayer).AsAxon()
+
+		cosDiffMap := elog.WriteMap{}
+		pctErrDiffMap := elog.WriteMap{}
+		trlErrDiffMap := elog.WriteMap{}
+		for m, st := range ui.Looper.Stacks {
+			for iter := len(st.Order) - 1; iter >= 0; iter-- {
+				i := iter // For closures
+				t := st.Order[i]
+				if i == len(st.Order)-1 {
+					// The finest timescale, such as Cycle
+					cosDiffMap[etime.Scope(m, t)] = func(ctx *elog.Context) {
+						ctx.SetFloat32(out.CosDiff.Cos)
+					}
+					pctErrDiffMap[etime.Scope(m, t)] = func(ctx *elog.Context) {
+						ctx.SetFloat64(out.PctUnitErr())
+					}
+					trlErrDiffMap[etime.Scope(m, t)] = func(ctx *elog.Context) {
+						pcterr := out.PctUnitErr()
+						trlerr := 0
+						if pcterr > 0 {
+							trlerr = 1
+						}
+						ctx.SetFloat64(float64(trlerr))
+					}
+				} else {
+					// All other, less frequent, timescales are an aggregate
+					cosDiffMap[etime.Scope(m, t)] = func(ctx *elog.Context) {
+						ctx.SetAgg(ctx.Mode, st.Order[i+1], agg.AggMean)
+					}
+				}
+			}
+		}
+
+		// Add it to the list.
+		ui.Logs.AddItem(&elog.Item{
+			Name:  "CosSim",
+			Type:  etensor.FLOAT64,
+			Plot:  elog.DFalse,
+			Write: cosDiffMap})
+		ui.Logs.AddItem(&elog.Item{
+			Name:  "PctErr",
+			Type:  etensor.FLOAT64,
+			Plot:  elog.DFalse,
+			Write: pctErrDiffMap})
+		ui.Logs.AddItem(&elog.Item{
+			Name:  "TrialErr",
+			Type:  etensor.FLOAT64,
+			Plot:  elog.DFalse,
+			Write: trlErrDiffMap})
+	}
+}
+
 func (ui *UserInterface) addDefaultLoggingCallbacks() {
 	manager := ui.Looper
 	for m, loops := range manager.Stacks {
@@ -192,7 +289,8 @@ func (ui *UserInterface) AddDefaultLogging() {
 	if ui.Logs == nil {
 		ui.Logs = &elog.Logs{}
 	}
-	// Add logging items here
-	ui.Logs.CreateTables()
+	ui.addCommonLogItems()
+	ui.Logs.CreateTables() // Create them after log items have been added in addCommonLogItems
+	ui.Logs.SetContext(ui.Stats, ui.Network)
 	ui.addDefaultLoggingCallbacks()
 }

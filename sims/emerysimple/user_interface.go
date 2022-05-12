@@ -15,6 +15,7 @@ import (
 	"github.com/goki/gi/gi"
 	"github.com/goki/gi/gimain"
 	"github.com/goki/mat32"
+	"strconv"
 )
 
 // UserInterface automatically handles creation of the GUI if requested, otherwise runs on the command line.
@@ -23,6 +24,7 @@ type UserInterface struct {
 	Network       emer.Network
 	Logs          *elog.Logs
 	Stats         *estats.Stats
+	TimePrintOut  *string
 	GUI           *egui.GUI `desc:"More directly handles graphical elements."`
 	AppName       string
 	AppAbout      string
@@ -150,11 +152,11 @@ func (ui *UserInterface) log(mode etime.Modes, time etime.Times, loop looper.Loo
 	}
 
 	ui.Logs.LogRow(mode, time, row) // also logs to file, etc
-	if time == etime.Cycle {
-		ui.GUI.UpdateCyclePlot(etime.Test, row)
-	} else {
-		ui.GUI.UpdatePlot(mode, time)
-	}
+	//if time == etime.Cycle {
+	//	ui.GUI.UpdateCyclePlot(mode, row) // DO NOT SUBMIT Bring this back but make sure the frequency is set
+	//} else {
+	ui.GUI.UpdatePlot(mode, time)
+	//}
 }
 
 func (ui *UserInterface) addCommonLogItems() {
@@ -165,7 +167,7 @@ func (ui *UserInterface) addCommonLogItems() {
 			time := t
 			loop := l
 			ui.Logs.AddItem(&elog.Item{
-				Name: "Epoch",
+				Name: t.String(),
 				Type: etensor.INT64,
 				Plot: elog.DFalse,
 				Write: elog.WriteMap{
@@ -204,8 +206,10 @@ func (ui *UserInterface) addCommonLogItems() {
 					}
 				} else {
 					// All other, less frequent, timescales are an aggregate
-					cosDiffMap[etime.Scope(m, t)] = func(ctx *elog.Context) {
-						ctx.SetAgg(ctx.Mode, st.Order[i+1], agg.AggMean)
+					for _, wm := range []elog.WriteMap{cosDiffMap, pctErrDiffMap, trlErrDiffMap} {
+						wm[etime.Scope(m, t)] = func(ctx *elog.Context) {
+							ctx.SetAgg(ctx.Mode, st.Order[i+1], agg.AggMean)
+						}
 					}
 				}
 			}
@@ -215,19 +219,27 @@ func (ui *UserInterface) addCommonLogItems() {
 		ui.Logs.AddItem(&elog.Item{
 			Name:  "CosSim",
 			Type:  etensor.FLOAT64,
-			Plot:  elog.DFalse,
+			Plot:  elog.DTrue,
 			Write: cosDiffMap})
 		ui.Logs.AddItem(&elog.Item{
 			Name:  "PctErr",
 			Type:  etensor.FLOAT64,
-			Plot:  elog.DFalse,
+			Plot:  elog.DTrue,
 			Write: pctErrDiffMap})
 		ui.Logs.AddItem(&elog.Item{
 			Name:  "TrialErr",
 			Type:  etensor.FLOAT64,
-			Plot:  elog.DFalse,
+			Plot:  elog.DTrue,
 			Write: trlErrDiffMap})
 	}
+}
+
+func getCurrentLoopState(loops looper.Manager) string {
+	s := ""
+	for _, t := range loops.Stacks[loops.Mode].Order {
+		s = s + t.String() + ":" + strconv.Itoa(loops.Stacks[loops.Mode].Loops[t].Counter.Cur) + " "
+	}
+	return s
 }
 
 func (ui *UserInterface) addDefaultLoggingCallbacks() {
@@ -245,6 +257,7 @@ func (ui *UserInterface) addDefaultLoggingCallbacks() {
 
 			// Actual logging
 			loop.OnEnd.Add(curMode.String()+":"+curTime.String()+":"+"Log", func() {
+				println("Loop time: " + getCurrentLoopState(*ui.Looper)) // DO NOT SUBMIT
 				ui.log(curMode, curTime, *loop)
 			})
 

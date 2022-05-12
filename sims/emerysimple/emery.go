@@ -76,7 +76,6 @@ func (ss *Sim) ConfigNet() *deep.Network {
 		log.Println(err)
 		return nil
 	}
-	net.InitWts()
 	return net
 }
 
@@ -90,28 +89,11 @@ func (ss *Sim) ConfigLoops() *looper.Manager {
 	manager.Stacks[etime.Train] = &looper.Stack{}
 	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 100).AddTime(etime.Cycle, 200)
 
-	// The minus and plus phases of the theta cycle, which help the network learn.
-	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}
-	minusPhase.OnEvent.Add("Sim:MinusPhase:Start", func() {
-		ss.Time.PlusPhase = false
-		ss.Time.NewPhase(false)
-	})
-	plusPhase := looper.Event{Name: "PlusPhase", AtCtr: 150}
-	plusPhase.OnEvent.Add("Sim:MinusPhase:End", func() { ss.Net.MinusPhase(&ss.Time) })
-	plusPhase.OnEvent.Add("Sim:PlusPhase:Start", func() {
-		ss.Time.PlusPhase = true
-		ss.Time.NewPhase(true)
-	})
+	_, plusPhase, _ := AddPlusAndMinusPhases(manager, &ss.Time, ss.Net)
 	plusPhase.OnEvent.Add("Sim:PlusPhase:SendActionsThenStep", func() {
-		// Check the action at the beginning of the Plus phase, before the teaching signal is introduced. TODO Make sure that's right.
+		// Check the action at the beginning of the Plus phase, before the teaching signal is introduced.
 		ss.SendActionAndStep(ss.Net, ss.WorldEnv)
 	})
-	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
-	plusPhaseEnd.OnEvent.Add("Sim:PlusPhase:End", func() { ss.Net.PlusPhase(&ss.Time) })
-	// Add both to train and test, by copy
-	manager.AddEventAllModes(etime.Cycle, minusPhase)
-	manager.AddEventAllModes(etime.Cycle, plusPhase)
-	manager.AddEventAllModes(etime.Cycle, plusPhaseEnd)
 
 	// Trial Stats and Apply Input
 	mode := etime.Train // For closures
@@ -120,11 +102,10 @@ func (ss *Sim) ConfigLoops() *looper.Manager {
 		ss.Net.NewState()
 		ss.Time.NewState(mode.String())
 	})
-	stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe",
-		func() {
-			layers := []string{"Input"}
-			ApplyInputsWithStrideAndShape(ss.Net, ss.WorldEnv, layers, layers)
-		})
+	stack.Loops[etime.Trial].OnStart.Add("Sim:Trial:Observe", func() {
+		layers := []string{"Input"}
+		ApplyInputsWithStrideAndShape(ss.Net, ss.WorldEnv, layers, layers)
+	})
 
 	manager.GetLoop(etime.Train, etime.Run).OnStart.Add("Sim:NewRun", ss.NewRun)
 	ss.AddDefaultLoopSimLogic(manager)

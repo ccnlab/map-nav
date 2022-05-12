@@ -296,6 +296,29 @@ func HogDead(net *deep.Network, lnm string) (hog, dead float64) { // TODO(refact
 	return
 }
 
+// AddPlusAndMinusPhases adds the minus and plus phases of the theta cycle, which help the network learn.
+func AddPlusAndMinusPhases(manager *looper.Manager, time *axon.Time, net *deep.Network) (looper.Event, looper.Event, looper.Event) {
+	// The minus and plus phases of the theta cycle, which help the network learn.
+	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}
+	minusPhase.OnEvent.Add("Sim:MinusPhase:Start", func() {
+		time.PlusPhase = false
+		time.NewPhase(false)
+	})
+	plusPhase := looper.Event{Name: "PlusPhase", AtCtr: 150}
+	plusPhase.OnEvent.Add("Sim:MinusPhase:End", func() { net.MinusPhase(time) })
+	plusPhase.OnEvent.Add("Sim:PlusPhase:Start", func() {
+		time.PlusPhase = true
+		time.NewPhase(true)
+	})
+	plusPhaseEnd := looper.Event{Name: "PlusPhase", AtCtr: 199}
+	plusPhaseEnd.OnEvent.Add("Sim:PlusPhase:End", func() { net.PlusPhase(time) })
+	// Add both to train and test, by copy
+	manager.AddEventAllModes(etime.Cycle, minusPhase)
+	manager.AddEventAllModes(etime.Cycle, plusPhase)
+	manager.AddEventAllModes(etime.Cycle, plusPhaseEnd)
+	return minusPhase, plusPhase, plusPhaseEnd
+}
+
 // TODO All of the following is for automatically placing layers. It works OK but it's probably overcomplicated.
 func computeLayerOverlap(lay1 emer.Layer, lay2 emer.Layer) float32 {
 	s1 := lay1.Size()

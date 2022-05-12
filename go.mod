@@ -2,6 +2,8 @@ module github.com/ccnlab/map-nav
 
 go 1.15
 
+replace github.com/emer/axon => ../axon
+
 require (
 	github.com/emer/axon v1.3.26
 	github.com/emer/emergent v1.2.3

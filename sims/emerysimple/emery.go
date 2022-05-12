@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO Move to Astera-org/models
+// TODO Move to Astera-org/models and maybe rename to EasyReporter or something
 
 package main
 
@@ -48,6 +48,7 @@ type Sim struct {
 	Loops    *looper.Manager `view:"no-inline" desc:"contains looper control loops for running sim"`
 	WorldEnv WorldInterface  `desc:"Training environment -- contains everything about iterating over input / output patterns over training"`
 	Time     axon.Time       `desc:"axon timing parameters and state"`
+	LoopTime string          `desc:"Printout of the current time."`
 }
 
 func (ss *Sim) ConfigEnv() WorldInterface {
@@ -87,7 +88,7 @@ func (ss *Sim) NewRun() {
 func (ss *Sim) ConfigLoops() *looper.Manager {
 	manager := looper.Manager{}.Init()
 	manager.Stacks[etime.Train] = &looper.Stack{}
-	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 2).AddTime(etime.Cycle, 200)
+	manager.Stacks[etime.Train].Init().AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, 100).AddTime(etime.Cycle, 200)
 
 	// The minus and plus phases of the theta cycle, which help the network learn.
 	minusPhase := looper.Event{Name: "MinusPhase", AtCtr: 0}

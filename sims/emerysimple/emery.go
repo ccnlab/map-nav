@@ -31,6 +31,7 @@ func main() {
 		AppTitle:      "Simple Agent",
 		AppAbout:      `A simple agent that can handle an arbitrary world.`,
 	}
+	userInterface.AddDefaultLogging()
 	userInterface.CreateAndRunGuiWithAdditionalConfig(
 		func() {
 			sw, ok := sim.WorldEnv.(*SocketWorld)

@@ -105,9 +105,11 @@ github.com/eapache/go-resiliency v1.1.0/go.mod h1:kFI+JgMyC7bLPUVY133qvEBtVayf5m
 github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21/go.mod h1:+020luEh2TKB4/GOp8oxxtq0Daoen/Cii55CzbTV6DU=
 github.com/eapache/queue v1.1.0/go.mod h1:6eCeP0CKFpHLu8blIFXhExK/dRa7WDZfr6jVFPTqq+I=
 github.com/edsrzf/mmap-go v1.0.0/go.mod h1:YO35OhQPt3KJa3ryjFM5Bs14WD66h8eGKpfaBNrHW5M=
+github.com/emer/axon v1.3.26 h1:UaisT7mbINcFybqZLzCcVzuAkIdy+g2xX4/SreUImi4=
+github.com/emer/axon v1.3.26/go.mod h1:QvGC154k+tgFnb14bKEfKFypfbk9uvhSG+6cWNkIT5I=
 github.com/emer/emergent v1.1.26/go.mod h1:XhFMJgoZeOYplTDMDUcmGPuthfTqJPbBLmXEPN6uP8Y=
 github.com/emer/emergent v1.1.55/go.mod h1:mE/779ZtSYDAlJZntjq3tsBYpIgWln+sfa/UvG9s6jo=
-github.com/emer/emergent v1.2.2/go.mod h1:ux6TbRYeV5LacrotL+SKzOWqJH9IkOD8/YlhwJRNJV4=
+github.com/emer/emergent v1.2.1/go.mod h1:ux6TbRYeV5LacrotL+SKzOWqJH9IkOD8/YlhwJRNJV4=
 github.com/emer/emergent v1.2.3 h1:WcEydbkjqPOLOWIcCohy7On+vnrsgxeTF+9mWYTl1KY=
 github.com/emer/emergent v1.2.3/go.mod h1:ux6TbRYeV5LacrotL+SKzOWqJH9IkOD8/YlhwJRNJV4=
 github.com/emer/empi v1.0.12 h1:rDOLjrtqr8FzreMtWyzyx0/6hIPlTpjv/LzRSFPEq7Y=

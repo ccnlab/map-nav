@@ -174,27 +174,6 @@ func (ui *UserInterface) addCommonLogItems() {
 					}}})
 		}
 	}
-	ui.Logs.AddItem(&elog.Item{
-		Name: "Trial",
-		Type: etensor.INT64,
-		Write: elog.WriteMap{
-			etime.Scope(etime.AllModes, etime.Trial): func(ctx *elog.Context) {
-				ctx.SetStatInt("Trial")
-			}}})
-	ui.Logs.AddItem(&elog.Item{
-		Name: "TrialName",
-		Type: etensor.STRING,
-		Write: elog.WriteMap{
-			etime.Scope(etime.AllModes, etime.Trial): func(ctx *elog.Context) {
-				ctx.SetStatString("TrialName")
-			}}})
-	ui.Logs.AddItem(&elog.Item{
-		Name: "Cycle",
-		Type: etensor.INT64,
-		Write: elog.WriteMap{
-			etime.Scope(etime.AllModes, etime.Cycle): func(ctx *elog.Context) {
-				ctx.SetStatInt("Cycle")
-			}}})
 
 	// Error for output layers
 	for _, olnm := range ui.Network.LayersByClass(emer.Target.String()) {

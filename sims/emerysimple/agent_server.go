@@ -1,6 +1,10 @@
 package main
 
 import (
+	"context"
+
+	"github.com/Astera-org/worlds/network"
+	"github.com/Astera-org/worlds/network/gengo/env"
 	"github.com/emer/emergent/etime"
 	"github.com/emer/emergent/looper"
 	"github.com/emer/etable/etensor"
@@ -14,15 +18,122 @@ type SocketAgentServer struct {
 	World *SocketWorld `desc:"World represents the World to the agent. It can masquerade as a WorldInterface. It holds actions that the agent has taken, and holds observations for the agent."`
 }
 
-// StartServer blocks, and sometimes calls Init or Step.
-func (agent *SocketAgentServer) StartServer() {
-	// TODO Set up server and replace logic below.
+// this implements the thrift interface and serves as a proxy
+// between the network world and the local types
+type AgentHandler struct {
+	agent *SocketAgentServer
+}
 
-	// TODO Replace this logic which does not use the network at all.
-	agent.Init(nil, nil)
-	for {
-		agent.Step(nil, "Everything is fine")
+func (handler AgentHandler) Init(ctx context.Context, actionSpace env.Space,
+	observationSpace env.Space) (string, error) {
+	return handler.agent.Init(transformSpace(actionSpace), transformSpace(observationSpace)), nil
+}
+
+func (handler AgentHandler) Step(ctx context.Context, observations env.Observations, debug string) (env.Actions, error) {
+	obs := transformObservations(observations)
+	actions := handler.agent.Step(obs, debug)
+	return transformActions(actions), nil
+}
+
+func transformActions(actions map[string]Action) env.Actions {
+	res := make(env.Actions)
+	for k, v := range actions {
+		res[k] = toEnvAction(&v)
 	}
+	return res
+}
+
+func transformSpace(space env.Space) map[string]SpaceSpec {
+	res := make(map[string]SpaceSpec)
+	for k, v := range space {
+		res[k] = toSpaceSpec(v)
+	}
+	return res
+}
+
+func transformObservations(observations env.Observations) map[string]etensor.Tensor {
+	res := make(map[string]etensor.Tensor)
+	for k, v := range observations {
+		res[k] = toTensor(v)
+	}
+	return res
+}
+
+func toSpaceSpec(spec *env.SpaceSpec) SpaceSpec {
+	return SpaceSpec{
+		ContinuousShape: toInt(spec.Shape.Shape),
+		Stride:          toInt(spec.Shape.Stride),
+		Min:             spec.Min, Max: spec.Max,
+		DiscreteLabels: spec.DiscreteLabels,
+	}
+}
+
+func fromSpaceSpec(spec *SpaceSpec) *env.SpaceSpec {
+	return &env.SpaceSpec{
+		Shape: &env.Shape{Shape: toInt32(spec.ContinuousShape), Stride: toInt32(spec.Stride)},
+		Min:   spec.Min,
+		Max:   spec.Max,
+	}
+}
+
+func toEnvAction(action *Action) *env.Action {
+	return &env.Action{
+		ActionShape:    fromSpaceSpec(action.ActionShape),
+		Vector:         fromTensor(action.Vector),
+		DiscreteOption: int32(action.DiscreteOption),
+	}
+}
+
+func toTensor(envtensor *env.ETensor) etensor.Tensor {
+	return etensor.NewFloat64Shape(toShape(envtensor.Shape), envtensor.Values)
+}
+
+func toShape(shape *env.Shape) *etensor.Shape {
+	return &etensor.Shape{
+		Shp:  toInt(shape.Shape),
+		Strd: toInt(shape.Stride),
+		Nms:  shape.Names,
+	}
+}
+
+func fromShape(shape *etensor.Shape) *env.Shape {
+	return &env.Shape{
+		Shape:  toInt32(shape.Shp),
+		Stride: toInt32(shape.Strd),
+		Names:  shape.Nms,
+	}
+}
+
+func fromTensor(tensor etensor.Tensor) *env.ETensor {
+	res := &env.ETensor{
+		Shape:  fromShape(tensor.ShapeObj()),
+		Values: nil, // gets set in the next line
+	}
+	tensor.Floats(&res.Values)
+	return res
+}
+
+func toInt(xs []int32) []int {
+	res := make([]int, len(xs))
+	for i := range xs {
+		res[i] = int(xs[i])
+	}
+	return res
+}
+
+func toInt32(xs []int) []int32 {
+	res := make([]int32, len(xs))
+	for i := range xs {
+		res[i] = int32(xs[i])
+	}
+	return res
+}
+
+// StartServer blocks, waiting for calls from the environment
+func (agent *SocketAgentServer) StartServer() {
+	handler := AgentHandler{agent}
+	server := network.MakeServer(handler)
+	server.Serve()
 }
 
 func (agent *SocketAgentServer) Init(actionSpace map[string]SpaceSpec, observationSpace map[string]SpaceSpec) string {

@@ -4,7 +4,10 @@
 
 package main
 
-import "github.com/emer/emergent/params"
+import (
+	"github.com/emer/emergent/params"
+	"github.com/emer/emergent/prjn"
+)
 
 // ParamSets is the default set of parameters -- Base is always applied, and others can be optionally
 // selected to apply on top of that
@@ -153,9 +156,9 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#SMA", Desc: "",
 				Params: params.Params{
-					"Layer.Act.Noise.Dist": "Gaussian",
-					"Layer.Act.Noise.Var":  "0.01", // 0.02 too high, 0.005 == 0.01 performance-wise
-					"Layer.Act.Noise.Type": "GeNoise",
+					"Layer.Act.Noise.On": "true",
+					"Layer.Act.Noise.Ge": "0.001",
+					"Layer.Act.Noise.Gi": "0.001",
 				}},
 			{Sel: "#SMAP", Desc: "pulv",
 				Params: params.Params{
@@ -178,9 +181,6 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.Inhib.Layer.Gi":    "1.1", // reg
-					"Layer.Act.Noise.Dist":    "Gaussian",
-					"Layer.Act.Noise.Var":     "0.01", // 0.01 orig -- some noise essential for 1 self
-					"Layer.Act.Noise.Type":    "NoNoise",
 				}},
 			{Sel: "#M1P", Desc: "m1 pulvinar",
 				Params: params.Params{
@@ -247,8 +247,7 @@ var ParamSets = params.Sets{
 					"Prjn.SWt.Init.Sym":     "false",
 					"Prjn.SWt.Adapt.On":     "false",
 					"Prjn.PrjnScale.Abs":    "0.3", // .1 = .2, slower blowup
-					"Prjn.PrjnScale.Adapt":  "false",
-					"Prjn.IncGain":          "1", // .5 def
+					"Prjn.IncGain":          "1",   // .5 def
 				}},
 			{Sel: ".Lateral", Desc: "default for lateral -- not using",
 				Params: params.Params{
@@ -317,4 +316,44 @@ var ParamSets = params.Sets{
 				}},
 		},
 	}},
+}
+
+// Prjns holds all the special projections
+type Prjns struct {
+	Prjn4x4Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x4Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn4x3Skp2      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn"`
+	Prjn4x3Skp2Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 2 topo prjn, recip"`
+	Prjn3x3Skp1      *prjn.PoolTile `view:"no-inline" desc:"feedforward 3x3 skip 1 topo prjn"`
+	Prjn4x4Skp4      *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn"`
+	Prjn4x4Skp4Recip *prjn.PoolTile `view:"no-inline" desc:"feedforward 4x4 skip 4 topo prjn, recip"`
+}
+
+func (pj *Prjns) New() {
+	pj.Prjn4x4Skp2 = prjn.NewPoolTile()
+	pj.Prjn4x4Skp2.Size.Set(4, 4)
+	pj.Prjn4x4Skp2.Skip.Set(2, 2)
+	pj.Prjn4x4Skp2.Start.Set(-1, -1)
+	pj.Prjn4x4Skp2.TopoRange.Min = 0.5
+
+	pj.Prjn4x4Skp2Recip = prjn.NewPoolTileRecip(pj.Prjn4x4Skp2)
+
+	pj.Prjn4x3Skp2 = prjn.NewPoolTile()
+	pj.Prjn4x3Skp2.Size.Set(3, 4)
+	pj.Prjn4x3Skp2.Skip.Set(0, 2)
+	pj.Prjn4x3Skp2.Start.Set(0, -1)
+	pj.Prjn4x3Skp2.TopoRange.Min = 0.5
+
+	pj.Prjn4x3Skp2Recip = prjn.NewPoolTileRecip(pj.Prjn4x3Skp2)
+
+	pj.Prjn3x3Skp1 = prjn.NewPoolTile()
+	pj.Prjn3x3Skp1.Size.Set(3, 1)
+	pj.Prjn3x3Skp1.Skip.Set(1, 1)
+	pj.Prjn3x3Skp1.Start.Set(-1, -1)
+
+	pj.Prjn4x4Skp4 = prjn.NewPoolTile()
+	pj.Prjn4x4Skp4.Size.Set(4, 1)
+	pj.Prjn4x4Skp4.Skip.Set(4, 1)
+	pj.Prjn4x4Skp4.Start.Set(0, 0)
+	pj.Prjn4x4Skp4Recip = prjn.NewPoolTileRecip(pj.Prjn4x4Skp4)
 }

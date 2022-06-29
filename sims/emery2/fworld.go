@@ -1,6 +1,7 @@
 // Copyright (c) 2020, The Emergent Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
+
 package main
 
 import (
@@ -18,6 +19,7 @@ import (
 	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/popcode"
 	"github.com/emer/etable/etensor"
+	"github.com/emer/etable/etview"
 	"github.com/emer/etable/metric"
 	"github.com/goki/gi/gi"
 	"github.com/goki/ki/ints"
@@ -91,6 +93,14 @@ type FWorld struct {
 	Event         env.Ctr                     `view:"arbitrary counter for steps within a scene -- resets at consumption event"`
 	Scene         env.Ctr                     `view:"arbitrary counter incrementing over a coherent sequence of events: e.g., approaching food -- increments at consumption"`
 	Episode       env.Ctr                     `view:"arbitrary counter incrementing over scenes within larger episode: feeding, drinking, exploring, etc"`
+
+	// GUI below
+	Trace     *etensor.Int       `view:"no-inline" desc:"trace of movement for visualization"`
+	TraceView *etview.TensorGrid `view:"no-inline" desc:"view of the activity trace"`
+	WorldView *etview.TensorGrid `view:"no-inline" desc:"view of the world"`
+	WorldWin  *gi.Window         `view:"-" desc:"FWorld GUI window"`
+	WorldTabs *gi.TabView        `view:"-" desc:"FWorld TabView"`
+	IsRunning bool               `view:"-" desc:"FWorld is running"`
 }
 
 var KiT_FWorld = kit.Types.AddType(&FWorld{}, FWorldProps)

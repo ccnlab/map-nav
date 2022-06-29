@@ -261,8 +261,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".SuperFwd", Desc: "standard superficial forward prjns -- not to output",
 				Params: params.Params{
-					"Prjn.Com.PFail":    "0.2",   // 0.5 sig worse perf, 0.2 ~= 0.1
-					"Prjn.Com.PFailSWt": "false", // try
+					// "Prjn.Com.PFail":    "0.2",   // 0.5 sig worse perf, 0.2 ~= 0.1
+					// "Prjn.Com.PFailSWt": "false", // try
 				}},
 			{Sel: ".FmPulv", Desc: "default for pulvinar",
 				Params: params.Params{

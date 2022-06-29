@@ -6,6 +6,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
@@ -42,7 +43,7 @@ import (
 )
 
 // Debug triggers various messages etc
-var Debug = true
+var Debug = false
 
 func main() {
 	TheSim.New()
@@ -119,6 +120,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
+	ss.PctCortexMax = 0.9
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -581,7 +583,7 @@ func (ss *Sim) ConfigLoops() {
 		}
 	}
 
-	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 2000).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
 	man.AddStack(etime.Test).AddTime(etime.Epoch, 1).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
@@ -678,10 +680,17 @@ func (ss *Sim) ConfigLoops() {
 	// Save weights to file at end, to look at later
 	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveWeights", func() { ss.SaveWeights() })
 
-	man.GetLoop(etime.Train, etime.Epoch).AddNewEvent("SaveWeights", 100, func() { ss.SaveWeights() })
-	man.GetLoop(etime.Train, etime.Epoch).AddNewEvent("SaveWeights", 500, func() { ss.SaveWeights() })
-	man.GetLoop(etime.Train, etime.Epoch).AddNewEvent("SaveWeights", 1000, func() { ss.SaveWeights() })
-	man.GetLoop(etime.Train, etime.Epoch).AddNewEvent("SaveWeights", 1500, func() { ss.SaveWeights() })
+	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PctCortex", func() {
+		trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
+		if trnEpc > 1 && trnEpc%10 == 0 {
+			ss.PctCortex = float64(trnEpc) / 100
+			if ss.PctCortex > ss.PctCortexMax {
+				ss.PctCortex = ss.PctCortexMax
+			} else {
+				fmt.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, trnEpc)
+			}
+		}
+	})
 
 	////////////////////////////////////////////
 	// GUI

@@ -213,7 +213,7 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.Lrate.Base":       "0.04", // .04 for SynSpkTheta
+					"Prjn.Learn.Lrate.Base":       "0.1",  // .1 > .04 esp long term
 					"Prjn.SWt.Adapt.Lrate":        "0.01", // 0.01 seems to work fine, but .1 maybe more reliable
 					"Prjn.SWt.Adapt.DreamVar":     "0.01", // 0.01 is just tolerable
 					"Prjn.SWt.Init.SPct":          "1.0",  // .5 ok here, 1 best for larger nets: objrec, lvis

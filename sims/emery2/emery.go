@@ -619,18 +619,6 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Run).OnStart.Add("NewRun", ss.NewRun)
 
-	// Train stop early condition
-	man.GetLoop(etime.Train, etime.Epoch).IsDone["NZeroStop"] = func() bool {
-		// This is calculated in TrialStats
-		stopNz := ss.Args.Int("nzero")
-		if stopNz <= 0 {
-			stopNz = 2
-		}
-		curNZero := ss.Stats.Int("NZero")
-		stop := curNZero >= stopNz
-		return stop
-	}
-
 	// Add Testing
 	trainEpoch := man.GetLoop(etime.Train, etime.Epoch)
 	trainEpoch.OnStart.Add("TestAtInterval", func() {
@@ -846,9 +834,10 @@ func (ss *Sim) StatCounters() {
 	trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
 	ss.Stats.SetInt("Epoch", trnEpc)
 	ss.Stats.SetInt("Cycle", ss.Time.Cycle)
+	ss.Stats.SetFloat("PctCortex", ss.PctCortex)
 	ev := ss.Envs[ss.Time.Mode].(*FWorld)
 	ss.Stats.SetString("TrialName", ev.String())
-	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "TrialName", "NetAction", "GenAction", "ActAction", "ActMatch", "Cycle", "TrlUnitErr", "TrlErr", "TrlCorSim"})
+	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "TrialName", "NetAction", "GenAction", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
 }
 
 // TrialStats computes the trial-level statistics.
@@ -873,6 +862,7 @@ func (ss *Sim) ConfigLogs() {
 
 	ss.Logs.AddCounterItems(etime.Run, etime.Epoch, etime.Trial, etime.Cycle)
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.AllTimes, "RunName")
+	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.AllTimes, "PctCortex")
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.Trial, "NetAction", "GenAction", "ActAction")
 
 	ss.Logs.AddStatAggItem("CorSim", "TrlCorSim", etime.Run, etime.Epoch, etime.Trial)
@@ -929,7 +919,7 @@ func (ss *Sim) ConfigLogItems() {
 				ss.Logs.MiscTables["ActCor"] = ags
 				ctx.SetTensor(ags.Cols[0]) // cors
 			}}})
-	for _, nm := range ev.Acts {
+	for _, nm := range ev.Acts { // per-action % correct
 		anm := nm // closure
 		ss.Logs.AddItem(&elog.Item{
 			Name:  anm + "Cor",
@@ -945,7 +935,7 @@ func (ss *Sim) ConfigLogItems() {
 					}
 				}}})
 	}
-	for _, nm := range ev.Inters {
+	for _, nm := range ev.Inters { // interoceptive internal variable state
 		inm := nm
 		ss.Logs.AddItem(&elog.Item{
 			Name:  inm,
@@ -956,16 +946,7 @@ func (ss *Sim) ConfigLogItems() {
 				etime.Scope(etime.Train, etime.Trial): func(ctx *elog.Context) {
 					ctx.SetFloat32(ev.InterStates[ctx.Item.Name])
 				}, etime.Scope(etime.Train, etime.Epoch): func(ctx *elog.Context) {
-					if ctx.Item.Name == ev.Inters[0] {
-						ix := ctx.Logs.IdxView(ctx.Mode, etime.Trial)
-						agsp := split.All(ix)
-						for _, nmi := range ev.Inters {
-							split.Agg(agsp, nmi, agg.AggMean)
-						}
-						ss.Logs.MiscTables["Inters"] = agsp.AggsToTable(etable.ColNameOnly)
-					}
-					ags := ss.Logs.MiscTables["Inters"]
-					ctx.SetFloat64(ags.CellFloat(ctx.Item.Name, 0))
+					ctx.SetAgg(ctx.Mode, etime.Trial, agg.AggMean)
 				}}})
 	}
 
@@ -1177,7 +1158,6 @@ func (ss *Sim) ConfigGui() *gi.Window {
 func (ss *Sim) ConfigArgs() {
 	ss.Args.Init()
 	ss.Args.AddStd()
-	ss.Args.AddInt("nzero", 2, "number of zero error epochs in a row to count as full training")
 	ss.Args.AddInt("iticycles", 0, "number of cycles to run between trials (inter-trial-interval)")
 	ss.Args.SetInt("epochs", 2000)
 	ss.Args.SetInt("runs", 1)

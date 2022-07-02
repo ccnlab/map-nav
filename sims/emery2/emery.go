@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/emer/axon/axon"
 	"github.com/emer/axon/deep"
@@ -85,7 +87,6 @@ type Sim struct {
 	Envs         env.Envs         `view:"no-inline" desc:"Environments"`
 	Time         axon.Time        `desc:"axon timing parameters and state"`
 	ViewUpdt     netview.ViewUpdt `view:"inline" desc:"netview update parameters"`
-	TestInterval int              `desc:"NOT USED: how often to run through all the test patterns, in terms of training epochs -- can use 0 or -1 for no testing"`
 	PCAInterval  int              `desc:"how frequently (in epochs) to compute PCA on hidden representations to measure variance?"`
 	MaxTrls      int              `desc:"maximum number of training trials per epoch"`
 	Decoder      decoder.SoftMax  `desc:"decoder for better output"`
@@ -124,7 +125,6 @@ func (ss *Sim) New() {
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
-	ss.TestInterval = -1
 	ss.PCAInterval = 10
 	ss.ConfusionEpc = 500
 	ss.MaxTrls = 200 // todo: switch to 512 after validation
@@ -146,11 +146,13 @@ func (ss *Sim) Config() {
 
 func (ss *Sim) ConfigEnv() {
 	// Can be called multiple times -- don't re-create
-	var trn *FWorld
+	var trn, tst *FWorld
 	if len(ss.Envs) == 0 {
 		trn = &FWorld{}
+		tst = &FWorld{}
 	} else {
 		trn = ss.Envs.ByMode(etime.Train).(*FWorld)
+		tst = ss.Envs.ByMode(etime.Test).(*FWorld)
 	}
 
 	trn.Config(200)
@@ -158,6 +160,12 @@ func (ss *Sim) ConfigEnv() {
 	trn.Dsc = "training params and state"
 	trn.Init(0)
 	trn.Validate()
+
+	tst.Config(200)
+	tst.Nm = etime.Test.String()
+	tst.Dsc = "testing params and state"
+	tst.Init(0)
+	tst.Validate()
 
 	// todo!
 	// if ss.Args.Bool("mpi") {
@@ -168,7 +176,7 @@ func (ss *Sim) ConfigEnv() {
 	// 	tst.MPIAlloc()
 	// }
 
-	ss.Envs.Add(trn)
+	ss.Envs.Add(trn, tst)
 }
 
 func (ss *Sim) ConfigNet(net *deep.Network) {
@@ -227,6 +235,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(v2wdp, mstdct, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
 	// net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
 	// net.ConnectCtxtToCT(mstdct, mstdct, parprjn).SetClass("CTSelf") // important!
+
+	mstd.SetRepIdxsShape(emer.CenterPoolIdxs(mstd, 2), emer.CenterPoolShape(mstd, 2))
+	mstdct.SetRepIdxsShape(emer.CenterPoolIdxs(mstdct, 2), emer.CenterPoolShape(mstdct, 2))
 
 	cipl, ciplct, ciplp := deep.AddSuperCTTRC4D(net.AsAxon(), "cIPL", 3, 3, 8, 8)
 	ciplct.RecvPrjns().SendName(cipl.Name()).SetPattern(full)
@@ -585,7 +596,8 @@ func (ss *Sim) ConfigLoops() {
 
 	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
-	man.AddStack(etime.Test).AddTime(etime.Epoch, 1).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	// note: needs a lot of data for good actrfs -- 100 here
+	man.AddStack(etime.Test).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
 	axon.LooperStdPhases(man, &ss.Time, ss.Net.AsAxon(), 150, 199)            // plus phase timing
 	axon.LooperSimCycleAndLearn(man, ss.Net.AsAxon(), &ss.Time, &ss.ViewUpdt) // std algo code
@@ -619,16 +631,7 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Run).OnStart.Add("NewRun", ss.NewRun)
 
-	// Add Testing
-	trainEpoch := man.GetLoop(etime.Train, etime.Epoch)
-	trainEpoch.OnStart.Add("TestAtInterval", func() {
-		if (ss.TestInterval > 0) && ((trainEpoch.Counter.Cur+1)%ss.TestInterval == 0) {
-			// Note the +1 so that it doesn't occur at the 0th timestep.
-			ss.TestAll()
-		}
-	})
-
-	trainEpoch.OnEnd.Add("RandCheck", func() {
+	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("RandCheck", func() {
 		if ss.Args.Bool("mpi") {
 			empi.RandCheck(ss.Comm) // prints error message
 		}
@@ -665,8 +668,20 @@ func (ss *Sim) ConfigLoops() {
 		ss.Logs.RunStats("PctCor", "FirstZero", "LastZero")
 	})
 
+	// this is actually fairly expensive
+	man.GetLoop(etime.Test, etime.Trial).OnEnd.Add("ActRFs", func() {
+		ss.UpdateActRFs()
+		ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01)
+	})
+
 	// Save weights to file at end, to look at later
 	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveWeights", func() { ss.SaveWeights() })
+	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveActRFs", func() {
+		if ss.Args.Bool("actrfs") {
+			ss.TestAll()
+			ss.SaveAllActRFs()
+		}
+	})
 
 	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PctCortex", func() {
 		trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
@@ -687,12 +702,6 @@ func (ss *Sim) ConfigLoops() {
 			ss.GUI.NetDataRecord(ss.ViewUpdt.Text)
 		})
 	} else {
-		// this is actually fairly expensive
-		man.GetLoop(etime.Test, etime.Trial).OnEnd.Add("ActRFs", func() {
-			ss.UpdateActRFs()
-			ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01)
-		})
-
 		axon.LooperUpdtNetView(man, &ss.ViewUpdt)
 		axon.LooperUpdtPlots(man, &ss.GUI)
 
@@ -848,6 +857,9 @@ func (ss *Sim) TrialStats() {
 	ss.Stats.SetFloat("TrlCorSim", float64(out.CorSim.Cor))
 	ss.Stats.SetFloat("TrlUnitErr", out.PctUnitErr())
 
+	// note: most stats computed in TakeAction
+	ss.Stats.SetFloat("TrlErr", 1-ss.Stats.Float("ActMatch"))
+
 	// epc := env.Epoch.Cur
 	// if epc > ss.ConfusionEpc {
 	// 	ss.Stats.Confusion.Incr(ss.Stats.Int("TrlCatIdx"), ss.Stats.Int("TrlRespIdx"))
@@ -865,10 +877,14 @@ func (ss *Sim) ConfigLogs() {
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.AllTimes, "PctCortex")
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.Trial, "NetAction", "GenAction", "ActAction")
 
+	// todo: make basic err stats actually useful
+
 	ss.Logs.AddStatAggItem("CorSim", "TrlCorSim", etime.Run, etime.Epoch, etime.Trial)
 	ss.Logs.AddStatAggItem("UnitErr", "TrlUnitErr", etime.Run, etime.Epoch, etime.Trial)
 	ss.Logs.AddErrStatAggItems("TrlErr", etime.Run, etime.Epoch, etime.Trial)
 	ss.Logs.AddStatAggItem("ActMatch", "ActMatch", etime.Run, etime.Epoch, etime.Trial)
+
+	ss.Logs.AddPerTrlMSec("PerTrlMSec", etime.Run, etime.Epoch, etime.Trial)
 
 	ss.ConfigLogItems()
 
@@ -877,17 +893,18 @@ func (ss *Sim) ConfigLogs() {
 
 	deep.LogAddTRCCorSimItems(&ss.Logs, ss.Net, etime.Run, etime.Epoch, etime.Trial)
 
-	ss.Logs.AddPerTrlMSec("PerTrlMSec", etime.Run, etime.Epoch, etime.Trial)
 	ss.ConfigActRFs()
 
 	axon.LogAddDiagnosticItems(&ss.Logs, ss.Net.AsAxon(), etime.Epoch, etime.Trial)
+
+	// todo: PCA items should apply to CT layers too -- pass a type here.
 	axon.LogAddPCAItems(&ss.Logs, ss.Net.AsAxon(), etime.Run, etime.Epoch, etime.Trial)
 
 	axon.LogAddLayerGeActAvgItems(&ss.Logs, ss.Net.AsAxon(), etime.Test, etime.Cycle)
 	ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.Test, etime.Trial, "Target")
 	ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.AllModes, etime.Cycle, "Target")
 
-	ss.Logs.PlotItems("CorSim", "PctErr")
+	ss.Logs.PlotItems("PctCortex", "ActMatch", "Energy", "Hydra", "V2WdP_CorSim")
 
 	ss.Logs.CreateTables()
 	ss.Logs.SetContext(&ss.Stats, ss.Net.AsAxon())
@@ -1029,6 +1046,36 @@ func (ss *Sim) UpdateActRFs() {
 	}
 }
 
+// SaveAllActRFs saves all ActRFs to files, using LogFileName from ecmd using RunName
+func (ss *Sim) SaveAllActRFs() {
+	ss.Stats.ActRFsAvgNorm()
+	for _, paf := range ss.Stats.ActRFs.RFs {
+		fnm := ecmd.LogFileName(paf.Name, "ActRF", ss.Stats.String("RunName"))
+		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	}
+}
+
+// OpenAllActRFs open all ActRFs from directory of given path
+func (ss *Sim) OpenAllActRFs(path gi.FileName) {
+	ss.UpdateActRFs()
+	ss.Stats.ActRFsAvgNorm()
+	ap := string(path)
+	if strings.HasSuffix(ap, ".tsv") {
+		ap, _ = filepath.Split(ap)
+	}
+	vp := ss.GUI.Win.Viewport
+	for _, paf := range ss.Stats.ActRFs.RFs {
+		fnm := ecmd.LogFileName(paf.Name, "ActRF", ss.Stats.String("RunName")) // todo: won't work for other runs
+		ffnm := filepath.Join(ap, fnm)
+		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(ffnm), '\t')
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
+	}
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////
 // 		Gui
 
@@ -1069,7 +1116,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	ss.GUI.ToolBar.AddSeparator("test")
 
-	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Reset ARFs",
+	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Reset ActRFs",
 		Icon:    "reset",
 		Tooltip: "reset current position activation rfs accumulation data",
 		Active:  egui.ActiveStopped,
@@ -1078,7 +1125,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		},
 	})
 
-	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "View ARFs",
+	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "View ActRFs",
 		Icon:    "file-image",
 		Tooltip: "compute activation rfs and view them.",
 		Active:  egui.ActiveStopped,
@@ -1090,12 +1137,12 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		},
 	})
 
-	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Open ARFs",
+	ss.GUI.AddToolbarItem(egui.ToolbarItem{Label: "Open ActRFs",
 		Icon:    "file-open",
 		Tooltip: "Open saved ARF .tsv files -- select a path or specific file in path",
 		Active:  egui.ActiveStopped,
 		Func: func() {
-			giv.CallMethod(ss, "OpenAllARFs", ss.GUI.ViewPort)
+			giv.CallMethod(ss, "OpenAllActRFs", ss.GUI.ViewPort)
 		},
 	})
 
@@ -1162,13 +1209,14 @@ func (ss *Sim) ConfigArgs() {
 	ss.Args.SetInt("epochs", 2000)
 	ss.Args.SetInt("runs", 1)
 	ss.Args.AddBool("mpi", false, "if set, use MPI for distributed computation")
+	ss.Args.AddBool("actrfs", false, "if true, save final activation-based rf's after each run")
 	ss.Args.Parse() // always parse
 }
 
 // These props register methods so they can be called through gui with arg prompts
 var SimProps = ki.Props{
 	"CallMethods": ki.PropSlice{
-		{"OpenAllARFs", ki.Props{
+		{"OpenAllActRFs", ki.Props{
 			"desc": "open all Activation-based Receptive Fields from selected path (can select a file too)",
 			"icon": "file-open",
 			"Args": ki.PropSlice{

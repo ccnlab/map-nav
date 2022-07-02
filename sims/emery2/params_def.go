@@ -156,7 +156,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#SMA", Desc: "",
 				Params: params.Params{
-					"Layer.Act.Noise.On": "true",
+					"Layer.Act.Noise.On": "false",
 					"Layer.Act.Noise.Ge": "0.001",
 					"Layer.Act.Noise.Gi": "0.001",
 				}},
@@ -213,11 +213,11 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.Lrate.Base":       "0.1",  // .1 > .04 esp long term
-					"Prjn.SWt.Adapt.Lrate":        "0.01", // 0.01 seems to work fine, but .1 maybe more reliable
-					"Prjn.SWt.Adapt.DreamVar":     "0.01", // 0.01 is just tolerable
-					"Prjn.SWt.Init.SPct":          "1.0",  // .5 ok here, 1 best for larger nets: objrec, lvis
-					"Prjn.Learn.KinaseCa.SpikeG":  "12",   // 12 matches theta exactly, higher dwtavg but ok
+					"Prjn.Learn.Lrate.Base":       "0.1",   // .1 > .04 esp long term
+					"Prjn.SWt.Adapt.Lrate":        "0.001", // 0.001 > 0.01 > 0.0001
+					"Prjn.SWt.Adapt.DreamVar":     "0.01",  // 0.01 is just tolerable
+					"Prjn.SWt.Init.SPct":          "1.0",   // .5 ok here, 1 best for larger nets: objrec, lvis
+					"Prjn.Learn.KinaseCa.SpikeG":  "12",    // 12 matches theta exactly, higher dwtavg but ok
 					"Prjn.Learn.KinaseCa.NMDAG":   "1",
 					"Prjn.Learn.KinaseCa.Rule":    "SynSpkTheta",
 					"Prjn.Learn.KinaseCa.MTau":    "5",    // 5 > 10 test more

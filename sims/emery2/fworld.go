@@ -18,6 +18,7 @@ import (
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/popcode"
+	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/etensor"
 	"github.com/emer/etable/etview"
 	"github.com/emer/etable/metric"
@@ -163,7 +164,8 @@ func (ev *FWorld) Config(ntrls int) {
 
 	// uncomment to generate a new world
 	ev.GenWorld()
-	ev.SaveWorld("world.tsv")
+	fnm := fmt.Sprintf("world_%d.tsv", mpi.WorldRank())
+	ev.SaveWorld(gi.FileName(fnm))
 }
 
 // ConfigPats configures the bit pattern representations of mats and acts
@@ -294,7 +296,8 @@ func (ev *FWorld) String() string {
 func (ev *FWorld) Init(run int) {
 
 	// note: could gen a new random world too..
-	ev.OpenWorld("world.tsv")
+	fnm := fmt.Sprintf("world_%d.tsv", mpi.WorldRank())
+	ev.OpenWorld(gi.FileName(fnm))
 
 	ev.Run.Init()
 	ev.Epoch.Init()
@@ -325,6 +328,23 @@ func (ev *FWorld) Init(run int) {
 
 	ev.RefreshEvents = make(map[int]*WEvent)
 	ev.AllEvents = make(map[int]*WEvent)
+}
+
+// InitPos sets initial position based on mpi node
+func (ev *FWorld) InitPos(n int) {
+	ypos := []int{8, ev.Size.Y / 2, ev.Size.Y - 8}
+	nxpos := 12
+	xpos := make([]int, nxpos)
+	xpi := float32(ev.Size.X) / float32(nxpos+1)
+	for i := 0; i < nxpos; i++ {
+		xpos[i] = int(mat32.Round(float32(i+1) * xpi))
+	}
+	// fmt.Printf("%v\n", xpos)
+	yi := n / nxpos
+	xi := n % nxpos
+	ev.PosI.X = xpos[xi]
+	ev.PosI.Y = ypos[yi]
+	ev.PosF = ev.PosI.ToVec2()
 }
 
 // SetWorld sets given mat at given point coord in world

@@ -27,7 +27,6 @@ import (
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/prjn"
 	"github.com/emer/emergent/relpos"
-	"github.com/emer/empi/empi"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/agg"
 	"github.com/emer/etable/etable"
@@ -127,7 +126,7 @@ func (ss *Sim) New() {
 	ss.RndOutPats = false
 	ss.PCAInterval = 10
 	ss.ConfusionEpc = 500
-	ss.MaxTrls = 200 // todo: switch to 512 after validation
+	ss.MaxTrls = 512
 	ss.RFTargs = []string{"Pos", "Act", "Ang", "Rot"}
 	ss.Time.Defaults()
 	ss.ConfigArgs() // do this first, has key defaults
@@ -605,8 +604,7 @@ func (ss *Sim) ConfigLoops() {
 	man.GetLoop(etime.Train, etime.Trial).OnEnd.Replace("UpdateWeights", func() {
 		ss.Net.DWt(&ss.Time)
 		ss.ViewUpdt.RecordSyns() // note: critical to update weights here so DWt is visible
-		// ss.MPIWtFmDWt()
-		ss.Net.WtFmDWt(&ss.Time)
+		ss.MPIWtFmDWt()
 	})
 
 	for m, _ := range man.Stacks {
@@ -631,11 +629,11 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Run).OnStart.Add("NewRun", ss.NewRun)
 
-	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("RandCheck", func() {
-		if ss.Args.Bool("mpi") {
-			empi.RandCheck(ss.Comm) // prints error message
-		}
-	})
+	// man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("RandCheck", func() {
+	// 	if ss.Args.Bool("mpi") {
+	// 		empi.RandCheck(ss.Comm) // prints error message
+	// 	}
+	// })
 
 	/////////////////////////////////////////////
 	// Logging
@@ -792,15 +790,19 @@ func (ss *Sim) ApplyInputs() {
 // for the new run value
 func (ss *Sim) NewRun() {
 	ss.InitRndSeed()
-	ss.Envs.ByMode(etime.Train).Init(0)
-	// ss.Envs.ByMode(etime.Test).Init(0)
+	trnev := ss.Envs[etime.Train.String()].(*FWorld)
+	trnev.Init(0)
+	trnev.InitPos(mpi.WorldRank()) // start in diff locations for mpi nodes
+	tstev := ss.Envs[etime.Test.String()].(*FWorld)
+	tstev.Init(0)
+	tstev.InitPos(mpi.WorldRank())
 	ss.Time.Reset()
 	ss.Time.Mode = etime.Train.String()
 	ss.Net.InitWts()
 	ss.InitStats()
 	ss.StatCounters()
 	ss.Logs.ResetLog(etime.Train, etime.Epoch)
-	// ss.Logs.ResetLog(etime.Test, etime.Epoch)
+	ss.Logs.ResetLog(etime.Test, etime.Epoch)
 }
 
 // TestAll runs through the full set of testing items

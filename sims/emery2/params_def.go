@@ -156,7 +156,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#SMA", Desc: "",
 				Params: params.Params{
-					"Layer.Act.Noise.On": "false",
+					"Layer.Act.Noise.On": "true",
 					"Layer.Act.Noise.Ge": "0.001",
 					"Layer.Act.Noise.Gi": "0.001",
 				}},

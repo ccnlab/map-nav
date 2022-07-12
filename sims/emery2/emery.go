@@ -154,13 +154,13 @@ func (ss *Sim) ConfigEnv() {
 		tst = ss.Envs.ByMode(etime.Test).(*FWorld)
 	}
 
-	trn.Config(200)
+	trn.Config(ss.MaxTrls)
 	trn.Nm = etime.Train.String()
 	trn.Dsc = "training params and state"
 	trn.Init(0)
 	trn.Validate()
 
-	tst.Config(200)
+	tst.Config(ss.MaxTrls)
 	tst.Nm = etime.Test.String()
 	tst.Dsc = "testing params and state"
 	tst.Init(0)
@@ -532,17 +532,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: 10})
 	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: 10})
 
-	// using 4 total threads -- todo: didn't work
-	/*
-		mstd.SetThread(1)
-		mstdct.SetThread(1)
-		cipl.SetThread(2)
-		ciplct.SetThread(2)
-		pcc.SetThread(3)
-		pccct.SetThread(3)
-		sma.SetThread(3)
-		smact.SetThread(3)
-	*/
+	v2wd.SetThread(1)
+	v2wdp.SetThread(1)
+	mstd.SetThread(1)
+	mstdct.SetThread(1)
+	mstdp.SetThread(1)
 
 	net.Defaults()
 	ss.Params.SetObject("Network")
@@ -555,6 +549,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		sr := net.SizeReport()
 		mpi.Printf("%s", sr)
 	}
+	ar := net.ThreadReport() // hand tuning now..
+	mpi.Printf("%s", ar)
 	net.InitWts()
 }
 
@@ -593,7 +589,7 @@ func (ss *Sim) ConfigLoops() {
 		}
 	}
 
-	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
 	// note: needs a lot of data for good actrfs -- 100 here
 	man.AddStack(etime.Test).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
@@ -671,6 +667,12 @@ func (ss *Sim) ConfigLoops() {
 		ss.UpdateActRFs()
 		ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01)
 	})
+	man.GetLoop(etime.Test, etime.Epoch).OnEnd.Add("CheckEpc", func() {
+		if ss.Args.Bool("actrfs") {
+			trnEpc := man.Stacks[etime.Test].Loops[etime.Epoch].Counter.Cur
+			fmt.Printf("epoch: %d\n", trnEpc)
+		}
+	})
 
 	// Save weights to file at end, to look at later
 	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveWeights", func() { ss.SaveWeights() })
@@ -683,8 +685,8 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PctCortex", func() {
 		trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
-		if trnEpc > 1 && trnEpc%10 == 0 {
-			ss.PctCortex = float64(trnEpc) / 100
+		if trnEpc > 1 && trnEpc%5 == 0 {
+			ss.PctCortex = float64(trnEpc) / 50
 			if ss.PctCortex > ss.PctCortexMax {
 				ss.PctCortex = ss.PctCortexMax
 			} else {
@@ -813,7 +815,6 @@ func (ss *Sim) TestAll() {
 	ss.Loops.Mode = etime.Train // Important to reset Mode back to Train because this is called from within the Train Run.
 	ss.Stats.ActRFsAvgNorm()
 	ss.GUI.ViewActRFs(&ss.Stats.ActRFs)
-
 }
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui

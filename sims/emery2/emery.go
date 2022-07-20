@@ -747,7 +747,7 @@ func (ss *Sim) TakeAction(net *deep.Network) {
 	}
 	ss.Stats.SetString("ActAction", actAct)
 
-	println(chosen+"\t", strconv.Itoa(nact)+"\t"+strconv.Itoa(gact)+"\t"+strconv.FormatFloat(ss.PctCortex, 'X', 4, 64))
+	println("Precision: "+chosen+"\t", strconv.Itoa(nact)+"\t"+strconv.Itoa(gact)+"\t"+strconv.FormatFloat(ss.PctCortex, 'X', 4, 64))
 
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	ly.SetType(emer.Input)

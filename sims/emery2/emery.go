@@ -120,7 +120,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 0.9
+	ss.PctCortexMax = 1
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -690,7 +690,7 @@ func (ss *Sim) ConfigLoops() {
 			if ss.PctCortex > ss.PctCortexMax {
 				ss.PctCortex = ss.PctCortexMax
 			} else {
-				fmt.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, trnEpc)
+				mpi.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, trnEpc)
 			}
 		}
 	})
@@ -1092,7 +1092,7 @@ func (ss *Sim) ConfigNetView(nv *netview.NetView) {
 // ConfigGui configures the GoGi gui interface for this simulation,
 func (ss *Sim) ConfigGui() *gi.Window {
 	title := "Emery"
-	ss.GUI.MakeWindow(ss, "lvis", title, `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/ccnlab/map-nav/blob/master/sims/emery2/README.md">README.md on GitHub</a>.</p>`)
+	ss.GUI.MakeWindow(ss, "emery2", title, `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/ccnlab/map-nav/blob/master/sims/emery2/README.md">README.md on GitHub</a>.</p>`)
 	ss.GUI.CycleUpdateInterval = 10
 
 	nv := ss.GUI.AddNetView("NetView")

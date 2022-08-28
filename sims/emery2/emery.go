@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/emer/axon/axon"
@@ -121,7 +120,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 1
+	ss.PctCortexMax = .9
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -737,17 +736,13 @@ func (ss *Sim) TakeAction(net *deep.Network) {
 	} else {
 		ss.Stats.SetFloat("ActMatch", 0)
 	}
-	chosen := "GenAction"
 	actAct := ss.Stats.String("GenAction")
 	if erand.BoolProb(float64(urgency), -1) {
 		actAct = ss.Stats.String("GenAction")
 	} else if erand.BoolProb(ss.PctCortex, -1) {
 		actAct = ss.Stats.String("NetAction")
-		chosen = "NetAction"
 	}
 	ss.Stats.SetString("ActAction", actAct)
-
-	println("Performance: "+chosen+"\t", strconv.Itoa(nact)+"\t"+strconv.Itoa(gact)+"\t"+strconv.FormatFloat(ss.PctCortex, 'X', 4, 64))
 
 	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
 	ly.SetType(emer.Input)

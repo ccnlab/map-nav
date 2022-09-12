@@ -30,7 +30,6 @@ var ParamSets = params.Sets{
 					"Layer.Learn.CaSpk.SpikeG":    "12",  // 12 > 8 -- for larger nets
 					"Layer.Learn.CaLrn.SpkVgccCa": "35",  // 70 / 5 or 35 / 10 both work
 					"Layer.Learn.CaLrn.VgccTau":   "10",  // 10 > 5 ?
-					"Layer.Learn.RLrate.SigDeriv": "true",
 				}},
 			{Sel: ".Hidden", Desc: "noise? sub-pools",
 				Params: params.Params{
@@ -57,13 +56,13 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "TRCLayer", Desc: "",
 				Params: params.Params{
-					"Layer.TRC.DriveScale":      "0.15", // .15 > .05 default
-					"Layer.Act.Decay.Act":       "0.5",
-					"Layer.Act.Decay.Glong":     "1", // clear long
-					"Layer.Inhib.Pool.FFEx":     "0.0",
-					"Layer.Inhib.Layer.FFEx":    "0.0",
-					"Layer.Learn.RLrate.On":     "true", // beneficial for trace
-					"Layer.Learn.RLrate.NonMid": "1",
+					"Layer.TRC.DriveScale":          "0.15", // .15 > .05 default
+					"Layer.Act.Decay.Act":           "0.5",
+					"Layer.Act.Decay.Glong":         "1", // clear long
+					"Layer.Inhib.Pool.FFEx":         "0.0",
+					"Layer.Inhib.Layer.FFEx":        "0.0",
+					"Layer.Learn.RLrate.On":         "true", // beneficial for trace
+					"Layer.Learn.RLrate.SigmoidMin": "1",
 				}},
 			{Sel: ".Depth", Desc: "depth layers use pool inhibition only",
 				Params: params.Params{

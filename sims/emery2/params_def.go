@@ -89,14 +89,14 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Layer.Gi":    "1", // some weaker global inhib
 					"Layer.Inhib.Pool.On":     "true",
 					"Layer.Inhib.Pool.Gi":     "0.8", // weaker
-					"Layer.Inhib.ActAvg.Init": "0.2",
+					"Layer.Inhib.ActAvg.Init": "0.12",
 				}},
 			{Sel: ".S1V", Desc: "lower inhib, higher act",
 				Params: params.Params{
 					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Inhib.Layer.Gi":    "1.1",
 					"Layer.Inhib.Pool.On":     "false",
-					"Layer.Inhib.ActAvg.Init": "0.1",
+					"Layer.Inhib.ActAvg.Init": "0.05",
 				}},
 			{Sel: ".Ins", Desc: "pools",
 				Params: params.Params{
@@ -143,7 +143,7 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi":    "1.4",
 					"Layer.Inhib.Pool.Gi":     "1.4",
-					"Layer.Inhib.ActAvg.Init": "0.08",
+					"Layer.Inhib.ActAvg.Init": "0.10",
 				}},
 			{Sel: "#cIPLP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
@@ -152,7 +152,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".PCC", Desc: "PCC general",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.015",
+					"Layer.Inhib.ActAvg.Init": "0.01",
 					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Inhib.Pool.On":     "true",
 					"Layer.Inhib.Layer.Gi":    "1.1",
@@ -161,7 +161,7 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi":    "1.4",
 					"Layer.Inhib.Pool.Gi":     "1.4",
-					"Layer.Inhib.ActAvg.Init": "0.08",
+					"Layer.Inhib.ActAvg.Init": "0.11",
 				}},
 			{Sel: "#V2WdP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
@@ -170,7 +170,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".SMA", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.03",
+					"Layer.Inhib.ActAvg.Init": "0.02",
 					"Layer.Inhib.Pool.On":     "false",
 				}},
 			{Sel: "#SMA", Desc: "",
@@ -181,7 +181,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#SMACT", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.2",
+					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.Act.Noise.On":      "true",
 					"Layer.Act.Noise.Ge":      "0.001",
 					"Layer.Act.Noise.Gi":      "0.001",
@@ -199,9 +199,10 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#VL", Desc: "VL regular inhib",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":   "0.8",
-					"Layer.Inhib.Pool.FFEx":  "0.0",
-					"Layer.Inhib.Layer.FFEx": "0.0",
+					"Layer.Inhib.ActAvg.Init": "0.12",
+					"Layer.Inhib.Layer.Gi":    "0.8",
+					"Layer.Inhib.Pool.FFEx":   "0.0",
+					"Layer.Inhib.Layer.FFEx":  "0.0",
 				}},
 			{Sel: "#M1", Desc: "noise!?",
 				Params: params.Params{
@@ -215,23 +216,28 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".IT", Desc: "reg",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.12",
+					"Layer.Inhib.ActAvg.Init": "0.02",
 					"Layer.Inhib.Pool.On":     "false",
 					"Layer.Inhib.Layer.Gi":    "1.1",
 				}},
 			{Sel: "#ITCT", Desc: "reg",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.1",
-					"Layer.Inhib.Layer.On": "true",
-					"Layer.Inhib.Pool.On":  "true",
+					"Layer.Inhib.ActAvg.Init": "0.15",
+					"Layer.Inhib.Layer.Gi":    "1.1",
+					"Layer.Inhib.Layer.On":    "true",
+					"Layer.Inhib.Pool.On":     "true",
 				}},
 			{Sel: ".LIP", Desc: "reg",
 				Params: params.Params{
-					"Layer.Inhib.ActAvg.Init": "0.06",
+					"Layer.Inhib.ActAvg.Init": "0.02",
 					"Layer.Inhib.Layer.Gi":    "1.1",
 					"Layer.Inhib.Layer.On":    "true",
 					"Layer.Inhib.Pool.On":     "true",
 					"Layer.Inhib.Pool.Gi":     "1.1",
+				}},
+			{Sel: "#LIPCT", Desc: "reg",
+				Params: params.Params{
+					"Layer.Inhib.ActAvg.Init": "0.15",
 				}},
 
 			//////////////////////////////////////////////////////////
@@ -239,7 +245,7 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.Lrate.Base":   "0.01",  // .1 > .04 > .15
+					"Prjn.Learn.Lrate.Base":   "0.04",
 					"Prjn.SWt.Adapt.Lrate":    "0.001", // 0.001 > 0.01 > 0.0001
 					"Prjn.SWt.Adapt.DreamVar": "0.0",   // 0.01 is just tolerable
 					"Prjn.SWt.Init.SPct":      "1.0",   // .5 ok here, 1 best for larger nets: objrec, lvis
@@ -278,7 +284,8 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".CTCtxt", Desc: "all CT context prjns",
 				Params: params.Params{
-					"Prjn.Trace": "false",
+					"Prjn.Learn.Lrate.Base": "0.04",
+					"Prjn.Trace":            "false",
 				}},
 			{Sel: ".CTFmSuper", Desc: "CT from main super",
 				Params: params.Params{
@@ -329,6 +336,10 @@ var ParamSets = params.Sets{
 					"Prjn.PrjnScale.Rel": "0.1",
 				}},
 			{Sel: "#MSTdTocIPL", Desc: "",
+				Params: params.Params{
+					"Prjn.PrjnScale.Abs": "2.0",
+				}},
+			{Sel: "#PCCToSMA", Desc: "",
 				Params: params.Params{
 					"Prjn.PrjnScale.Abs": "2.0",
 				}},

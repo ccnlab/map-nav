@@ -23,6 +23,7 @@ import (
 	"github.com/emer/emergent/erand"
 	"github.com/emer/emergent/estats"
 	"github.com/emer/emergent/etime"
+	"github.com/emer/emergent/evec"
 	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/prjn"
@@ -120,7 +121,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = .9
+	ss.PctCortexMax = 0.5
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -185,14 +186,23 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sameu := prjn.NewPoolSameUnit()
 	sameu.SelfCon = false
 	p1to1 := prjn.NewPoolOneToOne()
+	_ = p1to1
 	one2one := prjn.NewOneToOne()
+	_ = one2one
 
 	rndcut := prjn.NewUnifRnd()
 	rndcut.PCon = 0.1
 	_ = rndcut
 
-	var parprjn prjn.Pattern
-	parprjn = full
+	nPerAng := 10 // 30 total > 20 -- small improvement
+	nPerDepth := 2
+	rfDepth := 6
+	rfWidth := 3
+
+	rect := prjn.NewRect()
+	rect.Size.Set(rfWidth, rfDepth) // 6 > 8 > smaller
+	rect.Scale.Set(1.0/float32(nPerAng), 1.0/float32(nPerDepth))
+	_ = rect
 
 	ev := ss.Envs[etime.Train.String()].(*FWorld)
 	fsz := 1 + 2*ev.FoveaSize
@@ -200,247 +210,169 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	space := float32(2)
 
+	////////////////////////////////////////
 	// input / output layers:
-	v2wd, v2wdp := net.AddInputTRC4D("V2Wd", ev.DepthPools, ev.NFOVRays, ev.DepthSize/ev.DepthPools, 1, space)
-	v2fd, v2fdp := net.AddInputTRC4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1, space) // FovDepth
+
+	v2wd, v2wdp := net.AddInputTRC4D("V2Wd", 1, ev.NFOVRays, ev.DepthSize, 1, 2*space)
+
+	// skip fovea depth for now:
+	// v2fd, v2fdp := net.AddInputTRC4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1, space) // FovDepth
 	v2wd.SetClass("Depth")
 	v2wdp.SetClass("Depth")
-	v2fd.SetClass("Depth")
-	v2fdp.SetClass("Depth")
+	// v2fd.SetClass("Depth")
+	// v2fdp.SetClass("Depth")
 
-	v1f, v1fp := net.AddInputTRC4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
+	// v1f, v1fp := net.AddInputTRC4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
+	v1f := net.AddLayer4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, emer.Input) // Fovea
 	v1f.SetClass("Fovea")
-	v1fp.SetClass("Fovea")
+	// v1fp.SetClass("Fovea")
 
-	s1s, s1sp := net.AddInputTRC4D("S1S", 1, 4, 2, 1, space) // ProxSoma
+	// s1s, s1sp := net.AddInputTRC4D("S1S", 1, 4, 2, 1, space) // ProxSoma
+	s1s := net.AddLayer4D("S1S", 1, 4, 2, 1, emer.Input)
 	s1s.SetClass("S1S")
-	s1sp.SetClass("S1S")
+	// s1sp.SetClass("S1S")
 
-	s1v, s1vp := net.AddInputTRC4D("S1V", 1, 2, ev.PopSize, 1, space) // Vestibular
-	s1v.SetClass("S1V")
-	s1vp.SetClass("S1V")
+	hd, hdp := net.AddInputTRC2D("HeadDir", 1, ev.PopSize, space)
+	hd.SetClass("HeadDir")
+	hdp.SetClass("HeadDir")
 
 	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
 	ins.SetClass("Ins")
 
 	m1 := net.AddLayer2D("M1", 10, 10, emer.Hidden)
-	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target)  // Action
-	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
-
+	m1.SetClass("M1")
 	m1p := net.AddTRCLayer2D("M1P", 10, 10)
+	m1p.SetClass("M1")
 	m1p.Driver = "M1"
 
-	// mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
-	mstd, mstdct := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
-	// todo: try ss.Prjn3x3Skp1 orig: p1to1
-	net.ConnectLayers(mstdct, v2wdp, ss.Prjns.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv2") // 3 is too high
-	net.ConnectLayers(v2wdp, mstd, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(v2wdp, mstdct, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
-	net.ConnectCTSelf(mstdct, p1to1)
-
-	mstd.SetRepIdxsShape(emer.CenterPoolIdxs(mstd, 2), emer.CenterPoolShape(mstd, 2))
-	mstdct.SetRepIdxsShape(emer.CenterPoolIdxs(mstdct, 2), emer.CenterPoolShape(mstdct, 2))
-
-	cipl, ciplct := deep.AddSuperCT4D(net.AsAxon(), "cIPL", 3, 3, 8, 8, space, one2one)
-	// cipl, ciplct, ciplp := deep.AddSuperCTTRC4D(net.AsAxon(), "cIPL", 3, 3, 8, 8, space, one2one)
-	// was full
-	net.ConnectCTSelf(ciplct, p1to1)
-	net.ConnectLayers(ciplct, v2wdp, full, emer.Forward).SetClass("ToPulv1")
-	net.ConnectLayers(v2wdp, cipl, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(v2wdp, ciplct, full, emer.Back).SetClass("FmPulv")
-
-	pcc, pccct := deep.AddSuperCT4D(net.AsAxon(), "PCC", 2, 2, 7, 7, space, one2one)
-	// was full
-	net.ConnectCTSelf(pccct, p1to1)
-	net.ConnectLayers(pccct, v2wdp, full, emer.Forward).SetClass("ToPulv1")
-	net.ConnectLayers(v2wdp, pcc, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(v2wdp, pccct, full, emer.Back).SetClass("FmPulv")
-
-	sma, smact := net.AddSuperCT2D("SMA", 10, 10, space, one2one) // was full
-	net.ConnectCTSelf(smact, full)
-	net.ConnectToTRC(sma, smact, m1p, full, full)
-
-	it, itct := net.AddSuperCT2D("IT", 10, 10, space, one2one) // was full
-	net.ConnectCTSelf(itct, full)
-	net.ConnectToTRC(it, itct, v1fp, full, full)
-
-	lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8, space, one2one) // was full
-	net.ConnectCTSelf(lipct, full)
-	net.ConnectLayers(lipct, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, emer.Forward).SetClass("CTToPulv3")
-	net.ConnectLayers(v2fdp, lipct, ss.Prjns.Prjn4x3Skp2, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(v2fdp, lip, ss.Prjns.Prjn4x3Skp2, emer.Back).SetClass("FmPulv")
-
-	// todo: LIP fovea is not topo organized for left, middle right positions -- groups are depth organized
-	// not enough resolution to really map that out here.
-	net.ConnectLayers(lipct, v1fp, full, emer.Back).SetClass("ToPulv1") // attention
-
-	m1.SetClass("M1")
+	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target) // Action
 	vl.SetClass("M1")
+	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
 	act.SetClass("M1")
-	m1p.SetClass("M1")
-
-	mstd.SetClass("MSTd")
-	mstdct.SetClass("MSTd")
-	// mstdp.SetClass("MSTd")
-
-	cipl.SetClass("cIPL")
-	ciplct.SetClass("cIPL")
-	// ciplp.SetClass("cIPL")
-
-	pcc.SetClass("PCC")
-	pccct.SetClass("PCC")
-
-	sma.SetClass("SMA")
-	smact.SetClass("SMA")
-
-	it.SetClass("IT")
-	itct.SetClass("IT")
-
-	lip.SetClass("LIP")
-	lipct.SetClass("LIP")
-
-	////////////////////
-	// basic super cons
-
-	net.ConnectLayers(v2wd, mstd, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("SuperFwd")
-
-	// MStd <-> CIPl
-	net.ConnectLayers(mstd, cipl, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("SuperFwd")
-	net.ConnectLayers(cipl, mstd, ss.Prjns.Prjn4x4Skp2Recip, emer.Back)
-	// net.ConnectLayers(ciplct, mstdct, ss.Prjns.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
-
-	// net.ConnectLayers(mstdp, ciplct, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(mstdp, cipl, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(ciplct, mstdp, ss.Prjns.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv3")
-
-	net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack")
-	net.ConnectLayers(sma, mstd, full, emer.Back)
-
-	// CIPl <-> PCC
-	net.ConnectLayers(cipl, pcc, parprjn, emer.Forward).SetClass("SuperFwd")
-	net.ConnectLayers(pcc, cipl, parprjn, emer.Back)
-	// net.ConnectLayers(pccct, ciplct, parprjn, emer.Back).SetClass("CTBack")
-
-	// net.ConnectLayers(ciplp, pccct, parprjn, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(ciplp, pcc, parprjn, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(pccct, ciplp, parprjn, emer.Forward).SetClass("CTToPulv2")
-
-	// PCC <-> SMA
-	net.ConnectLayers(pcc, sma, parprjn, emer.Forward).SetClass("SuperFwd")
-	net.ConnectLayers(sma, pcc, parprjn, emer.Back)
-	net.ConnectLayers(smact, pccct, parprjn, emer.Back).SetClass("CTBack")
-
-	// SMA <-> M1
-	net.ConnectLayers(sma, m1, parprjn, emer.Forward).SetClass("SuperFwd")
 
 	net.BidirConnectLayers(m1, vl, full)
 
-	net.ConnectLayers(v1f, it, full, emer.Forward).SetClass("SuperFwd")
-	net.ConnectLayers(v2fd, lip, ss.Prjns.Prjn4x3Skp2, emer.Forward).SetClass("SuperFwd")
+	//////////////////////////////////
+	// Hidden layers
 
-	////////////////////
-	// to MSTd
+	// vestibular / head direction hidden layer:
+	s2v, s2vct := net.AddSuperCT2D("S2V", 10, 10, space, one2one)
+	s2v.SetClass("S2V")
+	s2vct.SetClass("S2V CTCopy")
+	// net.ConnectCTSelf(s2vct, full) // not for one-step
+	net.ConnectToTRC(s2v, s2vct, hdp, full, full)
+	net.ConnectLayers(hd, s2v, full, emer.Forward)
 
-	// net.ConnectLayers(mstd, mstd, sameu, emer.Lateral)
+	// it, itct := net.AddSuperCT2D("IT", 10, 10, space, one2one)
+	// it.SetClass("IT")
+	// itct.SetClass("IT CTCopy")
+	// net.ConnectCTSelf(itct, full)
+	// net.ConnectToTRC(it, itct, v1fp, full, full)
+	// net.ConnectLayers(v1f, it, full, emer.Forward).SetClass("SuperFwd")
 
-	// net.ConnectLayers(sma, mstd, parprjn, emer.Back)
-	// net.ConnectLayers(s1v, mstd, full, emer.Back)
+	// lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8, space, one2one)
+	// lip.SetClass("LIP")
+	// lipct.SetClass("LIP CTCopy")
+	// net.ConnectCTSelf(lipct, full)
+	// net.ConnectToTRC(lip, lipct, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, ss.Prjns.Prjn4x3Skp2)
+	// net.ConnectLayers(v2fd, lip, ss.Prjns.Prjn4x3Skp2, emer.Forward).SetClass("SuperFwd")
 
-	// MSTdCT top-down depth
-	// net.ConnectLayers(ciplct, mstdct, parprjn, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(pccct, mstdct, parprjn, emer.Back).SetClass("CTBack")
+	// todo: LIP fovea is not topo organized for left, middle right positions
+	// groups are depth organized
+	// not enough resolution to really map that out here.
+	// net.ConnectLayers(lipct, v1fp, full, emer.Back).SetClass("ToPulv1") // attention
 
-	// ActToCT are used temporarily to endure prediction is properly contextualized
-	// net.ConnectCtxtToCT(act, mstdct, full).SetClass("ActToCT")
-	// net.ConnectCtxtToCT(act, ciplct, full).SetClass("ActToCT")
-	// net.ConnectCtxtToCT(act, smact, full).SetClass("ActToCT")
-	// net.ConnectCtxtToCT(act, pccct, full).SetClass("ActToCT")
-	// net.ConnectCtxtToCT(act, itct, full).SetClass("ActToCT")
-	// net.ConnectCtxtToCT(act, lipct, full).SetClass("ActToCT")
+	// 4D topo MSTd with pools:
+	// // mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
+	// mstd, mstdct := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
+	// // todo: try ss.Prjn3x3Skp1 orig: p1to1
+	// net.ConnectCTSelf(mstdct, p1to1)
+	// net.ConnectToTRC(mstd, mstdct, v2wdp, ss.Prjns.Prjn4x4Skp2Recip, ss.Prjns.Prjn4x4Skp2)
+	// // net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
+	// mstd.SetRepIdxsShape(emer.CenterPoolIdxs(mstd, 2), emer.CenterPoolShape(mstd, 2))
+	// mstdct.SetRepIdxsShape(emer.CenterPoolIdxs(mstdct, 2), emer.CenterPoolShape(mstdct, 2))
 
-	// m1p plus phase has action, Ctxt -> CT allows CT now to use that prev action
+	// 2D MSTd -- much simpler:
+	mstdSz := evec.Vec2i{X: (ev.NFOVRays - (rfWidth - 1)) * nPerAng, Y: (ev.DepthSize - (rfDepth - 1)) * nPerDepth}
+	mstd, mstdct := net.AddSuperCT2D("MSTd", mstdSz.Y, mstdSz.X, space, one2one) // def one2one
+	mstd.SetClass("MSTd")
+	mstdct.SetClass("MSTd CTCopy")
+	// mstdp.SetClass("MSTd")
+	// net.ConnectCTSelf(mstdct, full) // not needed or beneficial for simple 1 step move pred
+	net.ConnectToTRC(mstd, mstdct, v2wdp, full, rect)
+	net.ConnectLayers(v2wd, mstd, rect, emer.Forward)
 
-	net.ConnectCtxtToCT(m1p, mstdct, full).SetClass("FmPulv")
-	net.ConnectCtxtToCT(m1p, ciplct, full).SetClass("FmPulv")
-	net.ConnectCtxtToCT(m1p, smact, full).SetClass("FmPulv")
-	net.ConnectCtxtToCT(m1p, pccct, full).SetClass("FmPulv")
-	net.ConnectCtxtToCT(m1p, itct, full).SetClass("FmPulv")
-	net.ConnectCtxtToCT(m1p, lipct, full).SetClass("FmPulv")
-
-	// // S1 vestibular
-	// nt.ConnectLayers(mstdct, s1vp, full, emer.Forward)
-	// nt.ConnectLayers(s1vp, mstdct, full, emer.Back).SetClass("FmPulv")
-	// nt.ConnectLayers(s1vp, mstd, full, emer.Back).SetClass("FmPulv")
-
-	// todo: try S -> CT leak back -- useful in wwi3d
-	// todo: try higher CT -> v2wdp  -- useful in wwi3d
-
-	////////////////////
-	// to cIPL
-
-	// net.ConnectLayers(sma, cipl, parprjn, emer.Back)
-	net.ConnectLayers(s1s, cipl, full, emer.Back)
-	net.ConnectLayers(s1v, cipl, full, emer.Back)
+	// note: skipping cipl for now:
+	// cipl, ciplct := net.AddSuperCT4D("cIPL", 3, 3, 8, 8, space, one2one)
+	// // cipl, ciplct, ciplp := net.AddSuperCTTRC4D("cIPL", 3, 3, 8, 8, space, one2one)
+	// cipl.SetClass("cIPL")
+	// ciplct.SetClass("cIPL")
+	// ciplp.SetClass("cIPL")
+	// net.ConnectCTSelf(ciplct, p1to1)
+	// net.ConnectToTRC(cipl, ciplct, v2wdp, full, full)
+	// v2wdp.RecvPrjns().SendName(ciplct.Name()).SetClass("ToPulv1")
+	// MStd <-> CIPl
+	// net.ConnectLayers(mstd, cipl, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("SuperFwd")
+	// net.ConnectLayers(cipl, mstd, ss.Prjns.Prjn4x4Skp2Recip, emer.Back)
+	// net.ConnectLayers(ciplct, mstdct, ss.Prjns.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
+	// net.ConnectLayers(mstdp, ciplct, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
+	// net.ConnectLayers(mstdp, cipl, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
+	// net.ConnectLayers(ciplct, mstdp, ss.Prjns.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv3")
+	// net.ConnectLayers(sma, cipl, full, emer.Back)
+	// net.ConnectLayers(s1s, cipl, full, emer.Back)
+	// net.ConnectLayers(s2v, cipl, full, emer.Back)
 	// net.ConnectLayers(vl, cipl, full, emer.Back) // todo: m1?
-
-	// net.ConnectLayers(pccct, ciplct, parprjn, emer.Back).SetClass("CTBack")
-	net.ConnectLayers(smact, ciplct, parprjn, emer.Back).SetClass("CTBack")
-
+	// net.ConnectLayers(pccct, ciplct, full, emer.Back).SetClass("CTBack")
+	// net.ConnectLayers(smact, ciplct, full, emer.Back).SetClass("CTBack")
 	// net.ConnectLayers(mstdct, ciplp, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("FwdToPulv")
 
-	// todo: try S -> CT leak back -- useful in wwi3d
-	// todo: try higher CT -> v2wdp  -- useful in wwi3d
+	// 4D topo pcc:
+	// pcc, pccct := net.AddSuperCT4D("PCC", 2, 2, 7, 7, space, one2one)
+	// net.ConnectCTSelf(pccct, p1to1)
+	// net.ConnectToTRC(pcc, pccct, v2wdp, full, full)
+	// v2wdp.RecvPrjns().SendName(pccct.Name()).SetClass("ToPulv1")
 
-	// todo: S1Vp should be head direction too.
+	// 2d PCC -- full layer consolidating MST space
+	// bidir connected to MSTDd super, contributes prediction to V2WdP
+	pcc, pccct := net.AddSuperCT2D("PCC", 10, 10, space, one2one)
+	pcc.SetClass("PCC")
+	pccct.SetClass("PCC CTInteg")
+	net.ConnectCTSelf(pccct, full)                  // longer time integration to integrate depth map..
+	net.ConnectToTRC(pcc, pccct, v2wdp, full, full) // top-down depth pred
+	// net.BidirConnectLayers(mstd, pcc, full)
+	net.ConnectLayers(mstd, pcc, full, emer.Forward)
+	// net.ConnectLayers(pccct, mstdct, full, emer.Back).SetClass("CTBack")
 
-	// S1 vestibular
-	net.ConnectLayers(ciplct, s1vp, full, emer.Forward).SetClass("CTToPulv")
-	net.ConnectLayers(s1vp, ciplct, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(s1vp, cipl, full, emer.Back).SetClass("FmPulv")
-
-	////////////////////
-	// to PCC
-
+	// pcc integrates somatosensory as well
 	net.ConnectLayers(s1s, pcc, full, emer.Forward)
-	net.ConnectLayers(s1v, pcc, full, emer.Forward)
-	// net.ConnectLayers(vl, pcc, full, emer.Back)
+	// net.BidirConnectLayers(s2v, pcc, full) // todo: just direct head dir input instead?
+	net.ConnectLayers(s2v, pcc, full, emer.Forward)
 
-	// net.ConnectLayers(smact, pccct, parprjn, emer.Back).SetClass("CTBack")
+	// sma gets from everything, predicts m1p
+	sma, smact := net.AddSuperCT2D("SMA", 10, 10, space, one2one)
+	sma.SetClass("SMA")
+	smact.SetClass("SMA CTInteg")  // todo -- test
+	net.ConnectCTSelf(smact, full) // longer temporal integration?  probably good.  todo.
+	net.ConnectToTRC(sma, smact, m1p, full, full)
+	// net.BidirConnectLayers(pcc, sma, full)
+	net.ConnectLayers(pcc, sma, full, emer.Forward)
+	net.ConnectLayers(smact, pccct, full, emer.Back).SetClass("CTBack")
+	net.ConnectLayers(sma, m1, full, emer.Forward)
 
-	// S1 vestibular
-	net.ConnectLayers(pccct, s1vp, full, emer.Forward).SetClass("CTToPulv")
-	net.ConnectLayers(s1vp, pccct, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(s1vp, pcc, full, emer.Back).SetClass("FmPulv")
-
-	// S1 soma
-	net.ConnectLayers(pccct, s1sp, full, emer.Forward).SetClass("CTToPulv")
-	net.ConnectLayers(s1sp, pccct, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(s1sp, pcc, full, emer.Back).SetClass("FmPulv")
-
-	////////////////////
-	// to SMA
-
-	net.ConnectLayers(it, sma, full, emer.Forward)
-	net.ConnectLayers(lip, sma, full, emer.Forward)
+	// net.ConnectLayers(it, sma, full, emer.Forward)
+	// net.ConnectLayers(lip, sma, full, emer.Forward)
+	net.ConnectLayers(v1f, sma, full, emer.Forward)
 	net.ConnectLayers(s1s, sma, full, emer.Forward)
+	// net.BidirConnectLayers(s2v, sma, full) // todo: just direct head dir input instead?
+	net.ConnectLayers(s2v, sma, full, emer.Forward)
+	// net.ConnectLayers(smact, s2vct, full, emer.Back).SetClass("CTBack")
+
+	// net.ConnectLayers(sma, mstd, full, emer.Back)
+	// net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack")
 
 	// net.ConnectLayers(vl, sma, full, emer.Back)
-	// net.ConnectLayers(cipl, sma, parprjn, emer.Forward) // todo: forward??
+	// net.ConnectLayers(cipl, sma, full, emer.Forward) // todo: forward??
 	// net.ConnectLayers(vl, smact, full, emer.Back)
-
-	// S1 vestibular
-	net.ConnectLayers(smact, s1vp, full, emer.Forward).SetClass("CTToPulv")
-	net.ConnectLayers(s1vp, smact, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(s1vp, sma, full, emer.Back).SetClass("FmPulv")
-
-	// S1 soma
-	net.ConnectLayers(smact, s1sp, full, emer.Forward).SetClass("CTToPulv")
-	net.ConnectLayers(s1sp, smact, full, emer.Back).SetClass("FmPulv")
-	net.ConnectLayers(s1sp, sma, full, emer.Back).SetClass("FmPulv")
-
-	////////////////////
-	// to M1
 
 	net.ConnectLayers(smact, vl, full, emer.Forward)
 	// net.ConnectLayers(sma, vl, full, emer.Forward) // no, right?
@@ -448,93 +380,123 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////
 	// to IT
 
-	net.ConnectLayers(sma, it, full, emer.Back)
+	// net.ConnectLayers(sma, it, full, emer.Back)
 	// net.ConnectLayers(pcc, it, full, emer.Back) // not useful
 
-	net.ConnectLayers(smact, itct, parprjn, emer.Back).SetClass("CTBack") // needs to know how moving..
+	// net.ConnectLayers(smact, itct, full, emer.Back).SetClass("CTBack") // needs to know how moving..
 	// net.ConnectLayers(pccct, itct, full, emer.Back).SetClass("CTBack")
 
 	////////////////////
 	// to LIP
 
-	net.ConnectLayers(sma, lip, full, emer.Back)
+	// net.ConnectLayers(sma, lip, full, emer.Back)
 	// net.ConnectLayers(pcc, lip, full, emer.Back) // not useful
 
-	net.ConnectLayers(smact, lipct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
+	// net.ConnectLayers(smact, lipct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
 	// net.ConnectLayers(pccct, lipct, full, emer.Back).SetClass("CTBack")
+
+	// ActToCT are used temporarily to endure prediction is properly contextualized
+	/*
+		net.ConnectCtxtToCT(act, mstdct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(act, ciplct, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(act, smact, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(act, pccct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(act, itct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(act, lipct, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(act, s2vct, full).SetClass("ActToCT")
+	*/
+
+	// m1p plus phase has action, Ctxt -> CT allows CT now to use that prev action
+
+	// vl > m1 > m1p > act
+	/*
+		net.ConnectCtxtToCT(vl, mstdct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(vl, ciplct, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(vl, smact, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(vl, pccct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(vl, itct, full).SetClass("ActToCT")
+		// net.ConnectCtxtToCT(vl, lipct, full).SetClass("ActToCT")
+		net.ConnectCtxtToCT(vl, s2vct, full).SetClass("ActToCT")
+	*/
+
+	net.ConnectLayers(vl, mstd, full, emer.Forward).SetClass("ActToSuper")
+	// net.ConnectLayers(vl, cipl, full, emer.Forward).SetClass("ActToSuper")
+	net.ConnectLayers(vl, sma, full, emer.Forward).SetClass("ActToSuper")
+	net.ConnectLayers(vl, pcc, full, emer.Forward).SetClass("ActToSuper")
+	// net.ConnectLayers(vl, it, full, emer.Forward).SetClass("ActToSuper")
+	// net.ConnectLayers(vl, lip, full, emer.Forward).SetClass("ActToSuper")
+	net.ConnectLayers(vl, s2v, full, emer.Forward).SetClass("ActToSuper")
 
 	////////////////////
 	// lateral inhibition
 
-	net.LateralConnectLayerPrjn(mstd, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(mstdct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(cipl, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(ciplct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(pcc, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(pccct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(sma, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(smact, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
-	net.LateralConnectLayerPrjn(m1, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	/*
+		net.LateralConnectLayerPrjn(mstd, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(mstdct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		// net.LateralConnectLayerPrjn(cipl, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		// net.LateralConnectLayerPrjn(ciplct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(pcc, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(pccct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(sma, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(smact, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(m1, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+	*/
 
 	////////////////////
 	// Shortcuts
 
-	net.ConnectLayers(v2wd, cipl, rndcut, emer.Forward).SetClass("V1SC")
-	net.ConnectLayers(v2wd, ciplct, rndcut, emer.Forward).SetClass("V1SC")
-	net.ConnectLayers(v2wd, pcc, rndcut, emer.Forward).SetClass("V1SC")
-	net.ConnectLayers(v2wd, pccct, rndcut, emer.Forward).SetClass("V1SC")
-	net.ConnectLayers(v2wd, sma, rndcut, emer.Forward).SetClass("V1SC")
-	net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, cipl, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, ciplct, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, pcc, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, pccct, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, sma, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
 
 	//////////////////////////////////////
 	// position
 
-	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wd.Name(), YAlign: relpos.Front, Space: 15})
-	v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: 4})
-	v2wdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2wd.Name(), XAlign: relpos.Left, Space: 4})
+	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wdp.Name(), YAlign: relpos.Front, Space: space})
+	// v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
+	v2wdp.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wd.Name(), YAlign: relpos.Front, Space: space})
 
-	v1fp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: 4})
-	it.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1fp.Name(), XAlign: relpos.Left, Space: 4})
-	itct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: it.Name(), XAlign: relpos.Left, Space: 4})
+	// v1fp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
+	// it.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1fp.Name(), XAlign: relpos.Left, Space: space})
+	// itct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: it.Name(), XAlign: relpos.Left, Space: space})
 
-	v2fd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: 8})
-	v2fdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2fd.Name(), XAlign: relpos.Left, Space: 10})
-	lip.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fdp.Name(), YAlign: relpos.Front, Space: 20})
-	lipct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: lip.Name(), YAlign: relpos.Front, Space: 8})
+	// v2fd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: space})
+	// v2fdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2fd.Name(), XAlign: relpos.Left, Space: space})
+	// lip.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fdp.Name(), YAlign: relpos.Front, Space: space})
+	// lipct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: lip.Name(), YAlign: relpos.Front, Space: space})
 
-	s1s.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fd.Name(), YAlign: relpos.Front, Space: 20})
-	s1sp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: 4})
-	s1v.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s1s.Name(), YAlign: relpos.Front, Space: 15})
-	s1vp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1v.Name(), XAlign: relpos.Left, Space: 4})
+	s1s.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
+	// s1sp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: space})
 
-	ins.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s1v.Name(), YAlign: relpos.Front, Space: 20})
+	hd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: space})
+	hdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: hd.Name(), XAlign: relpos.Left, Space: space})
 
-	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: ins.Name(), YAlign: relpos.Front, Space: 10})
-	act.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: vl.Name(), XAlign: relpos.Left, Space: 4})
+	s2v.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: hdp.Name(), XAlign: relpos.Left, Space: space})
+	s2vct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s2v.Name(), YAlign: relpos.Front, Space: space})
+
+	ins.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: 2 * space})
+
+	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: ins.Name(), YAlign: relpos.Front, Space: space})
+	act.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: vl.Name(), XAlign: relpos.Left, Space: space})
 
 	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: v2wd.Name(), XAlign: relpos.Left, YAlign: relpos.Front})
-	mstdct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstd.Name(), XAlign: relpos.Left, Space: 10})
-	// mstdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: mstdct.Name(), XAlign: relpos.Left, Space: 10})
 
-	cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: 4})
-	ciplct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: cipl.Name(), XAlign: relpos.Left, Space: 10})
-	// ciplp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: ciplct.Name(), XAlign: relpos.Left, Space: 10})
+	// cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: space})
 
-	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: cipl.Name(), YAlign: relpos.Front, Space: 6})
-	pccct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: pcc.Name(), XAlign: relpos.Left, Space: 10})
-	// pccp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: pccct.Name(), XAlign: relpos.Left, Space: 4})
+	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: space})
 
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: pcc.Name(), YAlign: relpos.Front, Space: 10})
-	smact.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: sma.Name(), XAlign: relpos.Left, Space: 10})
-	// smap.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: "SMACT", XAlign: relpos.Left, Space: 4})
+	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: pcc.Name(), YAlign: relpos.Front, Space: space})
 
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: 10})
-	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: 10})
+	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: space})
+	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: space})
 
-	v2wd.SetThread(1)
-	v2wdp.SetThread(1)
-	mstd.SetThread(1)
-	mstdct.SetThread(1)
+	// v2wd.SetThread(1)
+	// v2wdp.SetThread(1)
+	// mstd.SetThread(1)
+	// mstdct.SetThread(1)
 	// mstdp.SetThread(1)
 
 	net.Defaults()
@@ -730,6 +692,7 @@ func (ss *Sim) TakeAction(net *deep.Network) {
 	ev := ss.Envs[ss.Time.Mode].(*FWorld)
 	nact := ss.DecodeAct(ev)
 	gact, urgency := ev.ActGen()
+	ss.Stats.SetString("PrevAction", ss.Stats.String("ActAction"))
 	ss.Stats.SetString("NetAction", ev.Acts[nact])
 	ss.Stats.SetString("GenAction", ev.Acts[gact])
 	if nact == gact {
@@ -745,15 +708,17 @@ func (ss *Sim) TakeAction(net *deep.Network) {
 	}
 	ss.Stats.SetString("ActAction", actAct)
 
-	ly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
-	ly.SetType(emer.Input)
 	ev.Action(actAct, nil)
 	ap, ok := ev.Pats[actAct]
 	if ok {
-		ly.ApplyExt(ap)
+		vly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
+		actly := net.LayerByName("Act").(axon.AxonLayer).AsAxon()
+		vly.SetType(emer.Input)
+		vly.ApplyExt(ap)
+		actly.ApplyExt(ap)
+		// fmt.Printf("action: %s\n", actAct)
+		vly.SetType(emer.Target)
 	}
-	ly.SetType(emer.Target)
-	// fmt.Printf("action: %s\n", ev.Acts[act])
 }
 
 // DecodeAct decodes the VL ActM state to find closest action pattern
@@ -774,8 +739,8 @@ func (ss *Sim) ApplyInputs() {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "Vestibular", "Inters", "Action", "Action"}
-	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "S1V", "Ins", "VL", "Act"}
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Inters", "Action", "Action"}
+	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Ins", "VL", "Act"}
 	for i, lnm := range lays {
 		lyi := ss.Net.LayerByName(lnm)
 		if lyi == nil {
@@ -850,7 +815,7 @@ func (ss *Sim) StatCounters() {
 	ss.Stats.SetFloat("PctCortex", ss.PctCortex)
 	ev := ss.Envs[ss.Time.Mode].(*FWorld)
 	ss.Stats.SetString("TrialName", ev.String())
-	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "TrialName", "NetAction", "GenAction", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
+	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "PrevAction", "NetAction", "GenAction", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
 }
 
 // TrialStats computes the trial-level statistics.
@@ -1021,7 +986,7 @@ func (ss *Sim) ConfigActRFs() {
 		}
 	}
 
-	lnms := []string{"MSTd", "cIPL", "PCC", "SMA"}
+	lnms := []string{"MSTd", "PCC", "SMA"} //  "cIPL",
 	var arfs []string
 	for _, lnm := range lnms {
 		for _, trg := range ss.RFTargs {
@@ -1043,7 +1008,7 @@ func (ss *Sim) UpdateActRFs() {
 		case "Act":
 			mt.Set1D(ev.Act, 1)
 		case "Ang":
-			mt.Set1D(ev.Angle/15, 1)
+			mt.Set1D(ev.HeadDir/15, 1)
 		case "Rot":
 			mt.Set1D(1+ev.RotAng/15, 1)
 		}
@@ -1086,7 +1051,7 @@ func (ss *Sim) OpenAllActRFs(path gi.FileName) {
 func (ss *Sim) ConfigNetView(nv *netview.NetView) {
 	nv.ViewDefaults()
 	cam := &(nv.Scene().Camera)
-	cam.Pose.Pos.Set(0, 2.2, 1.9)
+	cam.Pose.Pos.Set(0, 1.9, 2.2)
 	cam.LookAt(mat32.Vec3{0, 0, 0}, mat32.Vec3{0, 1, 0})
 }
 
@@ -1098,6 +1063,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 
 	nv := ss.GUI.AddNetView("NetView")
 	nv.Params.MaxRecs = 300
+	nv.Params.LayNmSize = 0.03
 	nv.SetNet(ss.Net)
 	ss.ViewUpdt.Config(nv, etime.AlphaCycle, etime.AlphaCycle)
 	ss.GUI.ViewUpdt = &ss.ViewUpdt

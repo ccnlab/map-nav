@@ -187,7 +187,7 @@ func (ev *FWorld) UpdateWorldGui() {
 	}
 
 	nc := len(ev.Mats)
-	ev.Trace.Set([]int{ev.PosI.Y, ev.PosI.X}, nc+ev.Angle/ev.AngInc)
+	ev.Trace.Set([]int{ev.PosI.Y, ev.PosI.X}, nc+ev.HeadDir/ev.VisAngInc)
 	// fmt.Printf("pos %v\n", ev.PosI)
 
 	updt := ev.WorldTabs.UpdateStart()

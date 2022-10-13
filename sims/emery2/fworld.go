@@ -47,8 +47,9 @@ type FWorld struct {
 	Inters       []string                    `desc:"list of interoceptive body states, represented as pop codes"`
 	InterMap     map[string]int              `desc:"map of interoceptive state names to indexes"`
 	Params       map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
-	FOV          int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of AngInc"`
-	AngInc       int                         `desc:"angle increment for rotation, in degrees -- defaults to 15"`
+	FOV          int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of VisAngInc"`
+	VisAngInc    int                         `desc:"visual angle increment for rotation, in degrees -- defaults to 45"`
+	MotAngInc    int                         `desc:"motion angle increment for rotation, in degrees -- defaults to 15"`
 	NRotAngles   int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
 	NFOVRays     int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
 	WallUrgency  float32                     `desc:"urgency when right against a wall"`
@@ -63,14 +64,13 @@ type FWorld struct {
 	PopSize      int                         `inactive:"+" desc:"number of units in population codes"`
 	PopCode      popcode.OneD                `desc:"generic population code values, in normalized units"`
 	DepthSize    int                         `inactive:"+" desc:"number of units in depth population codes"`
-	DepthPools   int                         `inactive:"+" desc:"number of pools to divide DepthSize into"`
 	DepthCode    popcode.OneD                `desc:"population code for depth, in normalized units"`
 	AngCode      popcode.Ring                `desc:"angle population code values, in normalized units"`
 
 	// current state below (params above)
 	PosF          mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
 	PosI          evec.Vec2i                  `inactive:"+" desc:"current location of agent, integer"`
-	Angle         int                         `inactive:"+" desc:"current angle, in degrees"`
+	HeadDir       int                         `inactive:"+" desc:"current angle, in degrees"`
 	RotAng        int                         `inactive:"+" desc:"angle that we just rotated -- drives vestibular"`
 	Urgency       float32                     `inactive:"+" desc:"for ActGen, level of urgency for following the generated action"`
 	Act           int                         `inactive:"+" desc:"last action taken"`
@@ -134,7 +134,8 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.Disp = false
 	ev.Size.Set(100, 100)
 	ev.PatSize.Set(5, 5)
-	ev.AngInc = 15
+	ev.VisAngInc = 45
+	ev.MotAngInc = 15
 	ev.FOV = 180
 	ev.FoveaSize = 1
 	ev.FoveaAngInc = 5
@@ -145,12 +146,15 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.PopSize = 16
 	ev.PopCode.Defaults()
 	ev.PopCode.SetRange(-0.2, 1.2, 0.1)
-	ev.DepthSize = 32
-	ev.DepthPools = 8
+	popSigma := float32(0.1)
+	ev.PopCode.Sigma = popSigma
+	ev.DepthSize = 16
 	ev.DepthCode.Defaults()
 	ev.DepthCode.SetRange(0.1, 1, 0.05)
+	ev.DepthCode.Sigma = popSigma
 	ev.AngCode.Defaults()
 	ev.AngCode.SetRange(0, 1, 0.1)
+	ev.AngCode.Sigma = popSigma
 
 	// debugging options:
 	ev.ShowRays = false
@@ -191,8 +195,8 @@ func (ev *FWorld) ConfigPats() {
 // ConfigImpl does the automatic parts of configuration
 // generally does not require editing
 func (ev *FWorld) ConfigImpl() {
-	ev.NFOVRays = (ev.FOV / ev.AngInc) + 1
-	ev.NRotAngles = (360 / ev.AngInc) + 1
+	ev.NFOVRays = (ev.FOV / ev.VisAngInc) + 1
+	ev.NRotAngles = (360 / ev.VisAngInc) + 1
 
 	ev.World = &etensor.Int{}
 	ev.World.SetShape([]int{ev.Size.Y, ev.Size.X}, nil, []string{"Y", "X"})
@@ -204,12 +208,8 @@ func (ev *FWorld) ConfigImpl() {
 	ev.NextStates = make(map[string]*etensor.Float32)
 
 	dv := &etensor.Float32{}
-	dv.SetShape([]int{ev.DepthPools, ev.NFOVRays, ev.DepthSize / ev.DepthPools, 1}, nil, []string{"Pools", "Angle", "Pop", "1"})
-	ev.NextStates["Depth"] = dv
-
-	dv = &etensor.Float32{}
 	dv.SetShape([]int{1, ev.NFOVRays, ev.DepthSize, 1}, nil, []string{"1", "Angle", "Pop", "1"})
-	ev.NextStates["DepthRender"] = dv
+	ev.NextStates["Depth"] = dv
 
 	ev.Depths = make([]float32, ev.NFOVRays)
 	ev.DepthLogs = make([]float32, ev.NFOVRays)
@@ -217,12 +217,8 @@ func (ev *FWorld) ConfigImpl() {
 
 	fsz := 1 + 2*ev.FoveaSize
 	fd := &etensor.Float32{}
-	fd.SetShape([]int{ev.DepthPools, fsz, ev.DepthSize / ev.DepthPools, 1}, nil, []string{"Pools", "Angle", "Pop", "1"})
-	ev.NextStates["FovDepth"] = fd
-
-	fd = &etensor.Float32{}
 	fd.SetShape([]int{1, fsz, ev.DepthSize, 1}, nil, []string{"1", "Angle", "Pop", "1"})
-	ev.NextStates["FovDepthRender"] = fd
+	ev.NextStates["FovDepth"] = fd
 
 	fv := &etensor.Float32{}
 	fv.SetShape([]int{1, fsz, ev.PatSize.Y, ev.PatSize.X}, nil, []string{"1", "Angle", "Y", "X"})
@@ -232,9 +228,9 @@ func (ev *FWorld) ConfigImpl() {
 	ps.SetShape([]int{1, 4, 2, 1}, nil, []string{"1", "Pos", "OnOff", "1"})
 	ev.NextStates["ProxSoma"] = ps
 
-	vs := &etensor.Float32{}
-	vs.SetShape([]int{1, 2, ev.PopSize, 1}, nil, []string{"1", "RotAng", "Pop", "1"})
-	ev.NextStates["Vestibular"] = vs
+	hd := &etensor.Float32{}
+	hd.SetShape([]int{1, ev.PopSize}, nil, []string{"1", "PopAngle"})
+	ev.NextStates["HeadDir"] = hd
 
 	is := &etensor.Float32{}
 	is.SetShape([]int{1, len(ev.Inters), ev.PopSize, 1}, nil, []string{"1", "Inters", "Pop", "1"})
@@ -289,7 +285,7 @@ func (ev *FWorld) State(element string) etensor.Tensor {
 
 // String returns the current state as a string
 func (ev *FWorld) String() string {
-	return fmt.Sprintf("Evt_%d_Pos_%d_%d_Ang_%d_Act_%s", ev.Event.Cur, ev.PosI.X, ev.PosI.Y, ev.Angle, ev.Acts[ev.Act])
+	return fmt.Sprintf("Evt_%d_Pos_%d_%d_Ang_%d_Act_%s", ev.Event.Cur, ev.PosI.X, ev.PosI.Y, ev.HeadDir, ev.Acts[ev.Act])
 }
 
 // Init is called to restart environment
@@ -318,7 +314,7 @@ func (ev *FWorld) Init(run int) {
 		ev.ProxMats[i] = 0
 	}
 
-	ev.Angle = 0
+	ev.HeadDir = 0
 	ev.RotAng = 0
 	ev.InterStates["Energy"] = 1
 	ev.InterStates["Hydra"] = 1
@@ -491,8 +487,8 @@ func (ev *FWorld) ScanDepth() {
 	idx := 0
 	hang := ev.FOV / 2
 	maxld := mat32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
-	for ang := hang; ang >= -hang; ang -= ev.AngInc {
-		v := AngVec(ang + ev.Angle)
+	for ang := hang; ang >= -hang; ang -= ev.VisAngInc {
+		v := AngVec(ang + ev.HeadDir)
 		op := ev.PosF
 		cp := op
 		gp := evec.Vec2i{}
@@ -534,7 +530,7 @@ func (ev *FWorld) ScanFovea() {
 	maxld := mat32.Log(1 + mat32.Sqrt(float32(ev.Size.X*ev.Size.X+ev.Size.Y*ev.Size.Y)))
 	for fi := -ev.FoveaSize; fi <= ev.FoveaSize; fi++ {
 		ang := -fi * ev.FoveaAngInc
-		v := AngVec(ang + ev.Angle)
+		v := AngVec(ang + ev.HeadDir)
 		op := ev.PosF
 		cp := op
 		gp := evec.Vec2i{}
@@ -573,7 +569,7 @@ func (ev *FWorld) ScanFovea() {
 func (ev *FWorld) ScanProx() {
 	angs := []int{0, -90, 90, 180}
 	for i := 0; i < 4; i++ {
-		v := AngVec(ev.Angle + angs[i])
+		v := AngVec(ev.HeadDir + angs[i])
 		_, gp := NextVecPoint(ev.PosF, v)
 		ev.ProxMats[i] = ev.GetWorld(gp)
 		ev.ProxPos[i] = gp
@@ -616,7 +612,7 @@ type WEvent struct {
 
 // NewEvent returns new event with current state and given act, mat
 func (ev *FWorld) NewEvent(act, mat int, matpos evec.Vec2i) *WEvent {
-	return &WEvent{Tick: ev.Tick.Cur, PosI: ev.PosI, PosF: ev.PosF, Angle: ev.Angle, Act: act, Mat: mat, MatPos: matpos}
+	return &WEvent{Tick: ev.Tick.Cur, PosI: ev.PosI, PosF: ev.PosF, Angle: ev.HeadDir, Act: act, Mat: mat, MatPos: matpos}
 }
 
 // AddNewEventRefresh adds event to RefreshEvents (a consumable was consumed).
@@ -705,13 +701,13 @@ func (ev *FWorld) TakeAct(act int) {
 	switch as {
 	case "Stay":
 	case "Left":
-		ev.RotAng = ev.AngInc
-		ev.Angle = AngMod(ev.Angle + ev.RotAng)
+		ev.RotAng = ev.MotAngInc
+		ev.HeadDir = AngMod(ev.HeadDir + ev.RotAng)
 		ecost = rotc
 		hcost = rotc
 	case "Right":
-		ev.RotAng = -ev.AngInc
-		ev.Angle = AngMod(ev.Angle + ev.RotAng)
+		ev.RotAng = -ev.MotAngInc
+		ev.HeadDir = AngMod(ev.HeadDir + ev.RotAng)
 		ecost = rotc
 		hcost = rotc
 	case "Forward":
@@ -722,7 +718,7 @@ func (ev *FWorld) TakeAct(act int) {
 			ecost += bumpc
 			hcost += bumpc
 		} else {
-			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.Angle))
+			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(ev.HeadDir))
 		}
 	case "Backward":
 		ecost = mvc
@@ -732,7 +728,7 @@ func (ev *FWorld) TakeAct(act int) {
 			ecost += bumpc
 			hcost += bumpc
 		} else {
-			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(AngMod(ev.Angle+180)))
+			ev.PosF, ev.PosI = NextVecPoint(ev.PosF, AngVec(AngMod(ev.HeadDir+180)))
 		}
 	case "Eat":
 		if front == "Food" {
@@ -768,33 +764,17 @@ func (ev *FWorld) TakeAct(act int) {
 // RenderView renders the current view state to NextStates tensor input states
 func (ev *FWorld) RenderView() {
 	dv := ev.NextStates["Depth"]
-	dvr := ev.NextStates["DepthRender"]
-	np := ev.DepthSize / ev.DepthPools
 	for i := 0; i < ev.NFOVRays; i++ {
-		sv := dvr.SubSpace([]int{0, i}).(*etensor.Float32)
+		sv := dv.SubSpace([]int{0, i}).(*etensor.Float32)
 		ev.DepthCode.Encode(&sv.Values, ev.DepthLogs[i], ev.DepthSize, popcode.Set)
-		for dp := 0; dp < ev.DepthPools; dp++ {
-			for pi := 0; pi < np; pi++ {
-				ri := dp*np + pi
-				dv.Set([]int{dp, i, pi, 0}, sv.Values[ri])
-			}
-		}
 	}
 
 	fsz := 1 + 2*ev.FoveaSize
 	fd := ev.NextStates["FovDepth"]
-	fdr := ev.NextStates["FovDepthRender"]
 	fv := ev.NextStates["Fovea"]
 	for i := 0; i < fsz; i++ {
-		sv := fdr.SubSpace([]int{0, i}).(*etensor.Float32)
+		sv := fd.SubSpace([]int{0, i}).(*etensor.Float32)
 		ev.DepthCode.Encode(&sv.Values, ev.FovDepthLogs[i], ev.DepthSize, popcode.Set)
-		for dp := 0; dp < ev.DepthPools; dp++ {
-			for pi := 0; pi < np; pi++ {
-				ri := dp*np + pi
-				fd.Set([]int{dp, i, pi, 0}, sv.Values[ri])
-			}
-		}
-
 		fm := ev.FovMats[i]
 		if fm < len(ev.Mats) {
 			sv := fv.SubSpace([]int{0, i}).(*etensor.Float32)
@@ -832,14 +812,9 @@ func (ev *FWorld) RenderInters() {
 
 // RenderVestibular renders vestibular state
 func (ev *FWorld) RenderVestibular() {
-	vs := ev.NextStates["Vestibular"]
-	sv := vs.SubSpace([]int{0, 0}).(*etensor.Float32)
-	nv := 0.5*(float32(-ev.RotAng)/15.0) + 0.5
-	ev.PopCode.Encode(&sv.Values, nv, ev.PopSize, popcode.Set)
-
-	sv = vs.SubSpace([]int{0, 1}).(*etensor.Float32)
-	nv = (float32(ev.Angle) / 360.0)
-	ev.AngCode.Encode(&sv.Values, nv, ev.PopSize)
+	vs := ev.NextStates["HeadDir"]
+	nv := (float32(ev.HeadDir) / 360.0)
+	ev.AngCode.Encode(&vs.Values, nv, ev.PopSize)
 }
 
 // RenderAction renders action pattern

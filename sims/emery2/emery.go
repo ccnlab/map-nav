@@ -121,14 +121,14 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 0.5
+	ss.PctCortexMax = 0.8
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
 	ss.PCAInterval = 10
 	ss.ConfusionEpc = 500
-	ss.MaxTrls = 512
-	ss.RFTargs = []string{"Pos", "Act", "Ang", "Rot"}
+	ss.MaxTrls = 1024
+	ss.RFTargs = []string{"Pos", "Act", "HdDir"}
 	ss.Time.Defaults()
 	ss.ConfigArgs() // do this first, has key defaults
 }
@@ -194,6 +194,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	rndcut.PCon = 0.1
 	_ = rndcut
 
+	var ff, fb emer.Prjn
+
 	nPerAng := 10 // 30 total > 20 -- small improvement
 	nPerDepth := 2
 	rfDepth := 6
@@ -246,11 +248,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1p.Driver = "M1"
 
 	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target) // Action
-	vl.SetClass("M1")
+	vl.SetClass("Action")
 	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
-	act.SetClass("M1")
+	act.SetClass("Action")
 
-	net.BidirConnectLayers(m1, vl, full)
+	ff, _ = net.BidirConnectLayers(m1, vl, full)
+	ff.SetClass("StrongFF")
 
 	//////////////////////////////////
 	// Hidden layers
@@ -339,8 +342,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pccct.SetClass("PCC CTInteg")
 	net.ConnectCTSelf(pccct, full)                  // longer time integration to integrate depth map..
 	net.ConnectToTRC(pcc, pccct, v2wdp, full, full) // top-down depth pred
-	// net.BidirConnectLayers(mstd, pcc, full)
-	net.ConnectLayers(mstd, pcc, full, emer.Forward)
+	ff, _ = net.BidirConnectLayers(mstd, pcc, full)
+	ff.SetClass("StrongFF") // needs extra activity
+	// net.ConnectLayers(mstd, pcc, full, emer.Forward)
 	// net.ConnectLayers(pccct, mstdct, full, emer.Back).SetClass("CTBack")
 
 	// pcc integrates somatosensory as well
@@ -351,81 +355,46 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// sma gets from everything, predicts m1p
 	sma, smact := net.AddSuperCT2D("SMA", 10, 10, space, one2one)
 	sma.SetClass("SMA")
-	smact.SetClass("SMA CTInteg")  // todo -- test
-	net.ConnectCTSelf(smact, full) // longer temporal integration?  probably good.  todo.
+	smact.SetClass("SMA CTCopy") // CTCopy seems better than CTInteg
+	// net.ConnectCTSelf(smact, full) // maybe not
 	net.ConnectToTRC(sma, smact, m1p, full, full)
-	// net.BidirConnectLayers(pcc, sma, full)
-	net.ConnectLayers(pcc, sma, full, emer.Forward)
-	net.ConnectLayers(smact, pccct, full, emer.Back).SetClass("CTBack")
-	net.ConnectLayers(sma, m1, full, emer.Forward)
+	ff, _ = net.BidirConnectLayers(pcc, sma, full)
+	ff.SetClass("StrongFF") // needs extra activity
+	// net.ConnectLayers(smact, pccct, full, emer.Back).SetClass("CTBack") // not useful
+	ff, _ = net.BidirConnectLayers(sma, m1, full)
+	ff.SetClass("StrongFF")
+
+	// net.ConnectLayers(vl, sma, full, emer.Back) // get the error directly?
+	// net.ConnectLayers(vl, smact, full, emer.Back)
+
+	net.ConnectLayers(v1f, sma, full, emer.Forward)
+	net.ConnectLayers(s1s, sma, full, emer.Forward)
+
+	_, fb = net.BidirConnectLayers(s2v, sma, full)
+	fb.SetClass("StrongFmSMA")
+
+	// net.ConnectLayers(smact, vl, full, emer.Forward) // this may be key?
+	// net.ConnectLayers(sma, vl, full, emer.Forward) // no, right?
+
+	net.ConnectLayers(sma, mstd, full, emer.Back).SetClass("StrongFmSMA") // note: back seems to work?
+	// net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack") // not useful
 
 	// net.ConnectLayers(it, sma, full, emer.Forward)
 	// net.ConnectLayers(lip, sma, full, emer.Forward)
-	net.ConnectLayers(v1f, sma, full, emer.Forward)
-	net.ConnectLayers(s1s, sma, full, emer.Forward)
-	// net.BidirConnectLayers(s2v, sma, full) // todo: just direct head dir input instead?
-	net.ConnectLayers(s2v, sma, full, emer.Forward)
 	// net.ConnectLayers(smact, s2vct, full, emer.Back).SetClass("CTBack")
 
-	// net.ConnectLayers(sma, mstd, full, emer.Back)
-	// net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack")
+	//////////////////////////////////////
+	// Action prediction
 
-	// net.ConnectLayers(vl, sma, full, emer.Back)
-	// net.ConnectLayers(cipl, sma, full, emer.Forward) // todo: forward??
-	// net.ConnectLayers(vl, smact, full, emer.Back)
-
-	net.ConnectLayers(smact, vl, full, emer.Forward)
-	// net.ConnectLayers(sma, vl, full, emer.Forward) // no, right?
-
-	////////////////////
-	// to IT
-
-	// net.ConnectLayers(sma, it, full, emer.Back)
-	// net.ConnectLayers(pcc, it, full, emer.Back) // not useful
-
-	// net.ConnectLayers(smact, itct, full, emer.Back).SetClass("CTBack") // needs to know how moving..
-	// net.ConnectLayers(pccct, itct, full, emer.Back).SetClass("CTBack")
-
-	////////////////////
-	// to LIP
-
-	// net.ConnectLayers(sma, lip, full, emer.Back)
-	// net.ConnectLayers(pcc, lip, full, emer.Back) // not useful
-
-	// net.ConnectLayers(smact, lipct, full, emer.Back).SetClass("CTBack") // always need sma to predict action outcome
-	// net.ConnectLayers(pccct, lipct, full, emer.Back).SetClass("CTBack")
-
-	// ActToCT are used temporarily to endure prediction is properly contextualized
-	/*
-		net.ConnectCtxtToCT(act, mstdct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(act, ciplct, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(act, smact, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(act, pccct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(act, itct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(act, lipct, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(act, s2vct, full).SetClass("ActToCT")
-	*/
-
-	// m1p plus phase has action, Ctxt -> CT allows CT now to use that prev action
-
-	// vl > m1 > m1p > act
-	/*
-		net.ConnectCtxtToCT(vl, mstdct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(vl, ciplct, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(vl, smact, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(vl, pccct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(vl, itct, full).SetClass("ActToCT")
-		// net.ConnectCtxtToCT(vl, lipct, full).SetClass("ActToCT")
-		net.ConnectCtxtToCT(vl, s2vct, full).SetClass("ActToCT")
-	*/
-
-	net.ConnectLayers(vl, mstd, full, emer.Forward).SetClass("ActToSuper")
-	// net.ConnectLayers(vl, cipl, full, emer.Forward).SetClass("ActToSuper")
-	net.ConnectLayers(vl, sma, full, emer.Forward).SetClass("ActToSuper")
-	net.ConnectLayers(vl, pcc, full, emer.Forward).SetClass("ActToSuper")
-	// net.ConnectLayers(vl, it, full, emer.Forward).SetClass("ActToSuper")
-	// net.ConnectLayers(vl, lip, full, emer.Forward).SetClass("ActToSuper")
-	net.ConnectLayers(vl, s2v, full, emer.Forward).SetClass("ActToSuper")
+	// from act works perfectly if pctcortex is 0 -- important sanity check
+	// on the depth, head direction predictive learning
+	// net.ConnectLayers(act, mstd, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, s2v, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, pcc, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, sma, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, cipl, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, it, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, lip, full, emer.Forward).SetClass("FmAct")
 
 	////////////////////
 	// lateral inhibition
@@ -551,8 +520,7 @@ func (ss *Sim) ConfigLoops() {
 		}
 	}
 
-	// effTrls = 50 // todo: tmp
-	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 150).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
 	// note: needs a lot of data for good actrfs -- 100 here
 	man.AddStack(etime.Test).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
@@ -630,12 +598,12 @@ func (ss *Sim) ConfigLoops() {
 		ss.UpdateActRFs()
 		ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01)
 	})
-	man.GetLoop(etime.Test, etime.Epoch).OnEnd.Add("CheckEpc", func() {
-		if ss.Args.Bool("actrfs") {
-			trnEpc := man.Stacks[etime.Test].Loops[etime.Epoch].Counter.Cur
-			fmt.Printf("epoch: %d\n", trnEpc)
-		}
-	})
+	// man.GetLoop(etime.Test, etime.Epoch).OnEnd.Add("CheckEpc", func() {
+	// 	if ss.Args.Bool("actrfs") {
+	// 		trnEpc := man.Stacks[etime.Test].Loops[etime.Epoch].Counter.Cur
+	// 		fmt.Printf("epoch: %d\n", trnEpc)
+	// 	}
+	// })
 
 	// Save weights to file at end, to look at later
 	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveWeights", func() { ss.SaveWeights() })
@@ -648,8 +616,8 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PctCortex", func() {
 		trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
-		if trnEpc > 1 && trnEpc%5 == 0 {
-			ss.PctCortex = float64(trnEpc) / 50
+		if trnEpc > 50 && trnEpc%5 == 0 {
+			ss.PctCortex = float64(trnEpc-50) / 50
 			if ss.PctCortex > ss.PctCortexMax {
 				ss.PctCortex = ss.PctCortexMax
 			} else {
@@ -979,10 +947,8 @@ func (ss *Sim) ConfigActRFs() {
 			mt.CopyShapeFrom(ev.World)
 		case "Act":
 			mt.SetShape([]int{len(ev.Acts)}, nil, nil)
-		case "Ang":
-			mt.SetShape([]int{ev.NRotAngles}, nil, nil)
-		case "Rot":
-			mt.SetShape([]int{3}, nil, nil)
+		case "HdDir":
+			mt.SetShape([]int{ev.NMotAngles}, nil, nil)
 		}
 	}
 
@@ -1007,10 +973,10 @@ func (ss *Sim) UpdateActRFs() {
 			mt.Set([]int{ev.PosI.Y, ev.PosI.X}, 1)
 		case "Act":
 			mt.Set1D(ev.Act, 1)
-		case "Ang":
-			mt.Set1D(ev.HeadDir/15, 1)
-		case "Rot":
-			mt.Set1D(1+ev.RotAng/15, 1)
+		case "HdDir":
+			mt.Set1D(ev.HeadDir/ev.NMotAngles, 1)
+			// case "Rot":
+			// 	mt.Set1D(1+ev.RotAng/ev.NMotAngles, 1)
 		}
 	}
 }

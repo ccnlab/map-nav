@@ -159,14 +159,14 @@ func (ev *FWorld) ConfigWorldView(tg *etview.TensorGrid) {
 		cm.Name = cnm
 		cm.Indexed = true
 		nc := len(ev.Mats)
-		cm.Colors = make([]gist.Color, nc+ev.NRotAngles)
+		cm.Colors = make([]gist.Color, nc+ev.NMotAngles)
 		cm.NoColor = gist.Black
 		for i, cnm := range matColors {
 			cm.Colors[i].SetString(cnm, nil)
 		}
 		ch := colormap.AvailMaps["ColdHot"]
-		for i := 0; i < ev.NRotAngles; i++ {
-			nv := float64(i) / float64(ev.NRotAngles-1)
+		for i := 0; i < ev.NMotAngles; i++ {
+			nv := float64(i) / float64(ev.NMotAngles-1)
 			cm.Colors[nc+i] = ch.Map(nv) // color map of rotation
 		}
 		colormap.AvailMaps[cnm] = cm

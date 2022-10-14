@@ -50,7 +50,7 @@ type FWorld struct {
 	FOV          int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of VisAngInc"`
 	VisAngInc    int                         `desc:"visual angle increment for rotation, in degrees -- defaults to 45"`
 	MotAngInc    int                         `desc:"motion angle increment for rotation, in degrees -- defaults to 15"`
-	NRotAngles   int                         `inactive:"+" desc:"total number of rotation angles in a circle"`
+	NMotAngles   int                         `inactive:"+" desc:"total number of motion rotation angles in a circle"`
 	NFOVRays     int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
 	WallUrgency  float32                     `desc:"urgency when right against a wall"`
 	EatUrgency   float32                     `desc:"urgency for eating and drinking"`
@@ -196,7 +196,7 @@ func (ev *FWorld) ConfigPats() {
 // generally does not require editing
 func (ev *FWorld) ConfigImpl() {
 	ev.NFOVRays = (ev.FOV / ev.VisAngInc) + 1
-	ev.NRotAngles = (360 / ev.VisAngInc) + 1
+	ev.NMotAngles = (360 / ev.MotAngInc) + 1
 
 	ev.World = &etensor.Int{}
 	ev.World.SetShape([]int{ev.Size.Y, ev.Size.X}, nil, []string{"Y", "X"})
@@ -853,7 +853,9 @@ func (ev *FWorld) CopyNextToCur() {
 
 // Step is called to advance the environment state
 func (ev *FWorld) Step() bool {
-	ev.Epoch.Same() // good idea to just reset all non-inner-most counters at start
+	ev.Epoch.Same()         // good idea to just reset all non-inner-most counters at start
+	ev.Act, _ = ev.ActGen() // generate default action
+	ev.RenderAction()
 	ev.CopyNextToCur()
 	ev.Tick.Incr()
 	ev.Event.Incr()
@@ -892,54 +894,6 @@ func (ev *FWorld) Counter(scale env.TimeScales) (cur, prv int, chg bool) {
 		return ev.Episode.Query()
 	}
 	return -1, -1, false
-}
-
-// Compile-time check that implements Env interface
-var _ env.Env = (*FWorld)(nil)
-
-var FWorldProps = ki.Props{
-	"ToolBar": ki.PropSlice{
-		{"OpenWorld", ki.Props{
-			"label": "Open World...",
-			"icon":  "file-open",
-			"desc":  "Open World from tsv file",
-			"Args": ki.PropSlice{
-				{"File Name", ki.Props{
-					"ext": ".tsv",
-				}},
-			},
-		}},
-		{"SaveWorld", ki.Props{
-			"label": "Save World...",
-			"icon":  "file-save",
-			"desc":  "Save World to tsv file",
-			"Args": ki.PropSlice{
-				{"File Name", ki.Props{
-					"ext": ".tsv",
-				}},
-			},
-		}},
-		{"OpenPats", ki.Props{
-			"label": "Open Pats...",
-			"icon":  "file-open",
-			"desc":  "Open pats from json file",
-			"Args": ki.PropSlice{
-				{"File Name", ki.Props{
-					"ext": ".json",
-				}},
-			},
-		}},
-		{"SavePats", ki.Props{
-			"label": "Save Pats...",
-			"icon":  "file-save",
-			"desc":  "Save pats to json file",
-			"Args": ki.PropSlice{
-				{"File Name", ki.Props{
-					"ext": ".json",
-				}},
-			},
-		}},
-	},
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1213,4 +1167,52 @@ func (ev *FWorld) ActGen() (int, float32) {
 
 	ev.Urgency = urgency
 	return act, urgency
+}
+
+// Compile-time check that implements Env interface
+var _ env.Env = (*FWorld)(nil)
+
+var FWorldProps = ki.Props{
+	"ToolBar": ki.PropSlice{
+		{"OpenWorld", ki.Props{
+			"label": "Open World...",
+			"icon":  "file-open",
+			"desc":  "Open World from tsv file",
+			"Args": ki.PropSlice{
+				{"File Name", ki.Props{
+					"ext": ".tsv",
+				}},
+			},
+		}},
+		{"SaveWorld", ki.Props{
+			"label": "Save World...",
+			"icon":  "file-save",
+			"desc":  "Save World to tsv file",
+			"Args": ki.PropSlice{
+				{"File Name", ki.Props{
+					"ext": ".tsv",
+				}},
+			},
+		}},
+		{"OpenPats", ki.Props{
+			"label": "Open Pats...",
+			"icon":  "file-open",
+			"desc":  "Open pats from json file",
+			"Args": ki.PropSlice{
+				{"File Name", ki.Props{
+					"ext": ".json",
+				}},
+			},
+		}},
+		{"SavePats", ki.Props{
+			"label": "Save Pats...",
+			"icon":  "file-save",
+			"desc":  "Save pats to json file",
+			"Args": ki.PropSlice{
+				{"File Name", ki.Props{
+					"ext": ".json",
+				}},
+			},
+		}},
+	},
 }

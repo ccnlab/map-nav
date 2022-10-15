@@ -121,7 +121,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 0.8
+	ss.PctCortexMax = 0.5
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -522,8 +522,8 @@ func (ss *Sim) ConfigLoops() {
 
 	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 150).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
-	// note: needs a lot of data for good actrfs -- 100 here
-	man.AddStack(etime.Test).AddTime(etime.Epoch, 100).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	// note: needs a lot of data for good actrfs -- is relatively fast under mpi
+	man.AddStack(etime.Test).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
 	axon.LooperStdPhases(man, &ss.Time, ss.Net.AsAxon(), 150, 199)            // plus phase timing
 	axon.LooperSimCycleAndLearn(man, ss.Net.AsAxon(), &ss.Time, &ss.ViewUpdt) // std algo code
@@ -610,7 +610,6 @@ func (ss *Sim) ConfigLoops() {
 	man.GetLoop(etime.Train, etime.Run).OnEnd.Add("SaveActRFs", func() {
 		if ss.Args.Bool("actrfs") {
 			ss.TestAll()
-			ss.SaveAllActRFs()
 		}
 	})
 
@@ -650,6 +649,9 @@ func (ss *Sim) ConfigLoops() {
 
 // SaveWeights saves weights with filename recording run, epoch
 func (ss *Sim) SaveWeights() {
+	if mpi.WorldRank() > 0 {
+		return
+	}
 	ctrString := ss.Stats.PrintVals([]string{"Run", "Epoch"}, []string{"%03d", "%05d"}, "_")
 	axon.SaveWeightsIfArgSet(ss.Net.AsAxon(), &ss.Args, ctrString, ss.Stats.String("RunName"))
 }
@@ -747,8 +749,13 @@ func (ss *Sim) TestAll() {
 	ss.Stats.ActRFs.Reset()
 	ss.Loops.ResetAndRun(etime.Test)
 	ss.Loops.Mode = etime.Train // Important to reset Mode back to Train because this is called from within the Train Run.
-	ss.Stats.ActRFsAvgNorm()
-	ss.GUI.ViewActRFs(&ss.Stats.ActRFs)
+	if ss.GUI.Active {
+		ss.Stats.ActRFsAvgNorm()
+		ss.GUI.ViewActRFs(&ss.Stats.ActRFs)
+		// ss.SaveAllActRFs() // test
+	} else {
+		ss.SaveAllActRFs()
+	}
 }
 
 // RunTestAll runs through the full set of testing items, has stop running = false at end -- for gui
@@ -974,7 +981,7 @@ func (ss *Sim) UpdateActRFs() {
 		case "Act":
 			mt.Set1D(ev.Act, 1)
 		case "HdDir":
-			mt.Set1D(ev.HeadDir/ev.NMotAngles, 1)
+			mt.Set1D(ev.HeadDir/ev.MotAngInc, 1)
 			// case "Rot":
 			// 	mt.Set1D(1+ev.RotAng/ev.NMotAngles, 1)
 		}
@@ -983,10 +990,21 @@ func (ss *Sim) UpdateActRFs() {
 
 // SaveAllActRFs saves all ActRFs to files, using LogFileName from ecmd using RunName
 func (ss *Sim) SaveAllActRFs() {
+	if mpi.WorldSize() > 1 {
+		ss.Stats.ActRFs.MPISum(ss.Comm)
+		if mpi.WorldRank() > 0 {
+			return // don't save!
+		}
+	}
 	ss.Stats.ActRFsAvgNorm()
 	for _, paf := range ss.Stats.ActRFs.RFs {
 		fnm := ecmd.LogFileName(paf.Name, "ActRF", ss.Stats.String("RunName"))
 		etensor.SaveCSV(&paf.NormRF, gi.FileName(fnm), '\t')
+	}
+	for _, trg := range ss.RFTargs {
+		paf := ss.Stats.ActRFs.RFByName("SMA:" + trg)
+		fnm := ecmd.LogFileName(trg, "ActRFSrc", ss.Stats.String("RunName"))
+		etensor.SaveCSV(&paf.NormSrc, gi.FileName(fnm), '\t')
 	}
 }
 
@@ -1004,9 +1022,22 @@ func (ss *Sim) OpenAllActRFs(path gi.FileName) {
 		ffnm := filepath.Join(ap, fnm)
 		err := etensor.OpenCSV(&paf.NormRF, gi.FileName(ffnm), '\t')
 		if err != nil {
+			fmt.Printf("ffnm: %s\n", ffnm)
 			fmt.Println(err)
 		} else {
 			etview.TensorGridDialog(vp, &paf.NormRF, giv.DlgOpts{Title: "Act RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
+		}
+	}
+	for _, trg := range ss.RFTargs {
+		paf := ss.Stats.ActRFs.RFByName("SMA:" + trg)
+		fnm := ecmd.LogFileName(trg, "ActRFSrc", ss.Stats.String("RunName"))
+		ffnm := filepath.Join(ap, fnm)
+		err := etensor.OpenCSV(&paf.NormSrc, gi.FileName(ffnm), '\t')
+		if err != nil {
+			fmt.Printf("ffnm: %s\n", ffnm)
+			fmt.Println(err)
+		} else {
+			etview.TensorGridDialog(vp, &paf.NormSrc, giv.DlgOpts{Title: "ActSrc RF " + paf.Name, Prompt: paf.Name, TmpSave: nil}, nil, nil)
 		}
 	}
 }

@@ -132,7 +132,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.Params["WaterRefresh"] = 50 // time steps before water is refreshed
 
 	ev.Disp = false
-	ev.Size.Set(100, 100)
+	ev.Size.Set(50, 50)
 	ev.PatSize.Set(5, 5)
 	ev.VisAngInc = 45
 	ev.MotAngInc = 15
@@ -977,18 +977,19 @@ func (ev *FWorld) GenWorld() {
 	ev.World.SetZeros()
 	// always start with a wall around the entire world -- no seeing the turtles..
 	ev.WorldRect(evec.Vec2i{0, 0}, evec.Vec2i{ev.Size.X - 1, ev.Size.Y - 1}, wall)
-	ev.WorldRect(evec.Vec2i{20, 20}, evec.Vec2i{40, 40}, wall)
-	ev.WorldRect(evec.Vec2i{60, 60}, evec.Vec2i{80, 80}, wall)
 
-	ev.WorldLine(evec.Vec2i{60, 20}, evec.Vec2i{80, 40}, wall) // double-thick lines = no leak
-	ev.WorldLine(evec.Vec2i{60, 19}, evec.Vec2i{80, 39}, wall)
+	// additional obstacles:
+	// ev.WorldRect(evec.Vec2i{20, 20}, evec.Vec2i{40, 40}, wall)
+	// ev.WorldRect(evec.Vec2i{60, 60}, evec.Vec2i{80, 80}, wall)
+	// ev.WorldLine(evec.Vec2i{60, 20}, evec.Vec2i{80, 40}, wall) // double-thick lines = no leak
+	// ev.WorldLine(evec.Vec2i{60, 19}, evec.Vec2i{80, 39}, wall)
 
 	// don't put anything in center starting point
 	ctr := ev.Size.DivScalar(2)
 	ev.SetWorld(ctr, wall)
 
-	ev.WorldRandom(50, food)
-	ev.WorldRandom(50, water)
+	ev.WorldRandom(20, food) // was 50, 50 for 100x100 large
+	ev.WorldRandom(20, water)
 
 	// clear center
 	ev.SetWorld(ctr, 0)

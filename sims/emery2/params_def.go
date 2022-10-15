@@ -162,10 +162,10 @@ var ParamSets = params.Sets{
 			{Sel: "#SMA", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.08",
-					"Layer.Inhib.Layer.Gi":    "0.9", // was 1.0
-					"Layer.Act.Noise.On":      "false",
-					"Layer.Act.Noise.Ge":      "0.001",
-					"Layer.Act.Noise.Gi":      "0.001",
+					"Layer.Inhib.Layer.Gi":    "0.9",  // was 1.0
+					"Layer.Act.Noise.On":      "true", // turn on for more explore
+					"Layer.Act.Noise.Ge":      "0.005",
+					"Layer.Act.Noise.Gi":      "0.005",
 				}},
 			{Sel: "#SMACT", Desc: "",
 				Params: params.Params{

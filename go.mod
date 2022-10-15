@@ -4,8 +4,8 @@ go 1.18
 
 require (
 	github.com/emer/axon v1.5.8
-	github.com/emer/emergent v1.3.28
-	github.com/emer/empi v1.0.14
+	github.com/emer/emergent v1.3.29
+	github.com/emer/empi v1.0.15
 	github.com/emer/etable v1.1.11
 	github.com/emer/leabra v1.1.48
 	github.com/goki/gi v1.3.7

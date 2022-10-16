@@ -121,7 +121,7 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 0.5
+	ss.PctCortexMax = 0.3
 	ss.NOutPer = 5
 	ss.SubPools = true
 	ss.RndOutPats = false
@@ -196,10 +196,12 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	var ff, fb emer.Prjn
 
-	nPerAng := 10 // 30 total > 20 -- small improvement
-	nPerDepth := 2
+	nPerAng := 5 // 5*1 impairs M1P prediction somewhat -- nothing else
+	nPerDepth := 1
 	rfDepth := 6
 	rfWidth := 3
+	stdHidX := 6 // smaller 10 -> 6 impairs M1P prediction somewhat, not actmatch etc
+	stdHidY := 6
 
 	rect := prjn.NewRect()
 	rect.Size.Set(rfWidth, rfDepth) // 6 > 8 > smaller
@@ -241,9 +243,9 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
 	ins.SetClass("Ins")
 
-	m1 := net.AddLayer2D("M1", 10, 10, emer.Hidden)
+	m1 := net.AddLayer2D("M1", stdHidY, stdHidX, emer.Hidden)
 	m1.SetClass("M1")
-	m1p := net.AddTRCLayer2D("M1P", 10, 10)
+	m1p := net.AddTRCLayer2D("M1P", stdHidY, stdHidX)
 	m1p.SetClass("M1")
 	m1p.Driver = "M1"
 
@@ -259,14 +261,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// Hidden layers
 
 	// vestibular / head direction hidden layer:
-	s2v, s2vct := net.AddSuperCT2D("S2V", 10, 10, space, one2one)
+	s2v, s2vct := net.AddSuperCT2D("S2V", stdHidY, stdHidX, space, one2one)
 	s2v.SetClass("S2V")
 	s2vct.SetClass("S2V CTCopy")
 	// net.ConnectCTSelf(s2vct, full) // not for one-step
 	net.ConnectToTRC(s2v, s2vct, hdp, full, full)
 	net.ConnectLayers(hd, s2v, full, emer.Forward)
 
-	// it, itct := net.AddSuperCT2D("IT", 10, 10, space, one2one)
+	// it, itct := net.AddSuperCT2D("IT", stdHidY, stdHidX, space, one2one)
 	// it.SetClass("IT")
 	// itct.SetClass("IT CTCopy")
 	// net.ConnectCTSelf(itct, full)
@@ -337,7 +339,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	// 2d PCC -- full layer consolidating MST space
 	// bidir connected to MSTDd super, contributes prediction to V2WdP
-	pcc, pccct := net.AddSuperCT2D("PCC", 10, 10, space, one2one)
+	// pcc can use a slightly larger layer -- not critical but it is a central hub..
+	pcc, pccct := net.AddSuperCT2D("PCC", 8, 8, space, one2one)
 	pcc.SetClass("PCC")
 	pccct.SetClass("PCC CTInteg")
 	net.ConnectCTSelf(pccct, full)                  // longer time integration to integrate depth map..
@@ -353,7 +356,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	net.ConnectLayers(s2v, pcc, full, emer.Forward)
 
 	// sma gets from everything, predicts m1p
-	sma, smact := net.AddSuperCT2D("SMA", 10, 10, space, one2one)
+	sma, smact := net.AddSuperCT2D("SMA", stdHidY, stdHidX, space, one2one)
 	sma.SetClass("SMA")
 	smact.SetClass("SMA CTCopy") // CTCopy seems better than CTInteg
 	// net.ConnectCTSelf(smact, full) // maybe not

@@ -121,17 +121,13 @@ var ParamSets = params.Sets{
 			{Sel: ".MSTd", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.Gi":    "1.2",
-				}},
-			{Sel: "#MSTd", Desc: "",
-				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.2",
+					"Layer.Inhib.Layer.Gi":    "1.4",
 				}},
 			{Sel: "#MSTdCT", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":    "2.0",
+					"Layer.Inhib.Layer.Gi":    "2.2",
 					"Layer.CT.GeGain":         "1",
-					"Layer.Inhib.ActAvg.Init": "0.07", // is actually higher, but this works better
+					"Layer.Inhib.ActAvg.Init": "0.05",
 				}},
 			{Sel: ".PCC", Desc: "PCC general",
 				Params: params.Params{
@@ -162,10 +158,10 @@ var ParamSets = params.Sets{
 			{Sel: "#SMA", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.08",
-					"Layer.Inhib.Layer.Gi":    "0.9",  // was 1.0
-					"Layer.Act.Noise.On":      "true", // turn on for more explore
-					"Layer.Act.Noise.Ge":      "0.005",
-					"Layer.Act.Noise.Gi":      "0.005",
+					"Layer.Inhib.Layer.Gi":    "0.9",   // was 1.0
+					"Layer.Act.Noise.On":      "false", // turn on for more explore
+					"Layer.Act.Noise.Ge":      "0.001", // actually .001 best
+					"Layer.Act.Noise.Gi":      "0.001",
 				}},
 			{Sel: "#SMACT", Desc: "",
 				Params: params.Params{

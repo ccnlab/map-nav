@@ -38,7 +38,7 @@ var ParamSets = params.Sets{
 					"Layer.CT.DecayTau":       "0",
 					"Layer.Inhib.Layer.Gi":    "1.4",
 					"Layer.Inhib.Pool.Gi":     "1.4",
-					"Layer.Act.GABAB.Gbar":    "0.15",
+					"Layer.Act.GABAB.Gbar":    "0.2",
 					"Layer.Act.NMDA.Gbar":     "0.15",
 					"Layer.Act.NMDA.Tau":      "100",
 					"Layer.Act.Decay.Act":     "0.0",
@@ -49,9 +49,7 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.CT.GeGain":         "1.0",
 					"Layer.CT.DecayTau":       "0",
-					"Layer.Inhib.Layer.Gi":    "1.4",
-					"Layer.Inhib.Pool.Gi":     "1.4",
-					"Layer.Inhib.Layer.On":    "true",
+					"Layer.Inhib.Layer.Gi":    "1.8",
 					"Layer.Act.GABAB.Gbar":    "0.2",
 					"Layer.Act.NMDA.Gbar":     "0.15",
 					"Layer.Act.NMDA.Tau":      "100",
@@ -63,9 +61,7 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.CT.GeGain":         "1.0",
 					"Layer.CT.DecayTau":       "50",
-					"Layer.Inhib.Layer.Gi":    "1.4",
-					"Layer.Inhib.Pool.Gi":     "1.4",
-					"Layer.Inhib.Layer.On":    "true",
+					"Layer.Inhib.Layer.Gi":    "1.8",
 					"Layer.Act.GABAB.Gbar":    "0.3",
 					"Layer.Act.NMDA.Gbar":     "0.3",
 					"Layer.Act.NMDA.Tau":      "300",
@@ -125,7 +121,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#MSTdCT", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":    "2.2",
+					"Layer.Inhib.Layer.Gi":    "2.0", // 2.0 is fine vs. higher, > lower
 					"Layer.CT.GeGain":         "1",
 					"Layer.Inhib.ActAvg.Init": "0.05",
 				}},
@@ -141,7 +137,7 @@ var ParamSets = params.Sets{
 			{Sel: "#PCCCT", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.Gi":    "1.4",
+					"Layer.Inhib.Layer.Gi":    "1.8",
 				}},
 			{Sel: ".S2V", Desc: "S2V general",
 				Params: params.Params{
@@ -235,9 +231,16 @@ var ParamSets = params.Sets{
 			{Sel: ".CTFmSuper", Desc: "CT from main super",
 				Params: params.Params{
 					"Prjn.PrjnScale.Rel": "1",
-					"Prjn.Learn.Learn":   "true",
-					"Prjn.SWt.Init.Mean": "0.5",
-					"Prjn.SWt.Init.Var":  "0.25",
+					"Prjn.Learn.Learn":   "false",
+					"Prjn.SWt.Init.Mean": "0.8",
+					"Prjn.SWt.Init.Var":  "0.0",
+				}},
+			{Sel: ".FixedCTFmSuper", Desc: "non-learning CT from main super -- for CT time integ",
+				Params: params.Params{
+					"Prjn.PrjnScale.Rel": "1",
+					"Prjn.Learn.Learn":   "false",
+					"Prjn.SWt.Init.Mean": "0.8",
+					"Prjn.SWt.Init.Var":  "0.0",
 				}},
 			{Sel: ".StrongFF", Desc: "extra strong feedforward activation",
 				Params: params.Params{

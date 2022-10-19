@@ -343,6 +343,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pcc, pccct := net.AddSuperCT2D("PCC", 8, 8, space, one2one)
 	pcc.SetClass("PCC")
 	pccct.SetClass("PCC CTInteg")
+	pccct.RecvPrjns().SendName(pcc.Name()).SetClass("FixedCTFmSuper")
 	net.ConnectCTSelf(pccct, full)                  // longer time integration to integrate depth map..
 	net.ConnectToTRC(pcc, pccct, v2wdp, full, full) // top-down depth pred
 	ff, _ = net.BidirConnectLayers(mstd, pcc, full)
@@ -800,8 +801,9 @@ func (ss *Sim) StatCounters() {
 // Aggregation is done directly from log data.
 func (ss *Sim) TrialStats() {
 	out := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon()
+	v2wdp := ss.Net.LayerByName("V2WdP").(axon.AxonLayer).AsAxon()
 
-	ss.Stats.SetFloat("TrlCorSim", float64(out.CorSim.Cor))
+	ss.Stats.SetFloat("TrlCorSim", float64(v2wdp.CorSim.Cor))
 	ss.Stats.SetFloat("TrlUnitErr", out.PctUnitErr())
 
 	// note: most stats computed in TakeAction
@@ -962,7 +964,7 @@ func (ss *Sim) ConfigActRFs() {
 		}
 	}
 
-	lnms := []string{"MSTd", "PCC", "SMA"} //  "cIPL",
+	lnms := []string{"MSTd", "PCC", "PCCCT", "SMA"} //  "cIPL",
 	var arfs []string
 	for _, lnm := range lnms {
 		for _, trg := range ss.RFTargs {

@@ -94,6 +94,7 @@ type Sim struct {
 	SubPools     bool             `desc:"if true, organize layers and connectivity with 2x2 sub-pools within each topological pool"`
 	RndOutPats   bool             `desc:"if true, use random output patterns -- else localist"`
 	ConfusionEpc int              `desc:"epoch to start recording confusion matrix"`
+	SubStep      int
 
 	GUI      egui.GUI    `view:"-" desc:"manages all the gui elements"`
 	Args     ecmd.Args   `view:"no-inline" desc:"command line args"`
@@ -217,26 +218,26 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////////////////////////
 	// input / output layers:
 
-	v2wd, v2wdp := net.AddInputTRC4D("V2Wd", 1, ev.NFOVRays, ev.DepthSize, 1, 2*space)
+	v2wd, v2wdp := net.AddInputPulv4D("V2Wd", 1, ev.NFOVRays, ev.DepthSize, 1, 2*space)
 
 	// skip fovea depth for now:
-	// v2fd, v2fdp := net.AddInputTRC4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1, space) // FovDepth
+	// v2fd, v2fdp := net.AddInputPulv4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1, space) // FovDepth
 	v2wd.SetClass("Depth")
 	v2wdp.SetClass("Depth")
 	// v2fd.SetClass("Depth")
 	// v2fdp.SetClass("Depth")
 
-	// v1f, v1fp := net.AddInputTRC4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
+	// v1f, v1fp := net.AddInputPulv4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
 	v1f := net.AddLayer4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, emer.Input) // Fovea
 	v1f.SetClass("Fovea")
 	// v1fp.SetClass("Fovea")
 
-	// s1s, s1sp := net.AddInputTRC4D("S1S", 1, 4, 2, 1, space) // ProxSoma
+	// s1s, s1sp := net.AddInputPulv4D("S1S", 1, 4, 2, 1, space) // ProxSoma
 	s1s := net.AddLayer4D("S1S", 1, 4, 2, 1, emer.Input)
 	s1s.SetClass("S1S")
 	// s1sp.SetClass("S1S")
 
-	hd, hdp := net.AddInputTRC2D("HeadDir", 1, ev.PopSize, space)
+	hd, hdp := net.AddInputPulv2D("HeadDir", 1, ev.PopSize, space)
 	hd.SetClass("HeadDir")
 	hdp.SetClass("HeadDir")
 
@@ -245,7 +246,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 
 	m1 := net.AddLayer2D("M1", stdHidY, stdHidX, emer.Hidden)
 	m1.SetClass("M1")
-	m1p := net.AddTRCLayer2D("M1P", stdHidY, stdHidX)
+	m1p := deep.AddPulvLayer2D(net.AsAxon(), "M1P", stdHidY, stdHidX)
 	m1p.SetClass("M1")
 	m1p.Driver = "M1"
 
@@ -265,21 +266,21 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	s2v.SetClass("S2V")
 	s2vct.SetClass("S2V CTCopy")
 	// net.ConnectCTSelf(s2vct, full) // not for one-step
-	net.ConnectToTRC(s2v, s2vct, hdp, full, full)
+	net.ConnectToPulv(s2v, s2vct, hdp, full, full)
 	net.ConnectLayers(hd, s2v, full, emer.Forward)
 
 	// it, itct := net.AddSuperCT2D("IT", stdHidY, stdHidX, space, one2one)
 	// it.SetClass("IT")
 	// itct.SetClass("IT CTCopy")
 	// net.ConnectCTSelf(itct, full)
-	// net.ConnectToTRC(it, itct, v1fp, full, full)
+	// net.ConnectToPulv(it, itct, v1fp, full, full)
 	// net.ConnectLayers(v1f, it, full, emer.Forward).SetClass("SuperFwd")
 
 	// lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8, space, one2one)
 	// lip.SetClass("LIP")
 	// lipct.SetClass("LIP CTCopy")
 	// net.ConnectCTSelf(lipct, full)
-	// net.ConnectToTRC(lip, lipct, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, ss.Prjns.Prjn4x3Skp2)
+	// net.ConnectToPulv(lip, lipct, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, ss.Prjns.Prjn4x3Skp2)
 	// net.ConnectLayers(v2fd, lip, ss.Prjns.Prjn4x3Skp2, emer.Forward).SetClass("SuperFwd")
 
 	// todo: LIP fovea is not topo organized for left, middle right positions
@@ -288,11 +289,11 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// net.ConnectLayers(lipct, v1fp, full, emer.Back).SetClass("ToPulv1") // attention
 
 	// 4D topo MSTd with pools:
-	// // mstd, mstdct, mstdp := net.AddSuperCTTRC4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
+	// // mstd, mstdct, mstdp := net.AddSuperCTPulv4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
 	// mstd, mstdct := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
 	// // todo: try ss.Prjn3x3Skp1 orig: p1to1
 	// net.ConnectCTSelf(mstdct, p1to1)
-	// net.ConnectToTRC(mstd, mstdct, v2wdp, ss.Prjns.Prjn4x4Skp2Recip, ss.Prjns.Prjn4x4Skp2)
+	// net.ConnectToPulv(mstd, mstdct, v2wdp, ss.Prjns.Prjn4x4Skp2Recip, ss.Prjns.Prjn4x4Skp2)
 	// // net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
 	// mstd.SetRepIdxsShape(emer.CenterPoolIdxs(mstd, 2), emer.CenterPoolShape(mstd, 2))
 	// mstdct.SetRepIdxsShape(emer.CenterPoolIdxs(mstdct, 2), emer.CenterPoolShape(mstdct, 2))
@@ -304,17 +305,17 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	mstdct.SetClass("MSTd CTCopy")
 	// mstdp.SetClass("MSTd")
 	// net.ConnectCTSelf(mstdct, full) // not needed or beneficial for simple 1 step move pred
-	net.ConnectToTRC(mstd, mstdct, v2wdp, full, rect)
+	net.ConnectToPulv(mstd, mstdct, v2wdp, full, rect)
 	net.ConnectLayers(v2wd, mstd, rect, emer.Forward)
 
 	// note: skipping cipl for now:
 	// cipl, ciplct := net.AddSuperCT4D("cIPL", 3, 3, 8, 8, space, one2one)
-	// // cipl, ciplct, ciplp := net.AddSuperCTTRC4D("cIPL", 3, 3, 8, 8, space, one2one)
+	// // cipl, ciplct, ciplp := net.AddSuperCTPulv4D("cIPL", 3, 3, 8, 8, space, one2one)
 	// cipl.SetClass("cIPL")
 	// ciplct.SetClass("cIPL")
 	// ciplp.SetClass("cIPL")
 	// net.ConnectCTSelf(ciplct, p1to1)
-	// net.ConnectToTRC(cipl, ciplct, v2wdp, full, full)
+	// net.ConnectToPulv(cipl, ciplct, v2wdp, full, full)
 	// v2wdp.RecvPrjns().SendName(ciplct.Name()).SetClass("ToPulv1")
 	// MStd <-> CIPl
 	// net.ConnectLayers(mstd, cipl, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("SuperFwd")
@@ -334,7 +335,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// 4D topo pcc:
 	// pcc, pccct := net.AddSuperCT4D("PCC", 2, 2, 7, 7, space, one2one)
 	// net.ConnectCTSelf(pccct, p1to1)
-	// net.ConnectToTRC(pcc, pccct, v2wdp, full, full)
+	// net.ConnectToPulv(pcc, pccct, v2wdp, full, full)
 	// v2wdp.RecvPrjns().SendName(pccct.Name()).SetClass("ToPulv1")
 
 	// 2d PCC -- full layer consolidating MST space
@@ -344,8 +345,8 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	pcc.SetClass("PCC")
 	pccct.SetClass("PCC CTInteg")
 	pccct.RecvPrjns().SendName(pcc.Name()).SetClass("FixedCTFmSuper")
-	net.ConnectCTSelf(pccct, full)                  // longer time integration to integrate depth map..
-	net.ConnectToTRC(pcc, pccct, v2wdp, full, full) // top-down depth pred
+	net.ConnectCTSelf(pccct, full)                   // longer time integration to integrate depth map..
+	net.ConnectToPulv(pcc, pccct, v2wdp, full, full) // top-down depth pred
 	ff, _ = net.BidirConnectLayers(mstd, pcc, full)
 	ff.SetClass("StrongFF") // needs extra activity
 	// net.ConnectLayers(mstd, pcc, full, emer.Forward)
@@ -361,7 +362,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	sma.SetClass("SMA")
 	smact.SetClass("SMA CTCopy") // CTCopy seems better than CTInteg
 	// net.ConnectCTSelf(smact, full) // maybe not
-	net.ConnectToTRC(sma, smact, m1p, full, full)
+	net.ConnectToPulv(sma, smact, m1p, full, full)
 	ff, _ = net.BidirConnectLayers(pcc, sma, full)
 	ff.SetClass("StrongFF") // needs extra activity
 	// net.ConnectLayers(smact, pccct, full, emer.Back).SetClass("CTBack") // not useful
@@ -466,11 +467,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: space})
 	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: space})
 
-	// v2wd.SetThread(1)
-	// v2wdp.SetThread(1)
-	// mstd.SetThread(1)
-	// mstdct.SetThread(1)
-	// mstdp.SetThread(1)
+	net.NThreads = 1
 
 	net.Defaults()
 	ss.Params.SetObject("Network")
@@ -483,8 +480,6 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		sr := net.SizeReport()
 		mpi.Printf("%s", sr)
 	}
-	ar := net.ThreadReport() // hand tuning now..
-	mpi.Printf("%s", ar)
 	net.InitWts()
 }
 
@@ -663,6 +658,12 @@ func (ss *Sim) SaveWeights() {
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
 func (ss *Sim) TakeAction(net *deep.Network) {
+	if ss.SubStep == 0 {
+		ss.SubStep++
+		return
+	}
+	// fmt.Printf("Take Action\n")
+	ss.SubStep = 0 // reset for next time
 	ev := ss.Envs[ss.Time.Mode].(*FWorld)
 	nact := ss.DecodeAct(ev)
 	gact, urgency := ev.ActGen()
@@ -840,7 +841,7 @@ func (ss *Sim) ConfigLogs() {
 	// Copy over Testing items
 	// ss.Logs.AddCopyFromFloatItems(etime.Train, etime.Epoch, etime.Test, etime.Epoch, "Tst", "CorSim", "UnitErr", "PctCor", "PctErr")
 
-	deep.LogAddTRCCorSimItems(&ss.Logs, ss.Net.AsAxon(), etime.Run, etime.Epoch, etime.Trial)
+	deep.LogAddPulvCorSimItems(&ss.Logs, ss.Net.AsAxon(), etime.Run, etime.Epoch, etime.Trial)
 
 	ss.ConfigActRFs()
 

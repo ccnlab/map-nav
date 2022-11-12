@@ -20,7 +20,7 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.Layer.Gi":    "1.0",
 					"Layer.Act.Decay.Act":     "0.0", // todo: explore
 					"Layer.Act.Decay.Glong":   "0.0",
-					"Layer.Act.Clamp.Ge":      "1.0", // .6 was
+					"Layer.Act.Clamp.Ge":      "1.5", // .6 was
 					"Layer.Act.Mahp.Gbar":     "0.04",
 					"Layer.Act.Sahp.Gbar":     "0.02",
 				}},
@@ -36,20 +36,21 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.CT.GeGain":         "1.0",
 					"Layer.CT.DecayTau":       "0",
-					"Layer.Inhib.Layer.Gi":    "1.4",
-					"Layer.Inhib.Pool.Gi":     "1.4",
+					"Layer.Inhib.Layer.Gi":    "2.4",
+					"Layer.Inhib.Pool.Gi":     "2.4",
 					"Layer.Act.GABAB.Gbar":    "0.2",
 					"Layer.Act.NMDA.Gbar":     "0.15",
 					"Layer.Act.NMDA.Tau":      "100",
 					"Layer.Act.Decay.Act":     "0.0",
 					"Layer.Act.Decay.Glong":   "0.0",
+					//					"Layer.Act.Sahp.Gbar":     "0.1",
 				}},
 			{Sel: ".CTCopy", Desc: "single-step copy params",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.CT.GeGain":         "1.0",
 					"Layer.CT.DecayTau":       "0",
-					"Layer.Inhib.Layer.Gi":    "1.8",
+					"Layer.Inhib.Layer.Gi":    "2.4",
 					"Layer.Act.GABAB.Gbar":    "0.2",
 					"Layer.Act.NMDA.Gbar":     "0.15",
 					"Layer.Act.NMDA.Tau":      "100",
@@ -61,17 +62,17 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Init": "0.12",
 					"Layer.CT.GeGain":         "1.0",
 					"Layer.CT.DecayTau":       "50",
-					"Layer.Inhib.Layer.Gi":    "1.8",
+					"Layer.Inhib.Layer.Gi":    "2.8",
 					"Layer.Act.GABAB.Gbar":    "0.3",
 					"Layer.Act.NMDA.Gbar":     "0.3",
 					"Layer.Act.NMDA.Tau":      "300",
 					"Layer.Act.Decay.Act":     "0.0",
 					"Layer.Act.Decay.Glong":   "0.0",
 				}},
-			{Sel: "TRCLayer", Desc: "",
+			{Sel: "PulvLayer", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":          "0.9",  // 0.9 > 1.0
-					"Layer.TRC.DriveScale":          "0.05", // 0.05 now default
+					"Layer.Inhib.Layer.Gi":          "0.8",  // was 0.9 > 1.0
+					"Layer.Pulv.DriveScale":         "0.15", // 0.1 now default
 					"Layer.Act.Decay.Act":           "0.0",  // clear
 					"Layer.Act.Decay.Glong":         "0.0",  //
 					"Layer.Act.Decay.AHP":           "0.0",  //
@@ -86,7 +87,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#V2WdP", Desc: "weaker inhibition for pulvinar",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "0.9",
+					"Layer.Inhib.Layer.Gi": "0.8",
 				}},
 			{Sel: ".Fovea", Desc: "fovea has both",
 				Params: params.Params{
@@ -117,11 +118,11 @@ var ParamSets = params.Sets{
 			{Sel: ".MSTd", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.Gi":    "1.4",
+					"Layer.Inhib.Layer.Gi":    "1.2",
 				}},
 			{Sel: "#MSTdCT", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi":    "2.0", // 2.0 is fine vs. higher, > lower
+					"Layer.Inhib.Layer.Gi":    "2.8", // 2.0 is fine vs. higher, > lower
 					"Layer.CT.GeGain":         "1",
 					"Layer.Inhib.ActAvg.Init": "0.05",
 				}},
@@ -137,7 +138,7 @@ var ParamSets = params.Sets{
 			{Sel: "#PCCCT", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
-					"Layer.Inhib.Layer.Gi":    "1.8",
+					"Layer.Inhib.Layer.Gi":    "2.8",
 				}},
 			{Sel: ".S2V", Desc: "S2V general",
 				Params: params.Params{
@@ -162,6 +163,7 @@ var ParamSets = params.Sets{
 			{Sel: "#SMACT", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Init": "0.1",
+					"Layer.Inhib.Layer.Gi":    "2.0",
 					"Layer.Act.Noise.On":      "false",
 					"Layer.Act.Noise.Ge":      "0.001",
 					"Layer.Act.Noise.Gi":      "0.001",
@@ -193,7 +195,7 @@ var ParamSets = params.Sets{
 					"Prjn.SWt.Adapt.Lrate":    "0.0001", // 0.001 > 0.01 > 0.0001
 					"Prjn.SWt.Adapt.DreamVar": "0.0",    // 0.01 is just tolerable
 					"Prjn.SWt.Init.SPct":      "1.0",    // .5 ok here, 1 best for larger nets: objrec, lvis
-					"Prjn.Learn.Trace.Tau":    "2",      // 2 > 1 for many TRC CorSims
+					"Prjn.Learn.Trace.Tau":    "2",      // 2 > 1 for many Pulv CorSims
 				}},
 			{Sel: ".Back", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{

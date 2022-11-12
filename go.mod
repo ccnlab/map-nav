@@ -3,11 +3,11 @@ module github.com/ccnlab/map-nav
 go 1.18
 
 require (
-	github.com/emer/axon v1.5.8
-	github.com/emer/emergent v1.3.29
-	github.com/emer/empi v1.0.15
+	github.com/emer/axon v1.6.3
+	github.com/emer/emergent v1.3.31
+	github.com/emer/empi v1.0.17
 	github.com/emer/etable v1.1.11
-	github.com/emer/leabra v1.1.48
+	github.com/emer/leabra v1.2.3
 	github.com/goki/gi v1.3.7
 	github.com/goki/ki v1.1.8
 	github.com/goki/mat32 v1.0.12
@@ -32,7 +32,7 @@ require (
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.0 // indirect
 	github.com/go-fonts/liberation v0.2.0 // indirect
-	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20220516021902-eb3e265c7661 // indirect
+	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20221017161538-93cebf72946b // indirect
 	github.com/go-gl/mathgl v1.0.0 // indirect
 	github.com/go-latex/latex v0.0.0-20210823091927-c0d11ff05a81 // indirect
 	github.com/go-pdf/fpdf v0.6.0 // indirect
@@ -53,7 +53,7 @@ require (
 	github.com/srwiley/rasterx v0.0.0-20220128185129-2efea2b9ea41 // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
 	golang.org/x/exp v0.0.0-20220518171630-0b5c67f07fdf // indirect
-	golang.org/x/image v0.0.0-20220413100746-70e8d0d3baa9 // indirect
+	golang.org/x/image v0.0.0-20220601225756-64ec528b34cd // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/net v0.0.0-20220531201128-c960675eff93 // indirect
 	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect

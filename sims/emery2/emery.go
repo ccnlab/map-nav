@@ -10,10 +10,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/emer/axon/axon"
-	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/decoder"
 	"github.com/emer/emergent/ecmd"
 	"github.com/emer/emergent/egui"
@@ -27,7 +27,6 @@ import (
 	"github.com/emer/emergent/looper"
 	"github.com/emer/emergent/netview"
 	"github.com/emer/emergent/prjn"
-	"github.com/emer/emergent/relpos"
 	"github.com/emer/empi/mpi"
 	"github.com/emer/etable/agg"
 	"github.com/emer/etable/etable"
@@ -44,28 +43,23 @@ import (
 	"github.com/goki/mat32"
 )
 
-// Debug triggers various messages etc
-var Debug = false
+var (
+	// Debug triggers various messages etc
+	Debug = false
+	// GPU runs with the GPU (for demo, testing -- not useful for such a small network)
+	GPU = false
+)
 
 func main() {
-	TheSim.New()
+	sim := &Sim{}
+	sim.New()
 	if len(os.Args) > 1 {
-		TheSim.CmdArgs() // simple assumption is that any args = no gui -- could add explicit arg if you want
+		sim.RunNoGUI() // simple assumption is that any args = no gui -- could add explicit arg if you want
 	} else {
 		gimain.Main(func() { // this starts gui -- requires valid OpenGL display connection (e.g., X11)
-			guirun()
+			sim.RunGUI()
 		})
 	}
-}
-
-func guirun() {
-	TheSim.Config()
-	TheSim.Init()
-	win := TheSim.ConfigGui()
-	ev := TheSim.Envs[etime.Train.String()].(*FWorld)
-	fwin := ev.ConfigWorldGui()
-	fwin.GoStartEventLoop()
-	win.StartEventLoop()
 }
 
 // see params_def.go for default params
@@ -76,7 +70,7 @@ func guirun() {
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net          *deep.Network    `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Net          *axon.Network    `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	PctCortex    float64          `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax float64          `desc:"maximum PctCortex, when running on the schedule"`
 	Prjns        Prjns            `desc:"special projections"`
@@ -85,7 +79,7 @@ type Sim struct {
 	Stats        estats.Stats     `desc:"contains computed statistic values"`
 	Logs         elog.Logs        `desc:"Contains all the logs and information about the logs.'"`
 	Envs         env.Envs         `view:"no-inline" desc:"Environments"`
-	Time         axon.Time        `desc:"axon timing parameters and state"`
+	Context      axon.Context     `desc:"axon timing parameters and state"`
 	ViewUpdt     netview.ViewUpdt `view:"inline" desc:"netview update parameters"`
 	PCAInterval  int              `desc:"how frequently (in epochs) to compute PCA on hidden representations to measure variance?"`
 	MaxTrls      int              `desc:"maximum number of training trials per epoch"`
@@ -109,12 +103,9 @@ type Sim struct {
 // prompt for args when calling methods
 var KiT_Sim = kit.Types.AddType(&Sim{}, SimProps)
 
-// TheSim is the overall state for this simulation
-var TheSim Sim
-
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
-	ss.Net = &deep.Network{}
+	ss.Net = &axon.Network{}
 	ss.Prjns.New()
 	ss.Params.Params = ParamSets
 	ss.Params.AddNetwork(ss.Net)
@@ -130,7 +121,7 @@ func (ss *Sim) New() {
 	ss.ConfusionEpc = 500
 	ss.MaxTrls = 1024
 	ss.RFTargs = []string{"Pos", "Act", "HdDir"}
-	ss.Time.Defaults()
+	ss.Context.Defaults()
 	ss.ConfigArgs() // do this first, has key defaults
 }
 
@@ -180,7 +171,7 @@ func (ss *Sim) ConfigEnv() {
 	ss.Envs.Add(trn, tst)
 }
 
-func (ss *Sim) ConfigNet(net *deep.Network) {
+func (ss *Sim) ConfigNet(net *axon.Network) {
 	net.InitName(net, "Emery")
 
 	full := prjn.NewFull()
@@ -218,42 +209,43 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	////////////////////////////////////////
 	// input / output layers:
 
-	v2wd, v2wdp := net.AddInputPulv4D("V2Wd", 1, ev.NFOVRays, ev.DepthSize, 1, 2*space)
+	v2wd, v2wdP := net.AddInputPulv4D("V2Wd", 1, ev.NFOVRays, ev.DepthSize, 1, 2*space)
+	v2wd.SetClass("Depth")
+	v2wdP.SetClass("Depth")
 
 	// skip fovea depth for now:
 	// v2fd, v2fdp := net.AddInputPulv4D("V2Fd", ev.DepthPools, fsz, ev.DepthSize/ev.DepthPools, 1, space) // FovDepth
-	v2wd.SetClass("Depth")
-	v2wdp.SetClass("Depth")
 	// v2fd.SetClass("Depth")
 	// v2fdp.SetClass("Depth")
 
-	// v1f, v1fp := net.AddInputPulv4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
-	v1f := net.AddLayer4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, emer.Input) // Fovea
+	// v1f, v1fP := net.AddInputPulv4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, space) // Fovea
+	v1f := net.AddLayer4D("V1F", 1, fsz, ev.PatSize.Y, ev.PatSize.X, axon.InputLayer) // Fovea
 	v1f.SetClass("Fovea")
-	// v1fp.SetClass("Fovea")
+	// v1fP.SetClass("Fovea")
 
-	// s1s, s1sp := net.AddInputPulv4D("S1S", 1, 4, 2, 1, space) // ProxSoma
-	s1s := net.AddLayer4D("S1S", 1, 4, 2, 1, emer.Input)
+	// s1s, s1sP := net.AddInputPulv4D("S1S", 1, 4, 2, 1, space) // ProxSoma
+	s1s := net.AddLayer4D("S1S", 1, 4, 2, 1, axon.InputLayer)
 	s1s.SetClass("S1S")
-	// s1sp.SetClass("S1S")
+	// s1sP.SetClass("S1S")
 
-	hd, hdp := net.AddInputPulv2D("HeadDir", 1, ev.PopSize, space)
+	hd, hdP := net.AddInputPulv2D("HeadDir", 1, ev.PopSize, space)
 	hd.SetClass("HeadDir")
-	hdp.SetClass("HeadDir")
+	hdP.SetClass("HeadDir")
 
-	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, emer.Input) // Inters = Insula
+	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, axon.InputLayer) // Inters = Insula
 	ins.SetClass("Ins")
 
-	m1 := net.AddLayer2D("M1", stdHidY, stdHidX, emer.Hidden)
-	m1.SetClass("M1")
-	m1p := deep.AddPulvLayer2D(net.AsAxon(), "M1P", stdHidY, stdHidX)
-	m1p.SetClass("M1")
-	m1p.Driver = "M1"
-
-	vl := net.AddLayer2D("VL", ev.PatSize.Y, ev.PatSize.X, emer.Target) // Action
-	vl.SetClass("Action")
-	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, emer.Input) // Action
+	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, axon.InputLayer) // Action: what is actually done
 	act.SetClass("Action")
+	vl := net.AddPulvLayer2D("VL", ev.PatSize.Y, ev.PatSize.X) // VL predicts brainstem Action
+	vl.SetBuildConfig("DriveLayName", act.Name())
+	vl.SetClass("Action")
+
+	m1, m1CT := net.AddSuperCT2D("M1", "M1Prjn", stdHidY, stdHidX, space, one2one)
+	m1P := net.AddPulvForSuper(m1, space)
+
+	// vl is a predictive thalamus but we don't have direct access to its source
+	net.ConnectToPulv(m1, m1CT, vl, full, full, "")
 
 	ff, _ = net.BidirConnectLayers(m1, vl, full)
 	ff.SetClass("StrongFF")
@@ -262,225 +254,222 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 	// Hidden layers
 
 	// vestibular / head direction hidden layer:
-	s2v, s2vct := net.AddSuperCT2D("S2V", stdHidY, stdHidX, space, one2one)
-	s2v.SetClass("S2V")
-	s2vct.SetClass("S2V CTCopy")
-	// net.ConnectCTSelf(s2vct, full) // not for one-step
-	net.ConnectToPulv(s2v, s2vct, hdp, full, full)
-	net.ConnectLayers(hd, s2v, full, emer.Forward)
+	s2v, s2vCT := net.AddSuperCT2D("S2V", "S2V", stdHidY, stdHidX, space, one2one)
+	s2vCT.SetClass("S2V CTCopy")
+	// net.ConnectCTSelf(s2vCT, full) // not for one-step
+	net.ConnectToPulv(s2v, s2vCT, hdP, full, full, "")
+	net.ConnectLayers(hd, s2v, full, axon.ForwardPrjn)
 
-	// it, itct := net.AddSuperCT2D("IT", stdHidY, stdHidX, space, one2one)
-	// it.SetClass("IT")
-	// itct.SetClass("IT CTCopy")
-	// net.ConnectCTSelf(itct, full)
-	// net.ConnectToPulv(it, itct, v1fp, full, full)
-	// net.ConnectLayers(v1f, it, full, emer.Forward).SetClass("SuperFwd")
+	// it, itCT := net.AddSuperCT2D("IT", "IT", stdHidY, stdHidX, space, one2one)
+	// itCT.SetClass("IT CTCopy")
+	// net.ConnectCTSelf(itCT, full)
+	// net.ConnectToPulv(it, itCT, v1fP, full, full, "")
+	// net.ConnectLayers(v1f, it, full, axon.ForwardPrjn).SetClass("SuperFwd")
 
-	// lip, lipct := net.AddSuperCT4D("LIP", ev.DepthPools/2, 1, 8, 8, space, one2one)
-	// lip.SetClass("LIP")
-	// lipct.SetClass("LIP CTCopy")
-	// net.ConnectCTSelf(lipct, full)
-	// net.ConnectToPulv(lip, lipct, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, ss.Prjns.Prjn4x3Skp2)
-	// net.ConnectLayers(v2fd, lip, ss.Prjns.Prjn4x3Skp2, emer.Forward).SetClass("SuperFwd")
+	// lip, lipCT := net.AddSuperCT4D("LIP", "LIP", ev.DepthPools/2, 1, 8, 8, space, one2one)
+	// lipCT.SetClass("LIP CTCopy")
+	// net.ConnectCTSelf(lipCT, full)
+	// net.ConnectToPulv(lip, lipCT, v2fdp, ss.Prjns.Prjn4x3Skp2Recip, ss.Prjns.Prjn4x3Skp2, "")
+	// net.ConnectLayers(v2fd, lip, ss.Prjns.Prjn4x3Skp2, axon.ForwardPrjn).SetClass("SuperFwd")
 
 	// todo: LIP fovea is not topo organized for left, middle right positions
 	// groups are depth organized
 	// not enough resolution to really map that out here.
-	// net.ConnectLayers(lipct, v1fp, full, emer.Back).SetClass("ToPulv1") // attention
+	// net.ConnectLayers(lipCT, v1fP, full, axon.BackPrjn).SetClass("ToPulv1") // attention
 
 	// 4D topo MSTd with pools:
-	// // mstd, mstdct, mstdp := net.AddSuperCTPulv4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
-	// mstd, mstdct := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
+	// // mstd, mstdCT, mstdP := net.AddSuperCTPulv4D("MSTd", "MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
+	// mstd, mstdCT := net.AddSuperCT4D("MSTd", ev.DepthPools/2, ev.NFOVRays/2, 8, 8, space, one2one) // was p1to1
 	// // todo: try ss.Prjn3x3Skp1 orig: p1to1
-	// net.ConnectCTSelf(mstdct, p1to1)
-	// net.ConnectToPulv(mstd, mstdct, v2wdp, ss.Prjns.Prjn4x4Skp2Recip, ss.Prjns.Prjn4x4Skp2)
-	// // net.ConnectCtxtToCT(v2wd, mstdct, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
+	// net.ConnectCTSelf(mstdCT, p1to1)
+	// net.ConnectToPulv(mstd, mstdCT, v2wdP, ss.Prjns.Prjn4x4Skp2Recip, ss.Prjns.Prjn4x4Skp2, "")
+	// // net.ConnectCtxtToCT(v2wd, mstdCT, ss.Prjns.Prjn4x4Skp2).SetClass("CTFmSuper")
 	// mstd.SetRepIdxsShape(emer.CenterPoolIdxs(mstd, 2), emer.CenterPoolShape(mstd, 2))
-	// mstdct.SetRepIdxsShape(emer.CenterPoolIdxs(mstdct, 2), emer.CenterPoolShape(mstdct, 2))
+	// mstdCT.SetRepIdxsShape(emer.CenterPoolIdxs(mstdCT, 2), emer.CenterPoolShape(mstdCT, 2))
 
 	// 2D MSTd -- much simpler:
 	mstdSz := evec.Vec2i{X: (ev.NFOVRays - (rfWidth - 1)) * nPerAng, Y: (ev.DepthSize - (rfDepth - 1)) * nPerDepth}
-	mstd, mstdct := net.AddSuperCT2D("MSTd", mstdSz.Y, mstdSz.X, space, one2one) // def one2one
-	mstd.SetClass("MSTd")
-	mstdct.SetClass("MSTd CTCopy")
-	// mstdp.SetClass("MSTd")
-	// net.ConnectCTSelf(mstdct, full) // not needed or beneficial for simple 1 step move pred
-	net.ConnectToPulv(mstd, mstdct, v2wdp, full, rect)
-	net.ConnectLayers(v2wd, mstd, rect, emer.Forward)
+	mstd, mstdCT := net.AddSuperCT2D("MSTd", "MSTd", mstdSz.Y, mstdSz.X, space, one2one) // def one2one
+	mstdCT.SetClass("MSTd CTCopy")
+	// mstdP.SetClass("MSTd")
+	// net.ConnectCTSelf(mstdCT, full) // not needed or beneficial for simple 1 step move pred
+	net.ConnectToPulv(mstd, mstdCT, v2wdP, full, rect, "")
+	net.ConnectLayers(v2wd, mstd, rect, axon.ForwardPrjn)
 
 	// note: skipping cipl for now:
-	// cipl, ciplct := net.AddSuperCT4D("cIPL", 3, 3, 8, 8, space, one2one)
-	// // cipl, ciplct, ciplp := net.AddSuperCTPulv4D("cIPL", 3, 3, 8, 8, space, one2one)
-	// cipl.SetClass("cIPL")
-	// ciplct.SetClass("cIPL")
-	// ciplp.SetClass("cIPL")
-	// net.ConnectCTSelf(ciplct, p1to1)
-	// net.ConnectToPulv(cipl, ciplct, v2wdp, full, full)
-	// v2wdp.RecvPrjns().SendName(ciplct.Name()).SetClass("ToPulv1")
+	// cipl, ciplCT := net.AddSuperCT4D("cIPL", "cIPL", 3, 3, 8, 8, space, one2one)
+	// // cipl, ciplCT, ciplP := net.AddSuperCTPulv4D("cIPL", 3, 3, 8, 8, space, one2one)
+	// ciplCT.SetClass("cIPL")
+	// ciplP.SetClass("cIPL")
+	// net.ConnectCTSelf(ciplCT, p1to1)
+	// net.ConnectToPulv(cipl, ciplCT, v2wdP, full, full, "")
+	// v2wdP.RecvPrjns().SendName(ciplCT.Name()).SetClass("ToPulv1")
 	// MStd <-> CIPl
-	// net.ConnectLayers(mstd, cipl, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("SuperFwd")
-	// net.ConnectLayers(cipl, mstd, ss.Prjns.Prjn4x4Skp2Recip, emer.Back)
-	// net.ConnectLayers(ciplct, mstdct, ss.Prjns.Prjn4x4Skp2Recip, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(mstdp, ciplct, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(mstdp, cipl, ss.Prjns.Prjn4x4Skp2, emer.Back).SetClass("FmPulv")
-	// net.ConnectLayers(ciplct, mstdp, ss.Prjns.Prjn4x4Skp2Recip, emer.Forward).SetClass("CTToPulv3")
-	// net.ConnectLayers(sma, cipl, full, emer.Back)
-	// net.ConnectLayers(s1s, cipl, full, emer.Back)
-	// net.ConnectLayers(s2v, cipl, full, emer.Back)
-	// net.ConnectLayers(vl, cipl, full, emer.Back) // todo: m1?
-	// net.ConnectLayers(pccct, ciplct, full, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(smact, ciplct, full, emer.Back).SetClass("CTBack")
-	// net.ConnectLayers(mstdct, ciplp, ss.Prjns.Prjn4x4Skp2, emer.Forward).SetClass("FwdToPulv")
+	// net.ConnectLayers(mstd, cipl, ss.Prjns.Prjn4x4Skp2, axon.ForwardPrjn).SetClass("SuperFwd")
+	// net.ConnectLayers(cipl, mstd, ss.Prjns.Prjn4x4Skp2Recip, axon.BackPrjn)
+	// net.ConnectLayers(ciplCT, mstdCT, ss.Prjns.Prjn4x4Skp2Recip, axon.BackPrjn).SetClass("CTBack")
+	// net.ConnectLayers(mstdP, ciplCT, ss.Prjns.Prjn4x4Skp2, axon.BackPrjn).SetClass("FmPulv")
+	// net.ConnectLayers(mstdP, cipl, ss.Prjns.Prjn4x4Skp2, axon.BackPrjn).SetClass("FmPulv")
+	// net.ConnectLayers(ciplCT, mstdP, ss.Prjns.Prjn4x4Skp2Recip, axon.ForwardPrjn).SetClass("CTToPulv3")
+	// net.ConnectLayers(sma, cipl, full, axon.BackPrjn)
+	// net.ConnectLayers(s1s, cipl, full, axon.BackPrjn)
+	// net.ConnectLayers(s2v, cipl, full, axon.BackPrjn)
+	// net.ConnectLayers(vl, cipl, full, axon.BackPrjn) // todo: m1?
+	// net.ConnectLayers(pccct, ciplCT, full, axon.BackPrjn).SetClass("CTBack")
+	// net.ConnectLayers(smact, ciplCT, full, axon.BackPrjn).SetClass("CTBack")
+	// net.ConnectLayers(mstdCT, ciplP, ss.Prjns.Prjn4x4Skp2, axon.ForwardPrjn).SetClass("FwdToPulv")
 
 	// 4D topo pcc:
-	// pcc, pccct := net.AddSuperCT4D("PCC", 2, 2, 7, 7, space, one2one)
-	// net.ConnectCTSelf(pccct, p1to1)
-	// net.ConnectToPulv(pcc, pccct, v2wdp, full, full)
-	// v2wdp.RecvPrjns().SendName(pccct.Name()).SetClass("ToPulv1")
+	// pcc, pccCT := net.AddSuperCT4D("PCC", "PCC", 2, 2, 7, 7, space, one2one)
+	// net.ConnectCTSelf(pccCT, p1to1)
+	// net.ConnectToPulv(pcc, pccCT, v2wdP, full, full, "")
+	// v2wdP.RecvPrjns().SendName(pccCT.Name()).SetClass("ToPulv1")
 
 	// 2d PCC -- full layer consolidating MST space
 	// bidir connected to MSTDd super, contributes prediction to V2WdP
 	// pcc can use a slightly larger layer -- not critical but it is a central hub..
-	pcc, pccct := net.AddSuperCT2D("PCC", 8, 8, space, one2one)
-	pcc.SetClass("PCC")
-	pccct.SetClass("PCC CTInteg")
-	pccct.RecvPrjns().SendName(pcc.Name()).SetClass("FixedCTFmSuper")
-	net.ConnectCTSelf(pccct, full)                   // longer time integration to integrate depth map..
-	net.ConnectToPulv(pcc, pccct, v2wdp, full, full) // top-down depth pred
+	pcc, pccCT := net.AddSuperCT2D("PCC", "PCC", 8, 8, space, one2one)
+	pccCT.SetClass("PCC CTInteg")
+	ff, _ = pccCT.SendNameTry(pcc.Name())
+	ff.SetClass("FixedCTFmSuper")
+	net.ConnectCTSelf(pccCT, full, "")                   // longer time integration to integrate depth map..
+	net.ConnectToPulv(pcc, pccCT, v2wdP, full, full, "") // top-down depth pred
 	ff, _ = net.BidirConnectLayers(mstd, pcc, full)
 	ff.SetClass("StrongFF") // needs extra activity
-	// net.ConnectLayers(mstd, pcc, full, emer.Forward)
-	// net.ConnectLayers(pccct, mstdct, full, emer.Back).SetClass("CTBack")
+	// net.ConnectLayers(mstd, pcc, full, axon.ForwardPrjn)
+	// net.ConnectLayers(pccCT, mstdCT, full, axon.BackPrjn).SetClass("CTBack")
 
 	// pcc integrates somatosensory as well
-	net.ConnectLayers(s1s, pcc, full, emer.Forward)
+	net.ConnectLayers(s1s, pcc, full, axon.ForwardPrjn)
 	// net.BidirConnectLayers(s2v, pcc, full) // todo: just direct head dir input instead?
-	net.ConnectLayers(s2v, pcc, full, emer.Forward)
+	net.ConnectLayers(s2v, pcc, full, axon.ForwardPrjn)
 
-	// sma gets from everything, predicts m1p
-	sma, smact := net.AddSuperCT2D("SMA", stdHidY, stdHidX, space, one2one)
-	sma.SetClass("SMA")
-	smact.SetClass("SMA CTCopy") // CTCopy seems better than CTInteg
-	// net.ConnectCTSelf(smact, full) // maybe not
-	net.ConnectToPulv(sma, smact, m1p, full, full)
+	// sma gets from everything, predicts m1P
+	sma, smaCT := net.AddSuperCT2D("SMA", "SMA", stdHidY, stdHidX, space, one2one)
+	smaCT.SetClass("SMA CTCopy") // CTCopy seems better than CTInteg
+	// net.ConnectCTSelf(smaCT, full, "") // maybe not
+	net.ConnectToPulv(sma, smaCT, m1P, full, full, "")
 	ff, _ = net.BidirConnectLayers(pcc, sma, full)
 	ff.SetClass("StrongFF") // needs extra activity
-	// net.ConnectLayers(smact, pccct, full, emer.Back).SetClass("CTBack") // not useful
+	// net.ConnectLayers(smaCT, pccCT, full, axon.BackPrjn).SetClass("CTBack") // not useful
 	ff, _ = net.BidirConnectLayers(sma, m1, full)
 	ff.SetClass("StrongFF")
 
-	// net.ConnectLayers(vl, sma, full, emer.Back) // get the error directly?
-	// net.ConnectLayers(vl, smact, full, emer.Back)
+	// net.ConnectLayers(vl, sma, full, axon.BackPrjn) // get the error directly?
+	// net.ConnectLayers(vl, smaCT, full, axon.BackPrjn)
 
-	net.ConnectLayers(v1f, sma, full, emer.Forward)
-	net.ConnectLayers(s1s, sma, full, emer.Forward)
+	net.ConnectLayers(v1f, sma, full, axon.ForwardPrjn)
+	net.ConnectLayers(s1s, sma, full, axon.ForwardPrjn)
 
 	_, fb = net.BidirConnectLayers(s2v, sma, full)
 	fb.SetClass("StrongFmSMA")
 
-	// net.ConnectLayers(smact, vl, full, emer.Forward) // this may be key?
-	// net.ConnectLayers(sma, vl, full, emer.Forward) // no, right?
+	// net.ConnectLayers(smaCT, vl, full, axon.ForwardPrjn) // this may be key?
+	// net.ConnectLayers(sma, vl, full, axon.ForwardPrjn) // no, right?
 
-	net.ConnectLayers(sma, mstd, full, emer.Back).SetClass("StrongFmSMA") // note: back seems to work?
-	// net.ConnectLayers(smact, mstdct, full, emer.Back).SetClass("CTBack") // not useful
+	net.ConnectLayers(sma, mstd, full, axon.BackPrjn).SetClass("StrongFmSMA") // note: back seems to work?
+	// net.ConnectLayers(smaCT, mstdCT, full, axon.BackPrjn).SetClass("CTBack") // not useful
 
-	// net.ConnectLayers(it, sma, full, emer.Forward)
-	// net.ConnectLayers(lip, sma, full, emer.Forward)
-	// net.ConnectLayers(smact, s2vct, full, emer.Back).SetClass("CTBack")
+	// net.ConnectLayers(it, sma, full, axon.ForwardPrjn)
+	// net.ConnectLayers(lip, sma, full, axon.ForwardPrjn)
+	// net.ConnectLayers(smaCT, s2vCT, full, axon.BackPrjn).SetClass("CTBack")
 
 	//////////////////////////////////////
 	// Action prediction
 
 	// from act works perfectly if pctcortex is 0 -- important sanity check
 	// on the depth, head direction predictive learning
-	// net.ConnectLayers(act, mstd, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, s2v, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, pcc, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, sma, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, cipl, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, it, full, emer.Forward).SetClass("FmAct")
-	// net.ConnectLayers(act, lip, full, emer.Forward).SetClass("FmAct")
+	// net.ConnectLayers(act, mstd, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, s2v, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, pcc, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, sma, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, cipl, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, it, full, axon.ForwardPrjn).SetClass("FmAct")
+	// net.ConnectLayers(act, lip, full, axon.ForwardPrjn).SetClass("FmAct")
 
 	////////////////////
 	// lateral inhibition
 
 	/*
 		net.LateralConnectLayerPrjn(mstd, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-		net.LateralConnectLayerPrjn(mstdct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(mstdCT, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 		// net.LateralConnectLayerPrjn(cipl, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-		// net.LateralConnectLayerPrjn(ciplct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		// net.LateralConnectLayerPrjn(ciplCT, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 		net.LateralConnectLayerPrjn(pcc, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
-		net.LateralConnectLayerPrjn(pccct, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(pccCT, p1to1, &axon.HebbPrjn{}).SetType(emer.Inhib)
 		net.LateralConnectLayerPrjn(sma, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
-		net.LateralConnectLayerPrjn(smact, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
+		net.LateralConnectLayerPrjn(smaCT, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
 		net.LateralConnectLayerPrjn(m1, full, &axon.HebbPrjn{}).SetType(emer.Inhib)
 	*/
 
 	////////////////////
 	// Shortcuts
 
-	// net.ConnectLayers(v2wd, cipl, rndcut, emer.Forward).SetClass("V1SC")
-	// net.ConnectLayers(v2wd, ciplct, rndcut, emer.Forward).SetClass("V1SC")
-	// net.ConnectLayers(v2wd, pcc, rndcut, emer.Forward).SetClass("V1SC")
-	// net.ConnectLayers(v2wd, pccct, rndcut, emer.Forward).SetClass("V1SC")
-	// net.ConnectLayers(v2wd, sma, rndcut, emer.Forward).SetClass("V1SC")
-	// net.ConnectLayers(v2wd, smact, rndcut, emer.Forward).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, cipl, rndcut, axon.ForwardPrjn).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, ciplCT, rndcut, axon.ForwardPrjn).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, pcc, rndcut, axon.ForwardPrjn).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, pccCT, rndcut, axon.ForwardPrjn).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, sma, rndcut, axon.ForwardPrjn).SetClass("V1SC")
+	// net.ConnectLayers(v2wd, smaCT, rndcut, axon.ForwardPrjn).SetClass("V1SC")
 
 	//////////////////////////////////////
 	// position
 
-	v1f.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wdp.Name(), YAlign: relpos.Front, Space: space})
-	// v2fd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
-	v2wdp.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2wd.Name(), YAlign: relpos.Front, Space: space})
+	v1f.PlaceRightOf(v2wdP, space)
+	// v2fd.PlaceBehind(v1f, space)
+	v2wdP.PlaceRightOf(v2wd, space)
 
-	// v1fp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
-	// it.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1fp.Name(), XAlign: relpos.Left, Space: space})
-	// itct.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: it.Name(), XAlign: relpos.Left, Space: space})
+	// v1fP.PlaceBehind(v1f, space)
+	// it.PlaceBehind(v1fP, space)
+	// itCT.PlaceBehind(it, space)
 
-	// v2fd.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: space})
-	// v2fdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v2fd.Name(), XAlign: relpos.Left, Space: space})
-	// lip.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v2fdp.Name(), YAlign: relpos.Front, Space: space})
-	// lipct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: lip.Name(), YAlign: relpos.Front, Space: space})
+	// v2fd.PlaceRightOf(v1f, space)
+	// v2fdp.PlaceBehind(v2fd, space)
+	// lip.PlaceRightOf(v2fdp, space)
+	// lipCT.PlaceRightOf(lip, space)
 
-	s1s.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: v1f.Name(), XAlign: relpos.Left, Space: space})
-	// s1sp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: space})
+	s1s.PlaceBehind(v1f, space)
+	// s1sP.PlaceBehind(s1s, space)
 
-	hd.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: s1s.Name(), XAlign: relpos.Left, Space: space})
-	hdp.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: hd.Name(), XAlign: relpos.Left, Space: space})
+	hd.PlaceBehind(s1s, space)
+	hdP.PlaceBehind(hd, space)
 
-	s2v.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: hdp.Name(), XAlign: relpos.Left, Space: space})
-	s2vct.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: s2v.Name(), YAlign: relpos.Front, Space: space})
+	s2v.PlaceBehind(hdP, space)
+	s2vCT.PlaceRightOf(s2v, space)
 
-	ins.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: v1f.Name(), YAlign: relpos.Front, Space: 2 * space})
+	ins.PlaceRightOf(v1f, 2*space)
 
-	vl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: ins.Name(), YAlign: relpos.Front, Space: space})
-	act.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: vl.Name(), XAlign: relpos.Left, Space: space})
+	vl.PlaceRightOf(ins, space)
+	act.PlaceBehind(vl, space)
 
-	mstd.SetRelPos(relpos.Rel{Rel: relpos.Above, Other: v2wd.Name(), XAlign: relpos.Left, YAlign: relpos.Front})
+	mstd.PlaceAbove(v2wd)
 
-	// cipl.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: space})
+	// cipl.PlaceRightOf(mstd, space)
 
-	pcc.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: mstd.Name(), YAlign: relpos.Front, Space: space})
+	pcc.PlaceRightOf(mstd, space)
 
-	sma.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: pcc.Name(), YAlign: relpos.Front, Space: space})
+	sma.PlaceRightOf(pcc, space)
 
-	m1.SetRelPos(relpos.Rel{Rel: relpos.RightOf, Other: sma.Name(), YAlign: relpos.Front, Space: space})
-	m1p.SetRelPos(relpos.Rel{Rel: relpos.Behind, Other: m1.Name(), XAlign: relpos.Left, Space: space})
+	m1.PlaceRightOf(sma, space)
 
-	net.NThreads = 1
-
-	net.Defaults()
-	ss.Params.SetObject("Network")
 	err := net.Build()
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	if !ss.Args.Bool("nogui") {
-		sr := net.SizeReport()
-		mpi.Printf("%s", sr)
-	}
+	net.Defaults()
+	ss.Params.SetObject("Network")
+
+	// if !ss.Args.Bool("nogui") {
+	// 	sr := net.SizeReport()
+	// 	mpi.Printf("%s", sr)
+	// }
 	net.InitWts()
+
+	thr := ss.Args.Int("threads")
+	runtime.GOMAXPROCS(thr)
+	net.SetNThreads(thr)
+	mpi.Printf("GOMAXPROCS: %d\tthreads: %d\n", runtime.GOMAXPROCS(0), net.NThreads)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -524,11 +513,11 @@ func (ss *Sim) ConfigLoops() {
 	// note: needs a lot of data for good actrfs -- is relatively fast under mpi
 	man.AddStack(etime.Test).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
 
-	axon.LooperStdPhases(man, &ss.Time, ss.Net.AsAxon(), 150, 199)            // plus phase timing
-	axon.LooperSimCycleAndLearn(man, ss.Net.AsAxon(), &ss.Time, &ss.ViewUpdt) // std algo code
+	axon.LooperStdPhases(man, &ss.Context, ss.Net, 150, 199)            // plus phase timing
+	axon.LooperSimCycleAndLearn(man, ss.Net, &ss.Context, &ss.ViewUpdt) // std algo code
 
 	man.GetLoop(etime.Train, etime.Trial).OnEnd.Replace("UpdateWeights", func() {
-		ss.Net.DWt(&ss.Time)
+		ss.Net.DWt(&ss.Context)
 		ss.ViewUpdt.RecordSyns() // note: critical to update weights here so DWt is visible
 		ss.MPIWtFmDWt()
 	})
@@ -573,7 +562,7 @@ func (ss *Sim) ConfigLoops() {
 			if ss.Args.Bool("mpi") {
 				ss.Logs.MPIGatherTableRows(etime.Analyze, etime.Trial, ss.Comm)
 			}
-			axon.PCAStats(ss.Net.AsAxon(), &ss.Logs, &ss.Stats)
+			axon.PCAStats(ss.Net, &ss.Logs, &ss.Stats)
 			ss.Logs.ResetLog(etime.Analyze, etime.Trial)
 		}
 	})
@@ -631,7 +620,7 @@ func (ss *Sim) ConfigLoops() {
 			ss.GUI.NetDataRecord(ss.ViewUpdt.Text)
 		})
 	} else {
-		axon.LooperUpdtNetView(man, &ss.ViewUpdt)
+		axon.LooperUpdtNetView(man, &ss.ViewUpdt, ss.Net)
 		axon.LooperUpdtPlots(man, &ss.GUI)
 
 		man.GetLoop(etime.Train, etime.Trial).OnEnd.Add("UpdateWorldGui", func() {
@@ -652,48 +641,42 @@ func (ss *Sim) SaveWeights() {
 		return
 	}
 	ctrString := ss.Stats.PrintVals([]string{"Run", "Epoch"}, []string{"%03d", "%05d"}, "_")
-	axon.SaveWeightsIfArgSet(ss.Net.AsAxon(), &ss.Args, ctrString, ss.Stats.String("RunName"))
+	axon.SaveWeightsIfArgSet(ss.Net, &ss.Args, ctrString, ss.Stats.String("RunName"))
 }
 
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
-func (ss *Sim) TakeAction(net *deep.Network) {
+func (ss *Sim) TakeAction(net *axon.Network) {
 	if ss.SubStep == 0 {
 		ss.SubStep++
 		return
 	}
 	// fmt.Printf("Take Action\n")
 	ss.SubStep = 0 // reset for next time
-	ev := ss.Envs[ss.Time.Mode].(*FWorld)
+	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	nact := ss.DecodeAct(ev)
 	gact, urgency := ev.ActGen()
 	ss.Stats.SetString("PrevAction", ss.Stats.String("ActAction"))
 	ss.Stats.SetString("NetAction", ev.Acts[nact])
-	ss.Stats.SetString("GenAction", ev.Acts[gact])
+	ss.Stats.SetString("Instinct", ev.Acts[gact])
 	if nact == gact {
 		ss.Stats.SetFloat("ActMatch", 1)
 	} else {
 		ss.Stats.SetFloat("ActMatch", 0)
 	}
-	actAct := ss.Stats.String("GenAction")
-	if erand.BoolProb(float64(urgency), -1) {
-		actAct = ss.Stats.String("GenAction")
-	} else if erand.BoolProb(ss.PctCortex, -1) {
+	actAct := ss.Stats.String("Instinct")
+	if erand.BoolP32(urgency, -1) {
+		actAct = ss.Stats.String("Instinct")
+	} else if erand.BoolP(ss.PctCortex, -1) {
 		actAct = ss.Stats.String("NetAction")
 	}
 	ss.Stats.SetString("ActAction", actAct)
 
 	ev.Action(actAct, nil)
-	ap, ok := ev.Pats[actAct]
-	if ok {
-		vly := net.LayerByName("VL").(axon.AxonLayer).AsAxon()
-		actly := net.LayerByName("Act").(axon.AxonLayer).AsAxon()
-		vly.SetType(emer.Input)
-		vly.ApplyExt(ap)
-		actly.ApplyExt(ap)
-		// fmt.Printf("action: %s\n", actAct)
-		vly.SetType(emer.Target)
-	}
+	// ap, ok := ev.Pats[actAct]
+	// if ok {
+	// 	ss.Net.ApplyExts(&ss.Context)
+	// }
 }
 
 // DecodeAct decodes the VL ActM state to find closest action pattern
@@ -709,24 +692,24 @@ func (ss *Sim) DecodeAct(ev *FWorld) int {
 // (training, testing, etc).
 func (ss *Sim) ApplyInputs() {
 	net := ss.Net
-	ev := ss.Envs[ss.Time.Mode].(*FWorld)
+	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Inters", "Action", "Action"}
-	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Ins", "VL", "Act"}
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Inters", "Action"}
+	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Ins", "Act"}
 	for i, lnm := range lays {
-		lyi := ss.Net.LayerByName(lnm)
-		if lyi == nil {
+		ly := ss.Net.AxonLayerByName(lnm)
+		if ly == nil {
 			continue
 		}
-		ly := lyi.(axon.AxonLayer).AsAxon()
 		pats := ev.State(states[i])
 		if pats != nil {
 			ly.ApplyExt(pats)
 		}
 	}
+	net.ApplyExts(&ss.Context)
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
@@ -739,8 +722,8 @@ func (ss *Sim) NewRun() {
 	tstev := ss.Envs[etime.Test.String()].(*FWorld)
 	tstev.Init(0)
 	tstev.InitPos(mpi.WorldRank())
-	ss.Time.Reset()
-	ss.Time.Mode = etime.Train.String()
+	ss.Context.Reset()
+	ss.Context.Mode = etime.Train
 	ss.Net.InitWts()
 	ss.InitStats()
 	ss.StatCounters()
@@ -777,6 +760,11 @@ func (ss *Sim) RunTestAll() {
 // InitStats initializes all the statistics.
 // called at start of new run
 func (ss *Sim) InitStats() {
+	ss.Stats.SetFloat("ActMatch", 0.0)
+	ss.Stats.SetString("PrevAction", "")
+	ss.Stats.SetString("NetAction", "")
+	ss.Stats.SetString("Instinct", "")
+	ss.Stats.SetString("ActAction", "")
 	ss.Stats.SetFloat("TrlUnitErr", 0.0)
 	ss.Stats.SetFloat("TrlCorSim", 0.0)
 	ss.Logs.InitErrStats() // inits TrlErr, FirstZero, LastZero, NZero
@@ -785,26 +773,25 @@ func (ss *Sim) InitStats() {
 // StatCounters saves current counters to Stats, so they are available for logging etc
 // Also saves a string rep of them for ViewUpdt.Text
 func (ss *Sim) StatCounters() {
-	var mode etime.Modes
-	mode.FromString(ss.Time.Mode)
+	mode := ss.Context.Mode
 	ss.Loops.Stacks[mode].CtrsToStats(&ss.Stats)
 	// always use training epoch..
 	trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
 	ss.Stats.SetInt("Epoch", trnEpc)
-	ss.Stats.SetInt("Cycle", ss.Time.Cycle)
+	ss.Stats.SetInt("Cycle", int(ss.Context.Cycle))
 	ss.Stats.SetFloat("PctCortex", ss.PctCortex)
-	ev := ss.Envs[ss.Time.Mode].(*FWorld)
+	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	ss.Stats.SetString("TrialName", ev.String())
-	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "PrevAction", "NetAction", "GenAction", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
+	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "PrevAction", "NetAction", "Instinct", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
 }
 
 // TrialStats computes the trial-level statistics.
 // Aggregation is done directly from log data.
 func (ss *Sim) TrialStats() {
-	out := ss.Net.LayerByName("VL").(axon.AxonLayer).AsAxon()
-	v2wdp := ss.Net.LayerByName("V2WdP").(axon.AxonLayer).AsAxon()
+	out := ss.Net.AxonLayerByName("VL")
+	v2wdP := ss.Net.AxonLayerByName("V2WdP")
 
-	ss.Stats.SetFloat("TrlCorSim", float64(v2wdp.CorSim.Cor))
+	ss.Stats.SetFloat("TrlCorSim", float64(v2wdP.Vals.CorSim.Cor))
 	ss.Stats.SetFloat("TrlUnitErr", out.PctUnitErr())
 
 	// note: most stats computed in TakeAction
@@ -825,7 +812,7 @@ func (ss *Sim) ConfigLogs() {
 	ss.Logs.AddCounterItems(etime.Run, etime.Epoch, etime.Trial, etime.Cycle)
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.AllTimes, "RunName")
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.AllTimes, "PctCortex")
-	ss.Logs.AddStatStringItem(etime.AllModes, etime.Trial, "NetAction", "GenAction", "ActAction")
+	ss.Logs.AddStatStringItem(etime.AllModes, etime.Trial, "NetAction", "Instinct", "ActAction")
 
 	// todo: make basic err stats actually useful
 
@@ -841,23 +828,23 @@ func (ss *Sim) ConfigLogs() {
 	// Copy over Testing items
 	// ss.Logs.AddCopyFromFloatItems(etime.Train, etime.Epoch, etime.Test, etime.Epoch, "Tst", "CorSim", "UnitErr", "PctCor", "PctErr")
 
-	deep.LogAddPulvCorSimItems(&ss.Logs, ss.Net.AsAxon(), etime.Run, etime.Epoch, etime.Trial)
+	axon.LogAddPulvCorSimItems(&ss.Logs, ss.Net, etime.Train, etime.Run, etime.Epoch, etime.Trial)
 
 	ss.ConfigActRFs()
 
-	axon.LogAddDiagnosticItems(&ss.Logs, ss.Net.AsAxon(), etime.Epoch, etime.Trial)
+	layers := ss.Net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.TargetLayer)
+	axon.LogAddDiagnosticItems(&ss.Logs, layers, etime.Train, etime.Epoch, etime.Trial)
 
-	// todo: PCA items should apply to CT layers too -- pass a type here.
-	axon.LogAddPCAItems(&ss.Logs, ss.Net.AsAxon(), etime.Run, etime.Epoch, etime.Trial)
+	axon.LogAddPCAItems(&ss.Logs, ss.Net, etime.Train, etime.Run, etime.Epoch, etime.Trial)
 
-	axon.LogAddLayerGeActAvgItems(&ss.Logs, ss.Net.AsAxon(), etime.Test, etime.Cycle)
-	ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.Test, etime.Trial, "Target")
-	ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.AllModes, etime.Cycle, "Target")
+	axon.LogAddLayerGeActAvgItems(&ss.Logs, ss.Net, etime.Test, etime.Cycle)
+	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.Test, etime.Trial, "TargetLayer")
+	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.AllModes, etime.Cycle, "TargetLayer")
 
 	ss.Logs.PlotItems("PctCortex", "ActMatch", "Energy", "Hydra", "V2WdP_CorSim")
 
 	ss.Logs.CreateTables()
-	ss.Logs.SetContext(&ss.Stats, ss.Net.AsAxon())
+	ss.Logs.SetContext(&ss.Stats, ss.Net)
 	// don't plot certain combinations we don't use
 	ss.Logs.NoPlot(etime.Train, etime.Cycle)
 	ss.Logs.NoPlot(etime.Test, etime.Run)
@@ -868,19 +855,19 @@ func (ss *Sim) ConfigLogs() {
 
 // ConfigLogItems specifies extra logging items
 func (ss *Sim) ConfigLogItems() {
-	ev := TheSim.Envs[etime.Train.String()].(*FWorld)
+	ev := ss.Envs[etime.Train.String()].(*FWorld)
 	ss.Logs.AddItem(&elog.Item{
 		Name:      "ActCor",
 		Type:      etensor.FLOAT64,
 		CellShape: []int{len(ev.Acts)},
 		DimNames:  []string{"Acts"},
-		Plot:      true,
+		Plot:      false,
 		Range:     minmax.F64{Min: 0},
 		TensorIdx: -1, // plot all values
 		Write: elog.WriteMap{
 			etime.Scope(etime.Train, etime.Epoch): func(ctx *elog.Context) {
 				ix := ctx.Logs.IdxView(ctx.Mode, etime.Trial)
-				spl := split.GroupBy(ix, []string{"GenAction"})
+				spl := split.GroupBy(ix, []string{"Instinct"})
 				split.AggTry(spl, "ActMatch", agg.AggMean)
 				ags := spl.AggsToTable(etable.ColNameOnly)
 				ss.Logs.MiscTables["ActCor"] = ags
@@ -896,7 +883,7 @@ func (ss *Sim) ConfigLogItems() {
 			Write: elog.WriteMap{
 				etime.Scope(etime.Train, etime.Epoch): func(ctx *elog.Context) {
 					ags := ss.Logs.MiscTables["ActCor"]
-					rw := ags.RowsByString("GenAction", anm, etable.Equals, etable.UseCase)
+					rw := ags.RowsByString("Instinct", anm, etable.Equals, etable.UseCase)
 					if len(rw) > 0 {
 						ctx.SetFloat64(ags.CellFloat("ActMatch", rw[0]))
 					}
@@ -921,8 +908,8 @@ func (ss *Sim) ConfigLogItems() {
 
 // Log is the main logging function, handles special things for different scopes
 func (ss *Sim) Log(mode etime.Modes, time etime.Times) {
-	if mode.String() != "Analyze" {
-		ss.Time.Mode = mode.String() // Also set specifically in a Loop callback.
+	if mode != etime.Analyze {
+		ss.Context.Mode = mode // Also set specifically in a Loop callback.
 	}
 	ss.StatCounters()
 
@@ -977,7 +964,7 @@ func (ss *Sim) ConfigActRFs() {
 
 // UpdateActRFs updates position activation rf's
 func (ss *Sim) UpdateActRFs() {
-	ev := ss.Envs[ss.Time.Mode].(*FWorld)
+	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	for _, trg := range ss.RFTargs {
 		mt := ss.Stats.F32Tensor(trg)
 		mt.SetZeros()
@@ -1172,12 +1159,29 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		},
 	})
 	ss.GUI.FinalizeGUI(false)
+	if GPU {
+		ss.Net.ConfigGPUwithGUI(&ss.Context)
+		gi.SetQuitCleanFunc(func() {
+			ss.Net.GPU.Destroy()
+		})
+	}
 	return ss.GUI.Win
+}
+
+func (ss *Sim) RunGUI() {
+	ss.Config()
+	ss.Init()
+	win := ss.ConfigGui()
+	ev := ss.Envs[etime.Train.String()].(*FWorld)
+	fwin := ev.ConfigWorldGui()
+	fwin.GoStartEventLoop()
+	win.StartEventLoop()
 }
 
 func (ss *Sim) ConfigArgs() {
 	ss.Args.Init()
 	ss.Args.AddStd()
+	ss.Args.AddInt("threads", 1, "number of threads per node")
 	ss.Args.AddInt("iticycles", 0, "number of cycles to run between trials (inter-trial-interval)")
 	ss.Args.SetInt("epochs", 2000)
 	ss.Args.SetInt("runs", 1)
@@ -1201,14 +1205,13 @@ var SimProps = ki.Props{
 	},
 }
 
-func (ss *Sim) CmdArgs() {
+func (ss *Sim) RunNoGUI() {
 	if ss.Args.Bool("mpi") {
 		ss.MPIInit()
 	}
 
 	// key for Config and Init to be after MPIInit
 	ss.Config()
-	ss.Init()
 
 	ss.Args.ProcStd(&ss.Params)
 
@@ -1229,14 +1232,20 @@ func (ss *Sim) CmdArgs() {
 		ss.GUI.InitNetData(ss.Net, 200)
 	}
 
+	ss.Init()
+
 	runs := ss.Args.Int("runs")
 	run := ss.Args.Int("run")
 	mpi.Printf("Running %d Runs starting at %d\n", runs, run)
 	rc := &ss.Loops.GetLoop(etime.Train, etime.Run).Counter
 	rc.Set(run)
 	rc.Max = run + runs
-
 	ss.Loops.GetLoop(etime.Train, etime.Epoch).Counter.Max = ss.Args.Int("epochs")
+
+	gpu := ss.Args.Bool("gpu")
+	if gpu {
+		ss.Net.ConfigGPUnoGUI(&ss.Context)
+	}
 
 	ss.NewRun()
 	ss.Loops.Run(etime.Train)
@@ -1247,6 +1256,7 @@ func (ss *Sim) CmdArgs() {
 		ss.GUI.SaveNetData(ss.Stats.String("RunName"))
 	}
 
+	ss.Net.GPU.Destroy()
 	ss.MPIFinalize()
 }
 
@@ -1284,7 +1294,7 @@ func (ss *Sim) CollectDWts(net *axon.Network) {
 // sequences of inputs.
 func (ss *Sim) MPIWtFmDWt() {
 	if ss.Args.Bool("mpi") {
-		ss.CollectDWts(ss.Net.AsAxon())
+		ss.CollectDWts(ss.Net)
 		ndw := len(ss.AllDWts)
 		if len(ss.SumDWts) != ndw {
 			ss.SumDWts = make([]float32, ndw)
@@ -1292,5 +1302,5 @@ func (ss *Sim) MPIWtFmDWt() {
 		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
 		ss.Net.SetDWts(ss.SumDWts, mpi.WorldSize())
 	}
-	ss.Net.WtFmDWt(&ss.Time)
+	ss.Net.WtFmDWt(&ss.Context)
 }

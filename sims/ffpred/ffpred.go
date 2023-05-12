@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/emer/axon/axon"
-	"github.com/emer/axon/deep"
 	"github.com/emer/emergent/actrf"
 	"github.com/emer/emergent/emer"
 	"github.com/emer/emergent/env"
@@ -215,7 +214,7 @@ var ParamSets = params.Sets{
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net              *deep.Network                 `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Net              *axon.Network                 `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
 	PctCortex        float64                       `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
 	PctCortexMax     float64                       `desc:"maximum PctCortex, when running on the schedule"`
 	ARFs             actrf.RFs                     `view:"no-inline" desc:"activation-based receptive fields"`
@@ -320,7 +319,7 @@ var TheSim Sim
 
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
-	ss.Net = &deep.Network{}
+	ss.Net = &axon.Network{}
 	ss.TrnEpcLog = &etable.Table{}
 	ss.TrnTrlLog = &etable.Table{}
 	ss.TstEpcLog = &etable.Table{}
@@ -431,7 +430,7 @@ func (ss *Sim) ConfigRFMaps() {
 	ss.RFMaps["Rot"] = mt
 }
 
-func (ss *Sim) ConfigNet(net *deep.Network) {
+func (ss *Sim) ConfigNet(net *axon.Network) {
 	net.InitName(net, "Emery")
 
 	full := prjn.NewFull()
@@ -498,14 +497,14 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 		switch ly.Type() {
 		case emer.Input:
 			ss.InputLays = append(ss.InputLays, ly.Name())
-		case deep.TRC:
+		case axon.TRC:
 			ss.PulvLays = append(ss.PulvLays, ly.Name())
 		case emer.Target:
 			ss.PulvLays = append(ss.PulvLays, ly.Name())
 		case emer.Hidden:
 			ss.SuperLays = append(ss.SuperLays, ly.Name())
 			fallthrough
-		case deep.CT:
+		case axon.CT:
 			ss.HidLays = append(ss.HidLays, ly.Name())
 		}
 	}
@@ -537,7 +536,7 @@ func (ss *Sim) ConfigNet(net *deep.Network) {
 }
 
 // Initialize network weights including scales
-func (ss *Sim) InitWts(net *deep.Network) {
+func (ss *Sim) InitWts(net *axon.Network) {
 	net.InitWts()
 	// net.InitTopoSWts() //  sets all wt scales
 }
@@ -695,7 +694,7 @@ func (ss *Sim) ThetaCyc(train bool) {
 // It is good practice to have this be a separate method with appropriate
 // args so that it can be used for various different contexts
 // (training, testing, etc).
-func (ss *Sim) ApplyInputs(net *deep.Network, en env.Env) {
+func (ss *Sim) ApplyInputs(net *axon.Network, en env.Env) {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 

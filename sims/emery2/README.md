@@ -50,8 +50,5 @@ This environment thus supports a rich, extensible, ecologically-based framework 
 
 # TODO
 
-* add gradual transition schedule to self-control during training..
+* try wider popcode for HD
 
-* S1SP broken?
-
-* LIP projects attention to ITP -- tune it

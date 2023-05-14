@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"os"
 
@@ -76,6 +75,9 @@ type FWorld struct {
 	RotAng        int                         `inactive:"+" desc:"angle that we just rotated -- drives vestibular"`
 	Urgency       float32                     `inactive:"+" desc:"for ActGen, level of urgency for following the generated action"`
 	Act           int                         `inactive:"+" desc:"last action taken"`
+	ShouldGate    bool                        `inactive:"+" desc:"true if fovea includes a positive CS"`
+	JustGated     bool                        `inactive:"+" desc:"just gated on this trial"`
+	HasGated      bool                        `inactive:"+" desc:"has gated at some point during sequence"`
 	Depths        []float32                   `desc:"depth for each angle (NFOVRays), raw"`
 	DepthLogs     []float32                   `desc:"depth for each angle (NFOVRays), normalized log"`
 	ViewMats      []int                       `inactive:"+" desc:"material at each angle"`
@@ -311,6 +313,10 @@ func (ev *FWorld) Init(run int) {
 	ev.Trial.Cur = -1 // init state -- key so that first Step() = 0
 	ev.Tick.Cur = -1
 	ev.Event.Cur = -1
+
+	ev.ShouldGate = false
+	ev.JustGated = false
+	ev.HasGated = false
 
 	ev.PosI = ev.Size.DivScalar(2) // start in middle -- could be random..
 	ev.PosF = ev.PosI.ToVec2()
@@ -857,8 +863,8 @@ func (ev *FWorld) CopyNextToCur() {
 
 // Step is called to advance the environment state
 func (ev *FWorld) Step() bool {
-	ev.Epoch.Same()         // good idea to just reset all non-inner-most counters at start
-	ev.Act, _ = ev.ActGen() // generate default action
+	ev.Epoch.Same()              // good idea to just reset all non-inner-most counters at start
+	ev.Act, _ = ev.InstinctAct() // generate default action
 	ev.RenderAction()
 	ev.CopyNextToCur()
 	ev.Tick.Incr()
@@ -1010,12 +1016,74 @@ func (ev *FWorld) ActGenTrace(desc string, act int) {
 	fmt.Printf("%s: act: %s\n", desc, ev.Acts[act])
 }
 
-// ActGen generates an action for current situation based on simple
+// ReadFovea returns the contents of the fovea
+func (ev *FWorld) ReadFovea() (foodDepth, foodWeight, waterDepth, waterWeight, foveaDepth float32, foveaMat, foveaNonWall int, foveaMatName string) {
+	fsz := 1 + 2*ev.FoveaSize
+	food := ev.MatMap["Food"]
+	water := ev.MatMap["Water"]
+
+	foodWeight = 0
+	waterWeight = 0
+	foodDepth = 100000
+	waterDepth = 100000
+	foveaDepth = 100000
+	foveaNonWall = 0
+	for i := 0; i < fsz; i++ {
+		mat := ev.FovMats[i]
+		switch {
+		case mat == water:
+			waterWeight += 1 - ev.FovDepthLogs[i] // more weight if closer
+			waterDepth = mat32.Min(waterDepth, ev.FovDepths[i])
+		case mat == food:
+			foodWeight += 1 - ev.FovDepthLogs[i] // more weight if closer
+			foodDepth = mat32.Min(foodDepth, ev.FovDepths[i])
+		case mat <= ev.BarrierIdx:
+		default:
+			foveaNonWall = mat
+		}
+		foveaDepth = mat32.Min(foveaDepth, ev.FovDepths[i])
+	}
+	// foodWeight *= 1 - ev.InterStates["Energy"] // weight by need
+	// waterWeight *= 1 - ev.InterStates["Hydra"]
+
+	foveaMat = ev.FovMats[ev.FoveaSize]
+	foveaMatName = ev.Mats[foveaMat]
+	return
+}
+
+// ReadFullField reads the full wide field, returning proximity of
+// barrier in left and right visual fields -- min, avg and closeness.
+func (ev *FWorld) ReadFullField() (minLeftDepth, minRightDepth, avgLeftDepth, avgRightDepth, leftClose, rightClose float32) {
+	minLeftDepth = 1.0
+	minRightDepth = 1.0
+	avgLeftDepth = 0.0
+	avgRightDepth = 0.0
+	halfAng := ev.NFOVRays / 2
+	for i := 0; i < ev.NFOVRays; i++ {
+		dp := float32(ev.DepthLogs[i])
+		if i < halfAng-1 {
+			minLeftDepth = mat32.Min(minLeftDepth, dp)
+			avgLeftDepth += dp
+		} else if i > halfAng+1 {
+			minRightDepth = mat32.Min(minRightDepth, dp)
+			avgRightDepth += dp
+		}
+	}
+	leftClose = 1 - minLeftDepth
+	rightClose = 1 - minRightDepth
+	if mat32.Abs(minLeftDepth-minRightDepth) < 0.1 { // if close tie on min
+		leftClose = 1 - (avgLeftDepth / float32(halfAng-1)) // go with average
+		rightClose = 1 - (avgRightDepth / float32(halfAng-1))
+	}
+	return
+}
+
+// InstinctAct generates an action for current situation based on simple
 // coded heuristics -- i.e., what subcortical evolutionary instincts provide.
 // Also returns the urgency score as a probability -- if urgency is 1
 // then the generated action should definitely be used.  The default is 0,
 // which is the baseline.
-func (ev *FWorld) ActGen() (int, float32) {
+func (ev *FWorld) InstinctAct() (int, float32) {
 	wall := ev.MatMap["Wall"]
 	food := ev.MatMap["Food"]
 	water := ev.MatMap["Water"]
@@ -1024,71 +1092,27 @@ func (ev *FWorld) ActGen() (int, float32) {
 	eat := ev.ActMap["Eat"]
 
 	nmat := len(ev.Mats)
-	frmat := ints.MinInt(ev.ProxMats[0], nmat)
 
-	// get info about what is in fovea
-	fsz := 1 + 2*ev.FoveaSize
-	fwt := float32(0)
-	wwt := float32(0)
-	fdp := float32(100000)
-	wdp := float32(100000)
-	fovdp := float32(100000)
-	fovnonwall := 0
-	for i := 0; i < fsz; i++ {
-		mat := ev.FovMats[i]
-		switch {
-		case mat == water:
-			wwt += 1 - ev.FovDepthLogs[i] // more weight if closer
-			wdp = mat32.Min(wdp, ev.FovDepths[i])
-		case mat == food:
-			fwt += 1 - ev.FovDepthLogs[i] // more weight if closer
-			fdp = mat32.Min(fdp, ev.FovDepths[i])
-		case mat <= ev.BarrierIdx:
-		default:
-			fovnonwall = mat
-		}
-		fovdp = mat32.Min(fovdp, ev.FovDepths[i])
-	}
-	fwt *= 1 - ev.InterStates["Energy"] // weight by need
-	wwt *= 1 - ev.InterStates["Hydra"]
+	proxMat := ints.MinInt(ev.ProxMats[0], nmat)
 
-	fovmat := ev.FovMats[ev.FoveaSize]
-	fovmats := ev.Mats[fovmat]
+	foodDepth, foodWeight, waterDepth, waterWeight, foveaDepth, foveaMat, foveaNonWall, foveaMatName := ev.ReadFovea()
+	_ = foveaMat
 
-	// get info about full depth view
-	minl := 1.0
-	minr := 1.0
-	avgl := 0.0
-	avgr := 0.0
-	hang := ev.NFOVRays / 2
-	for i := 0; i < ev.NFOVRays; i++ {
-		dp := float64(ev.DepthLogs[i])
-		if i < hang-1 {
-			minl = math.Min(minl, dp)
-			avgl += dp
-		} else if i > hang+1 {
-			minr = math.Min(minr, dp)
-			avgr += dp
-		}
-	}
-	ldf := 1 - minl
-	rdf := 1 - minr
-	if math.Abs(minl-minr) < 0.1 {
-		ldf = 1 - (avgl / float64(hang-1))
-		rdf = 1 - (avgr / float64(hang-1))
-	}
-	smaxpow := 10.0
-	rlp := float64(.5)
-	if ldf+rdf > 0 {
-		rpow := math.Exp(rdf * smaxpow)
-		lpow := math.Exp(ldf * smaxpow)
-		rlp = float64(lpow / (rpow + lpow))
+	minLeftDepth, minRightDepth, avgLeftDepth, avgRightDepth, leftClose, rightClose := ev.ReadFullField()
+	_, _, _, _ = minLeftDepth, minRightDepth, avgLeftDepth, avgRightDepth
+
+	smaxpow := float32(10.0)
+	rlp := float32(.5)
+	if leftClose+rightClose > 0 {
+		rpow := mat32.Exp(rightClose * smaxpow)
+		lpow := mat32.Exp(leftClose * smaxpow)
+		rlp = lpow / (rpow + lpow)
 	}
 	rlact := left // right or left
-	if erand.BoolP(rlp, -1) {
+	if erand.BoolP(float64(rlp), -1) {
 		rlact = right
 	}
-	// fmt.Printf("rlp: %.3g  ldf: %.3g  rdf: %.3g  act: %s\n", rlp, ldf, rdf, ev.Acts[rlact])
+	// fmt.Printf("rlp: %.3g  leftClose: %.3g  rightClose: %.3g  act: %s\n", rlp, leftClose, rightClose, ev.Acts[rlact])
 	rlps := fmt.Sprintf("%.3g", rlp)
 
 	lastact := ev.Act
@@ -1099,10 +1123,12 @@ func (ev *FWorld) ActGen() (int, float32) {
 	rndExpSame := float32(0.33)
 	rndExpTurn := float32(0.33)
 
+	ev.ShouldGate = false
+
 	urgency := float32(0)
 	act := ev.ActMap["Forward"] // default
 	switch {
-	case frmat == wall:
+	case proxMat == wall:
 		if lastact == left || lastact == right {
 			act = lastact // keep going
 			ev.ActGenTrace("at wall, keep turning", act)
@@ -1111,17 +1137,17 @@ func (ev *FWorld) ActGen() (int, float32) {
 			ev.ActGenTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
 		}
 		urgency = ev.WallUrgency
-	case frmat == food:
+	case proxMat == food:
 		act = ev.ActMap["Eat"]
 		ev.ActGenTrace("at food", act)
 		urgency = ev.EatUrgency
-	case frmat == water:
+	case proxMat == water:
 		act = ev.ActMap["Drink"]
 		ev.ActGenTrace("at water", act)
 		urgency = ev.EatUrgency
-	case fwt > wwt: // food more than water
-		wts := fmt.Sprintf("fwt: %g > wwt: %g, dist: %g", fwt, wwt, fdp)
-		if fdp > farDist { // far away
+	case foodWeight > waterWeight: // food more than water
+		wts := fmt.Sprintf("foodWeight: %g > waterWeight: %g, dist: %g", foodWeight, waterWeight, foodDepth)
+		if foodDepth > farDist { // far away
 			urgency = 0
 			if frnd < farTurnP {
 				act = rlact
@@ -1133,9 +1159,9 @@ func (ev *FWorld) ActGen() (int, float32) {
 			urgency = ev.CloseUrgency
 			ev.ActGenTrace("close food in view "+wts, act)
 		}
-	case wwt > fwt: // water more than food
-		wts := fmt.Sprintf("wwt: %g > fwt: %g, dist: %g", wwt, fwt, wdp)
-		if wdp > farDist { // far away
+	case waterWeight > foodWeight: // water more than food
+		wts := fmt.Sprintf("waterWeight: %g > foodWeight: %g, dist: %g", waterWeight, foodWeight, waterDepth)
+		if waterDepth > farDist { // far away
 			urgency = 0
 			if frnd < farTurnP {
 				act = rlact
@@ -1147,26 +1173,26 @@ func (ev *FWorld) ActGen() (int, float32) {
 			urgency = ev.CloseUrgency
 			ev.ActGenTrace("close water in view "+wts, act)
 		}
-	case fovdp < 4 && fovnonwall == 0: // close to wall
+	case foveaDepth < 4 && foveaNonWall == 0: // close to wall
 		urgency = ev.CloseUrgency
 		if lastact == left || lastact == right {
 			act = lastact // keep going
-			ev.ActGenTrace("close to: "+fovmats+" keep turning", act)
+			ev.ActGenTrace("close to: "+foveaMatName+" keep turning", act)
 		} else {
 			act = rlact
-			ev.ActGenTrace(fmt.Sprintf("close to: %s rlp: %s, turn", fovmats, rlps), act)
+			ev.ActGenTrace(fmt.Sprintf("close to: %s rlp: %s, turn", foveaMatName, rlps), act)
 		}
 	default: // random explore -- nothing obvious
 		urgency = 0
 		switch {
 		case frnd < rndExpSame && lastact < eat:
 			act = lastact // continue
-			ev.ActGenTrace("looking at: "+fovmats+" repeat last act", act)
+			ev.ActGenTrace("looking at: "+foveaMatName+" repeat last act", act)
 		case frnd < rndExpSame+rndExpTurn:
 			act = rlact
-			ev.ActGenTrace("looking at: "+fovmats+" turn", act)
+			ev.ActGenTrace("looking at: "+foveaMatName+" turn", act)
 		default:
-			ev.ActGenTrace("looking at: "+fovmats+" go", act)
+			ev.ActGenTrace("looking at: "+foveaMatName+" go", act)
 		}
 	}
 

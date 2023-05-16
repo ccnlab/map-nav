@@ -169,7 +169,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#VL", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.1", // 1.2 = stronger to compete
+					"Layer.Inhib.Layer.Gi": "0.9", // 1.0 > 1.1 > 1.2
 				}},
 
 			//////////////////////////////////////////////////////////

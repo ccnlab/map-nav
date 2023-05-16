@@ -93,14 +93,6 @@ var ParamSets = params.Sets{
 					"Layer.Inhib.ActAvg.Nominal": "0.13", // 0.13 actual
 					"Layer.Inhib.Layer.Gi":       "0.9",
 				}},
-			{Sel: ".Ins", Desc: "pools",
-				Params: params.Params{
-					"Layer.Inhib.ActAvg.Nominal": "0.15",
-					"Layer.Inhib.Layer.On":       "false",
-					"Layer.Inhib.Layer.Gi":       "0.9",
-					"Layer.Inhib.Pool.On":        "true",
-					"Layer.Inhib.Pool.Gi":        "0.9",
-				}},
 			{Sel: ".MSTd", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Nominal": "0.1",
@@ -169,7 +161,7 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: "#VL", Desc: "",
 				Params: params.Params{
-					"Layer.Inhib.Layer.Gi": "1.1", // 1.2 = stronger to compete
+					"Layer.Inhib.Layer.Gi": "1.0", // 1.2 = stronger to compete
 				}},
 
 			//////////////////////////////////////////////////////////

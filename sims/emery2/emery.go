@@ -655,7 +655,7 @@ func (ss *Sim) TakeAction(net *axon.Network) {
 	ss.SubStep = 0 // reset for next time
 	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	nact := ss.DecodeAct(ev)
-	gact, urgency := ev.ActGen()
+	gact, urgency := ev.InstinctAct()
 	ss.Stats.SetString("PrevAction", ss.Stats.String("ActAction"))
 	ss.Stats.SetString("NetAction", ev.Acts[nact])
 	ss.Stats.SetString("Instinct", ev.Acts[gact])

@@ -150,8 +150,6 @@ func (ev *FWorld) ConfigWorldGui() *gi.Window {
 }
 
 func (ev *FWorld) ConfigWorldView(tg *etview.TensorGrid) {
-	// order: Empty, wall, food, water, foodwas, waterwas
-	matColors := []string{"lightgrey", "black", "orange", "blue", "brown", "navy"}
 	cnm := "FWorldColors"
 	cm, ok := colormap.AvailMaps[cnm]
 	if !ok {
@@ -161,7 +159,7 @@ func (ev *FWorld) ConfigWorldView(tg *etview.TensorGrid) {
 		nc := len(ev.Mats)
 		cm.Colors = make([]gist.Color, nc+ev.NMotAngles)
 		cm.NoColor = gist.Black
-		for i, cnm := range matColors {
+		for i, cnm := range ev.MatColors {
 			cm.Colors[i].SetString(cnm, nil)
 		}
 		ch := colormap.AvailMaps["ColdHot"]

@@ -6,6 +6,10 @@
 // with the bg, ofc, acc (BOA) decision making system.
 package main
 
+// todo:
+// patterns for new USs
+// two trials for consume
+
 import (
 	"fmt"
 	"log"
@@ -91,7 +95,6 @@ type Sim struct {
 	SubPools     bool             `desc:"if true, organize layers and connectivity with 2x2 sub-pools within each topological pool"`
 	RndOutPats   bool             `desc:"if true, use random output patterns -- else localist"`
 	ConfusionEpc int              `desc:"epoch to start recording confusion matrix"`
-	SubStep      int
 
 	GUI      egui.GUI    `view:"-" desc:"manages all the gui elements"`
 	Args     ecmd.Args   `view:"no-inline" desc:"command line args"`
@@ -179,6 +182,13 @@ func (ss *Sim) ConfigPVLV(trn *FWorld) {
 	pv := &ss.Context.PVLV
 	pv.Drive.NActive = int32(trn.NDrives) + 1
 	pv.Drive.DriveMin = 0.5 // 0.5 -- should be
+	pv.Drive.Base.SetAll(1)
+	pv.Drive.Base.Set(0, 0.5) // curiosity
+	pv.Drive.Tau.SetAll(100)
+	pv.Drive.Tau.Set(0, 0)
+	pv.Drive.USDec.SetAll(0.1)
+	pv.Drive.USDec.Set(0, 0)
+	pv.Drive.Update()
 	pv.Effort.Gain = 0.05
 	pv.Effort.Max = 40
 	pv.Effort.MaxNovel = 10
@@ -259,9 +269,6 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	hd, hdP := net.AddInputPulv2D("HeadDir", 1, ev.PopSize, space)
 	hd.SetClass("HeadDir")
 	hdP.SetClass("HeadDir")
-
-	ins := net.AddLayer4D("Ins", 1, len(ev.Inters), ev.PopSize, 1, axon.InputLayer) // Inters = Insula
-	ins.SetClass("Ins")
 
 	act := net.AddLayer2D("Act", ev.PatSize.Y, ev.PatSize.X, axon.InputLayer) // Action: what is actually done
 	act.SetClass("Action")
@@ -427,8 +434,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	s2v.PlaceBehind(hdP, space)
 	s2vCT.PlaceRightOf(s2v, space)
 
-	ins.PlaceRightOf(sc, 2*space)
-	vl.PlaceRightOf(ins, space)
+	vl.PlaceRightOf(sc, space)
 	act.PlaceBehind(vl, space)
 
 	mstd.PlaceRightOf(v1f, space)
@@ -637,16 +643,36 @@ func (ss *Sim) SaveWeights() {
 // TakeAction takes action for this step, using either decoded cortical
 // or reflexive subcortical action from env.
 func (ss *Sim) TakeAction(net *axon.Network) {
-	if ss.SubStep == 0 {
-		ss.SubStep++
-		return
-	}
-	// fmt.Printf("Take Action\n")
-	ss.SubStep = 0 // reset for next time
+	ctx := &ss.Context
 	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
-	nact := ss.DecodeAct(ev)
-	gact, urgency := ev.InstinctAct()
+	mtxLy := ss.Net.AxonLayerByName("VsMtxGo")
+	justGated := mtxLy.AnyGated() // not updated until plus phase: ss.Context.PVLV.VSMatrix.JustGated.IsTrue()
+	hasGated := ctx.PVLV.VSMatrix.HasGated.IsTrue()
 	ss.Stats.SetString("PrevAction", ss.Stats.String("ActAction"))
+	gact, urgency := ev.InstinctAct(justGated, hasGated)
+	csGated := (justGated && !ctx.PVLV.HasPosUS())
+	threshold := float32(0.1)
+	deciding := !csGated && !hasGated && (ctx.NeuroMod.ACh > threshold && mtxLy.Pools[0].AvgMax.SpkMax.Cycle.Max > threshold) // give it time
+	ss.Stats.SetFloat32("Deciding", bools.ToFloat32(deciding))
+	if csGated || deciding {
+		act := "CSGated"
+		if !csGated {
+			act = "Deciding"
+		}
+		ss.Stats.SetString("Debug", act)
+		ev.Action("None", nil)
+		ss.ApplyAction()
+		ss.Stats.SetString("ActAction", "None")
+		ss.Stats.SetString("Instinct", "None")
+		ss.Stats.SetString("NetAction", act)
+		ss.Stats.SetFloat("ActMatch", 1) // whatever it is, it is ok
+		ly := ss.Net.AxonLayerByName("VL")
+		ly.Pools[0].Inhib.Clamped.SetBool(false) // not clamped this trial
+		ss.Net.GPU.SyncPoolsToGPU()
+		return // no time to do action while also gating
+	}
+
+	nact := ss.DecodeAct(ev)
 	ss.Stats.SetString("NetAction", ev.Acts[nact])
 	ss.Stats.SetString("Instinct", ev.Acts[gact])
 	if nact == gact {
@@ -687,8 +713,8 @@ func (ss *Sim) ApplyInputs() {
 	net.InitExt() // clear any existing inputs -- not strictly necessary if always
 	// going to the same layers, but good practice and cheap anyway
 
-	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Inters", "Action"}
-	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Ins", "Act"}
+	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Action"}
+	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Act"}
 	for i, lnm := range lays {
 		ly := ss.Net.AxonLayerByName(lnm)
 		if ly == nil {
@@ -706,13 +732,26 @@ func (ss *Sim) ApplyInputs() {
 // ApplyPVLV applies current PVLV values to Context.PVLV,
 // from given trial data.
 func (ss *Sim) ApplyPVLV(ctx *axon.Context, ev *FWorld) {
-	ctx.PVLV.EffortUrgencyUpdt(&ss.Net.Rand, 1)
-
-	// todo: get us, use Drives instead of internals, etc.
-	// use builtin drive updating
-	ctx.PVLVSetUS(ev.US != -1, true, ev.US, 1) // mag 1 for now..
-	ctx.PVLVSetDrives(0.5, 1, ev.Drive)
+	ctx.PVLV.EffortUrgencyUpdt(&ss.Net.Rand, ev.LastEffort)
+	pus := ev.State("PosUSs").(*etensor.Float32)
+	hasUS := false
+	for i, us := range pus.Values {
+		if us > 0 {
+			hasUS = true
+		}
+		ctx.PVLVSetUS(hasUS, true, i, us)
+	}
+	ctx.PVLV.DriveUpdt()
 	ctx.PVLVStepStart(&ss.Net.Rand)
+}
+
+func (ss *Sim) ApplyAction() {
+	net := ss.Net
+	ev := ss.Envs[ss.Context.Mode.String()]
+	ap := ev.State("Action")
+	ly := net.AxonLayerByName("Act")
+	ly.ApplyExt(ap)
+	ss.Net.ApplyExts(&ss.Context)
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
@@ -721,11 +760,16 @@ func (ss *Sim) NewRun() {
 	ss.InitRndSeed()
 	trnev := ss.Envs[etime.Train.String()].(*FWorld)
 	trnev.Init(0)
-	trnev.InitPos(mpi.WorldRank()) // start in diff locations for mpi nodes
 	tstev := ss.Envs[etime.Test.String()].(*FWorld)
 	tstev.Init(0)
-	tstev.InitPos(mpi.WorldRank())
+	if ss.Args.Bool("mpi") {
+		trnev.InitPos(mpi.WorldRank()) // start in diff locations for mpi nodes
+		tstev.InitPos(mpi.WorldRank())
+	}
 	ss.Context.Reset()
+	ss.Context.PVLV.Drive.ToBaseline()
+
+	ss.Context.PVLV.Drive.Drives.SetAll(0.5) // start lower
 	ss.Context.Mode = etime.Train
 	ss.Net.InitWts()
 	ss.InitStats()
@@ -882,9 +926,9 @@ func (ss *Sim) GatedStats() {
 	ss.Stats.SetFloat32("WrongCSGate", nan)
 	ss.Stats.SetFloat32("AChShould", nan)
 	ss.Stats.SetFloat32("AChShouldnt", nan)
-	if justGated {
-		ss.Stats.SetFloat32("WrongCSGate", bools.ToFloat32(!ev.PosHasDriveUS()))
-	}
+	// if justGated { // todo
+	// 	ss.Stats.SetFloat32("WrongCSGate", bools.ToFloat32(!ev.PosHasDriveUS()))
+	// }
 	if ev.ShouldGate {
 		if ss.Context.PVLV.HasPosUS() {
 			ss.Stats.SetFloat32("GateUS", bools.ToFloat32(justGated))
@@ -899,11 +943,12 @@ func (ss *Sim) GatedStats() {
 		}
 	}
 	// We get get ACh when new CS or Rew
-	if ss.Context.PVLV.HasPosUS() || ev.LastCS != ev.CS {
-		ss.Stats.SetFloat32("AChShould", ss.Context.NeuroMod.ACh)
-	} else {
-		ss.Stats.SetFloat32("AChShouldnt", ss.Context.NeuroMod.ACh)
-	}
+	// todo
+	// if ss.Context.PVLV.HasPosUS() || ev.LastCS != ev.CS {
+	// 	ss.Stats.SetFloat32("AChShould", ss.Context.NeuroMod.ACh)
+	// } else {
+	// 	ss.Stats.SetFloat32("AChShouldnt", ss.Context.NeuroMod.ACh)
+	// }
 }
 
 // MaintStats updates the PFC maint stats
@@ -915,7 +960,7 @@ func (ss *Sim) MaintStats() {
 	actThr := float32(0.05) // 0.1 too high
 	net := ss.Net
 	lays := net.LayersByType(axon.PTMaintLayer)
-	hasMaint := false
+	// hasMaint := false
 	for _, lnm := range lays {
 		mnm := "Maint" + lnm
 		fnm := "MaintFail" + lnm
@@ -933,9 +978,9 @@ func (ss *Sim) MaintStats() {
 			mact = ptly.Pools[0].AvgMax.Act.Plus.Avg
 		}
 		overThr := mact > actThr
-		if overThr {
-			hasMaint = true
-		}
+		// if overThr {
+		// 	hasMaint = true
+		// }
 		ss.Stats.SetFloat32(pnm, mat32.NaN())
 		ss.Stats.SetFloat32(mnm, mat32.NaN())
 		ss.Stats.SetFloat32(fnm, mat32.NaN())
@@ -946,9 +991,9 @@ func (ss *Sim) MaintStats() {
 			ss.Stats.SetFloat32(pnm, bools.ToFloat32(overThr))
 		}
 	}
-	if hasMaint {
-		ss.Stats.SetFloat32("MaintEarly", bools.ToFloat32(!ev.PosHasDriveUS()))
-	}
+	// if hasMaint { // todo
+	// 	ss.Stats.SetFloat32("MaintEarly", bools.ToFloat32(!ev.PosHasDriveUS()))
+	// }
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -962,13 +1007,6 @@ func (ss *Sim) ConfigLogs() {
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.AllTimes, "PctCortex")
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.Trial, "Drive", "CS", "Dist", "US", "HasRew")
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.Trial, "NetAction", "Instinct", "ActAction")
-
-	// todo: make basic err stats actually useful
-
-	ss.Logs.AddStatAggItem("CorSim", "TrlCorSim", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("UnitErr", "TrlUnitErr", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddErrStatAggItems("TrlErr", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("ActMatch", "ActMatch", etime.Run, etime.Epoch, etime.Trial)
 
 	ss.Logs.AddPerTrlMSec("PerTrlMSec", etime.Run, etime.Epoch, etime.Trial)
 
@@ -990,7 +1028,7 @@ func (ss *Sim) ConfigLogs() {
 	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.Test, etime.Trial, "TargetLayer")
 	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.AllModes, etime.Cycle, "TargetLayer")
 
-	ss.Logs.PlotItems("PctCortex", "ActMatch", "Energy", "Hydra", "V2WdP_CorSim")
+	ss.Logs.PlotItems("PctCortex", "ActMatch", "V2WdP_CorSim")
 
 	ss.Logs.CreateTables()
 	ss.Logs.SetContext(&ss.Stats, ss.Net)
@@ -1083,21 +1121,6 @@ func (ss *Sim) ConfigLogItems() {
 					}
 				}}})
 	}
-	for _, nm := range ev.Inters { // interoceptive internal variable state
-		inm := nm
-		ss.Logs.AddItem(&elog.Item{
-			Name:  inm,
-			Type:  etensor.FLOAT64,
-			Plot:  true,
-			Range: minmax.F64{Min: 0},
-			Write: elog.WriteMap{
-				etime.Scope(etime.Train, etime.Trial): func(ctx *elog.Context) {
-					ctx.SetFloat32(ev.InterStates[ctx.Item.Name])
-				}, etime.Scope(etime.Train, etime.Epoch): func(ctx *elog.Context) {
-					ctx.SetAgg(ctx.Mode, etime.Trial, agg.AggMean)
-				}}})
-	}
-
 }
 
 // Log is the main logging function, handles special things for different scopes
@@ -1166,7 +1189,7 @@ func (ss *Sim) UpdateActRFs() {
 		case "Pos":
 			mt.Set([]int{ev.PosI.Y, ev.PosI.X}, 1)
 		case "Act":
-			mt.Set1D(ev.Act, 1)
+			mt.Set1D(ev.LastAct, 1)
 		case "HdDir":
 			mt.Set1D(ev.HeadDir/ev.MotAngInc, 1)
 			// case "Rot":
@@ -1242,7 +1265,7 @@ func (ss *Sim) ConfigNetView(nv *netview.NetView) {
 // ConfigGui configures the GoGi gui interface for this simulation,
 func (ss *Sim) ConfigGui() *gi.Window {
 	title := "Emery"
-	ss.GUI.MakeWindow(ss, "emery2", title, `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/ccnlab/map-nav/blob/master/sims/emery2/README.md">README.md on GitHub</a>.</p>`)
+	ss.GUI.MakeWindow(ss, "eboa", title, `Full brain predictive learning in navigational / survival environment. See <a href="https://github.com/ccnlab/map-nav/blob/master/sims/eboa/README.md">README.md on GitHub</a>.</p>`)
 	ss.GUI.CycleUpdateInterval = 10
 
 	nv := ss.GUI.AddNetView("NetView")
@@ -1349,7 +1372,7 @@ func (ss *Sim) ConfigGui() *gi.Window {
 		Tooltip: "Opens your browser on the README file that contains instructions for how to run this model.",
 		Active:  egui.ActiveAlways,
 		Func: func() {
-			gi.OpenURL("https://github.com/map-nav/blob/main/sims/emery2/README.md")
+			gi.OpenURL("https://github.com/map-nav/blob/main/sims/eboa/README.md")
 		},
 	})
 	ss.GUI.FinalizeGUI(false)

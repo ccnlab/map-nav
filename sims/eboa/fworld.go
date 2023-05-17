@@ -30,47 +30,47 @@ import (
 
 // FWorld is a flat-world grid-based environment
 type FWorld struct {
-	Nm            string                      `desc:"name of this environment"`
-	Dsc           string                      `desc:"description of this environment"`
-	Disp          bool                        `desc:"update display -- turn off to make it faster"`
-	Size          evec.Vec2i                  `desc:"size of 2D world"`
-	PatSize       evec.Vec2i                  `desc:"size of patterns for mats, acts"`
-	NYReps        int                         `desc:"number of Y-axis repetitions of localist stimuli -- for redundancy in spiking nets"`
-	World         *etensor.Int                `view:"no-inline" desc:"2D grid world, each cell is a material (mat)"`
-	Mats          []string                    `desc:"list of materials in the world, 0 = empty.  Any superpositions of states (e.g., CoveredFood) need to be discretely encoded, can be transformed through action rules"`
-	MatColors     []string                    `desc:"list of material colors"`
-	MatMap        map[string]int              `desc:"map of material name to index stored in world cell"`
-	BarrierIdx    int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
-	MatsUSStart   int                         `desc:"index of material where USs start"`
-	Pats          map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
-	ActPats       map[string]*etensor.Float32 `desc:"patterns for each action -- for decoding"`
-	Acts          []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
-	ActMap        map[string]int              `desc:"action map of action names to indexes"`
-	PosUSs        []string                    `desc:"positive USs"`
-	NegUSs        []string                    `desc:"negative USs"`
-	NDrives       int                         `desc:"number of PosUSs"`
-	USMap         map[string]int              `desc:"map of US names to indexes, for both pos and neg"`
-	Params        map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
-	FOV           int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of VisAngInc"`
-	VisAngInc     int                         `desc:"visual angle increment for rotation, in degrees -- defaults to 45"`
-	MotAngInc     int                         `desc:"motion angle increment for rotation, in degrees -- defaults to 15"`
-	NMotAngles    int                         `inactive:"+" desc:"total number of motion rotation angles in a circle"`
-	NFOVRays      int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
-	WallUrgency   float32                     `desc:"urgency when right against a wall"`
-	EatUrgency    float32                     `desc:"urgency for eating and drinking"`
-	CloseUrgency  float32                     `desc:"urgency for being close to food / water"`
-	FwdMargin     float32                     `desc:"forward action must be this factor larger than 2nd best option to be selected"`
-	ShowRays      bool                        `desc:"for debugging only: show the main depth rays as they are traced out from point"`
-	ShowFovRays   bool                        `desc:"for debugging only: show the fovea rays as they are traced out from point"`
-	TraceInstinct bool                        `desc:"for debugging, print out a trace of the action generation logic"`
-	TraceInst     string                      `inactive:"+" desc:"trace of instinct"`
-	FoveaSize     int                         `desc:"number of items on each size of the fovea, in addition to center (0 or more)"`
-	FoveaAngInc   int                         `desc:"scan angle for fovea"`
-	PopSize       int                         `inactive:"+" desc:"number of units in population codes"`
-	PopCode       popcode.OneD                `desc:"generic population code values, in normalized units"`
-	DepthSize     int                         `inactive:"+" desc:"number of units in depth population codes"`
-	DepthCode     popcode.OneD                `desc:"population code for depth, in normalized units"`
-	AngCode       popcode.Ring                `desc:"angle population code values, in normalized units"`
+	Nm             string                      `desc:"name of this environment"`
+	Dsc            string                      `desc:"description of this environment"`
+	Disp           bool                        `desc:"update display -- turn off to make it faster"`
+	Size           evec.Vec2i                  `desc:"size of 2D world"`
+	PatSize        evec.Vec2i                  `desc:"size of patterns for mats, acts"`
+	NYReps         int                         `desc:"number of Y-axis repetitions of localist stimuli -- for redundancy in spiking nets"`
+	World          *etensor.Int                `view:"no-inline" desc:"2D grid world, each cell is a material (mat)"`
+	Mats           []string                    `desc:"list of materials in the world, 0 = empty.  Any superpositions of states (e.g., CoveredFood) need to be discretely encoded, can be transformed through action rules"`
+	MatColors      []string                    `desc:"list of material colors"`
+	MatMap         map[string]int              `desc:"map of material name to index stored in world cell"`
+	BarrierIdx     int                         `desc:"index of material below which (inclusive) cannot move -- e.g., 1 for wall"`
+	MatsUSStart    int                         `desc:"index of material where USs start"`
+	Pats           map[string]*etensor.Float32 `desc:"patterns for each material (must include Empty) and for each action"`
+	ActPats        map[string]*etensor.Float32 `desc:"patterns for each action -- for decoding"`
+	Acts           []string                    `desc:"list of actions: starts with: Stay, Left, Right, Forward, Back, then extensible"`
+	ActMap         map[string]int              `desc:"action map of action names to indexes"`
+	PosUSs         []string                    `desc:"positive USs"`
+	NegUSs         []string                    `desc:"negative USs"`
+	NDrives        int                         `desc:"number of PosUSs"`
+	USMap          map[string]int              `desc:"map of US names to indexes, for both pos and neg"`
+	Params         map[string]float32          `desc:"map of optional interoceptive and world-dynamic parameters -- cleaner to store in a map"`
+	FOV            int                         `desc:"field of view in degrees, e.g., 180, must be even multiple of VisAngInc"`
+	VisAngInc      int                         `desc:"visual angle increment for rotation, in degrees -- defaults to 45"`
+	MotAngInc      int                         `desc:"motion angle increment for rotation, in degrees -- defaults to 15"`
+	NMotAngles     int                         `inactive:"+" desc:"total number of motion rotation angles in a circle"`
+	NFOVRays       int                         `inactive:"+" desc:"total number of FOV rays that are traced"`
+	WallUrgency    float32                     `desc:"urgency when right against a wall"`
+	ConsumeUrgency float32                     `desc:"urgency for consuming"`
+	CloseUrgency   float32                     `desc:"urgency for being close to food / water"`
+	FwdMargin      float32                     `desc:"forward action must be this factor larger than 2nd best option to be selected"`
+	ShowRays       bool                        `desc:"for debugging only: show the main depth rays as they are traced out from point"`
+	ShowFovRays    bool                        `desc:"for debugging only: show the fovea rays as they are traced out from point"`
+	TraceInstinct  bool                        `desc:"for debugging, print out a trace of the action generation logic"`
+	TraceInst      string                      `inactive:"+" desc:"trace of instinct"`
+	FoveaSize      int                         `desc:"number of items on each size of the fovea, in addition to center (0 or more)"`
+	FoveaAngInc    int                         `desc:"scan angle for fovea"`
+	PopSize        int                         `inactive:"+" desc:"number of units in population codes"`
+	PopCode        popcode.OneD                `desc:"generic population code values, in normalized units"`
+	DepthSize      int                         `inactive:"+" desc:"number of units in depth population codes"`
+	DepthCode      popcode.OneD                `desc:"population code for depth, in normalized units"`
+	AngCode        popcode.Ring                `desc:"angle population code values, in normalized units"`
 
 	// current state below (params above)
 	PosF          mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
@@ -79,6 +79,7 @@ type FWorld struct {
 	RotAng        int                         `inactive:"+" desc:"angle that we just rotated -- drives vestibular"`
 	Urgency       float32                     `inactive:"+" desc:"for ActGen, level of urgency for following the generated action"`
 	LastAct       int                         `inactive:"+" desc:"last action taken"`
+	ConsumeCtr    int                         `inactive:"+" desc:"how many times consumed"`
 	LastEffort    float32                     `inactive:"+" desc:"effort associated with last action taken"`
 	ShouldGate    bool                        `inactive:"+" desc:"true if fovea includes a positive CS"`
 	JustGated     bool                        `inactive:"+" desc:"just gated on this trial"`
@@ -154,7 +155,7 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.FoveaSize = 1
 	ev.FoveaAngInc = 5
 	ev.WallUrgency = .9
-	ev.EatUrgency = .8
+	ev.ConsumeUrgency = .8
 	ev.CloseUrgency = .5
 	ev.FwdMargin = 2
 	ev.PopSize = 16
@@ -320,6 +321,7 @@ func (ev *FWorld) Init(run int) {
 	ev.ShouldGate = false
 	ev.JustGated = false
 	ev.HasGated = false
+	ev.ConsumeCtr = 0
 
 	ev.PosI = ev.Size.DivScalar(2) // start in middle -- could be random..
 	ev.PosI.Y -= 2                 // todo: special starting point!
@@ -708,10 +710,13 @@ func (ev *FWorld) TakeAct(act int) {
 	case "Consume":
 		if proxMat >= ev.MatsUSStart {
 			ev.SetUS("PosUSs", front, 1)
-			ev.AddNewEventRefresh(ev.NewEvent(act, proxMat, ev.ProxPos[0]))
-			ev.SetWorld(ev.ProxPos[0], proxMat+ev.NDrives)
-			ev.Event.Set(0)
-			ev.Scene.Incr()
+			if ev.ConsumeCtr > 1 {
+				ev.ConsumeCtr = 0
+				ev.AddNewEventRefresh(ev.NewEvent(act, proxMat, ev.ProxPos[0]))
+				ev.SetWorld(ev.ProxPos[0], proxMat+ev.NDrives) // "Was" version
+				ev.Event.Set(0)
+				ev.Scene.Incr()
+			}
 		}
 	}
 	ev.LastEffort = eff
@@ -948,7 +953,7 @@ func (ev *FWorld) GenWorld() {
 	ctr := ev.Size.DivScalar(2)
 	ev.SetWorld(ctr, wall)
 
-	nper := 40 / ev.NDrives // was 100 for 100x100 large
+	nper := 100 / ev.NDrives // was 100 for 100x100 large
 	for i := 0; i < ev.NDrives; i++ {
 		ev.WorldRandom(nper, ev.MatsUSStart+i)
 	}
@@ -1078,6 +1083,11 @@ func (ev *FWorld) InstinctAct(justGated, hasGated bool) (int, float32) {
 
 	ev.ShouldGate = false
 
+	// start of the "was" mats after consuming
+	wasMatsStart := ev.MatsUSStart + ev.NDrives
+
+	// todo: need a fine-grained fovealizer for the HasGated case -- keep the prize in center
+
 	urgency := float32(0)
 	act := ev.ActMap["Forward"] // default
 	switch {
@@ -1090,11 +1100,15 @@ func (ev *FWorld) InstinctAct(justGated, hasGated bool) (int, float32) {
 			ev.InstinctTrace(fmt.Sprintf("at wall, rlp: %s, turn", rlps), act)
 		}
 		urgency = ev.WallUrgency
-	case proxMat >= ev.MatsUSStart && proxMat < ev.MatsUSStart+ev.NDrives:
+	case proxMat >= wasMatsStart:
+		act = fwd
+		ev.InstinctTrace("done consuming, move past us", act)
+	case proxMat >= ev.MatsUSStart && proxMat < wasMatsStart:
 		ev.ShouldGate = true
+		ev.ConsumeCtr++
 		act = consume
 		ev.InstinctTrace("at US, consume", act)
-		urgency = ev.EatUrgency
+		urgency = ev.ConsumeUrgency
 	case ev.HasGated:
 		act = fwd
 		ev.InstinctTrace("has gated", act)

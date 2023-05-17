@@ -7,8 +7,9 @@
 package main
 
 // todo:
-// patterns for new USs
-// two trials for consume
+// - consumectr 4x why?
+// - fovealizer
+// - how to unlearn walls!? -- big negative outcome and dip reset?
 
 import (
 	"fmt"
@@ -768,7 +769,6 @@ func (ss *Sim) NewRun() {
 	}
 	ss.Context.Reset()
 	ss.Context.PVLV.Drive.ToBaseline()
-
 	ss.Context.PVLV.Drive.Drives.SetAll(0.5) // start lower
 	ss.Context.Mode = etime.Train
 	ss.Net.InitWts()

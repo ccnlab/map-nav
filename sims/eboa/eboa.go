@@ -6,11 +6,6 @@
 // with the bg, ofc, acc (BOA) decision making system.
 package main
 
-// todo:
-// - consumectr 4x why?
-// - fovealizer
-// - how to unlearn walls!? -- big negative outcome and dip reset?
-
 import (
 	"fmt"
 	"log"
@@ -126,7 +121,7 @@ func (ss *Sim) New() {
 	ss.RndOutPats = false
 	ss.PCAInterval = 10
 	ss.ConfusionEpc = 500
-	ss.MaxTrls = 1024
+	ss.MaxTrls = 100 // 1024
 	ss.RFTargs = []string{"Pos", "Act", "HdDir"}
 	ss.Context.Defaults()
 	ss.ConfigArgs() // do this first, has key defaults
@@ -187,12 +182,12 @@ func (ss *Sim) ConfigPVLV(trn *FWorld) {
 	pv.Drive.Base.Set(0, 0.5) // curiosity
 	pv.Drive.Tau.SetAll(100)
 	pv.Drive.Tau.Set(0, 0)
-	pv.Drive.USDec.SetAll(0.1)
+	pv.Drive.USDec.SetAll(0.5)
 	pv.Drive.USDec.Set(0, 0)
 	pv.Drive.Update()
-	pv.Effort.Gain = 0.05
+	pv.Effort.Gain = 0.01
 	pv.Effort.Max = 40
-	pv.Effort.MaxNovel = 10
+	pv.Effort.MaxNovel = 40
 	pv.Effort.MaxPostDip = 8
 	pv.Urgency.U50 = 40
 }
@@ -383,10 +378,7 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	// todo: a more dynamic US rep is needed to drive predictions in OFC
 	// using distance and effort here in the meantime
 	net.ConnectToPFCBack(effort, effortP, ofcUS, ofcUSCT, ofcUSPTp, full)
-	net.ConnectToPFCBack(pcc, pccP, ofcUS, ofcUSCT, ofcUSPTp, full)
-
 	net.ConnectToPFCBack(effort, effortP, ofcVal, ofcValCT, ofcValPTp, full)
-	net.ConnectToPFCBack(pcc, pccP, ofcVal, ofcValCT, ofcValPTp, full)
 
 	// note: effort, urgency for accCost already set in AddBOA
 	net.ConnectToPFC(pcc, pccP, accCost, accCostCT, accCostPTp, full)
@@ -734,13 +726,19 @@ func (ss *Sim) ApplyInputs() {
 // from given trial data.
 func (ss *Sim) ApplyPVLV(ctx *axon.Context, ev *FWorld) {
 	ctx.PVLV.EffortUrgencyUpdt(&ss.Net.Rand, ev.LastEffort)
-	pus := ev.State("PosUSs").(*etensor.Float32)
-	hasUS := false
-	for i, us := range pus.Values {
+	ctx.PVLVInitUS()
+	posUSs := ev.State("PosUSs").(*etensor.Float32)
+	for i, us := range posUSs.Values {
 		if us > 0 {
-			hasUS = true
+			ctx.PVLVSetUS(axon.Positive, i, us)
 		}
-		ctx.PVLVSetUS(hasUS, true, i, us)
+	}
+	negUSs := ev.State("NegUSs").(*etensor.Float32)
+	for i, us := range negUSs.Values {
+		if us > 0 {
+			ctx.PVLVSetUS(axon.Negative, i, us)
+			ctx.NeuroMod.HasRew.SetBool(true) // todo: counting as full US for now
+		}
 	}
 	ctx.PVLV.DriveUpdt()
 	ctx.PVLVStepStart(&ss.Net.Rand)
@@ -863,7 +861,7 @@ func (ss *Sim) StatCounters() {
 	ss.Stats.SetFloat("PctCortex", ss.PctCortex)
 	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	ss.Stats.SetString("TrialName", ev.String())
-	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "PrevAction", "NetAction", "Instinct", "ActAction", "ActMatch", "Cycle", "TrlCorSim"})
+	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "Cycle", "PrevAction", "NetAction", "Instinct", "ActAction", "ActMatch"})
 }
 
 // TrialStats computes the trial-level statistics.

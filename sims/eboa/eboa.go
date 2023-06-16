@@ -12,7 +12,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/emer/axon/axon"
@@ -67,30 +66,67 @@ func main() {
 
 // see params_def.go for default params
 
+// SimParams has all the custom params for this sim
+type SimParams struct {
+	NData             int     `desc:"number of data-parallel items to process at once"`
+	NTrials           int     `desc:"number of trials per epoch"`
+	NOutPer           int     `desc:"number of units per localist output unit"`
+	SubPools          bool    `desc:"if true, organize layers and connectivity with 2x2 sub-pools within each topological pool"`
+	PCAInterval       int     `desc:"how frequently (in epochs) to compute PCA on hidden representations to measure variance?"`
+	PctCortex         float32 `desc:"proportion of behavioral approach sequences driven by the cortex vs. hard-coded reflexive subcortical"`
+	PctCortexMax      float32 `desc:"maximum PctCortex, when running on the schedule"`
+	PctCortexStEpc    int     `desc:"epoch when PctCortex starts increasing"`
+	PctCortexNEpc     int     `desc:"number of epochs over which PctCortexMax is reached"`
+	PctCortexInterval int     `desc:"how often to update PctCortex"`
+	CortexDriving     bool    `inactive:"+" desc:"true if cortex is driving this behavioral approach sequence"`
+}
+
+// Defaults sets default params
+func (ss *SimParams) Defaults() {
+	ss.NData = 16
+	ss.NTrials = 128
+	ss.NOutPer = 5
+	ss.SubPools = true
+	ss.PCAInterval = 10
+	ss.PCAInterval = 10
+	ss.PctCortexMax = 1.0
+	ss.PctCortexStEpc = 10
+	ss.PctCortexNEpc = 5
+	ss.PctCortexInterval = 1
+}
+
+// CurPctCortex returns current PctCortex and updates field, based on epoch counter
+func (ss *SimParams) CurPctCortex(epc int) float32 {
+	if epc >= ss.PctCortexStEpc && epc%ss.PctCortexInterval == 0 {
+		ss.PctCortex = ss.PctCortexMax * float32(epc-ss.PctCortexStEpc) / float32(ss.PctCortexNEpc)
+		if ss.PctCortex > ss.PctCortexMax {
+			ss.PctCortex = ss.PctCortexMax
+		} else {
+			mpi.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, epc)
+		}
+	}
+	return ss.PctCortex
+}
+
 // Sim encapsulates the entire simulation model, and we define all the
 // functionality as methods on this struct.  This structure keeps all relevant
 // state information organized and available without having to pass everything around
 // as arguments to methods, and provides the core GUI interface (note the view tags
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
-	Net          *axon.Network    `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
-	PctCortex    float64          `desc:"proportion of action driven by the cortex vs. hard-coded reflexive subcortical"`
-	PctCortexMax float64          `desc:"maximum PctCortex, when running on the schedule"`
-	Prjns        Prjns            `desc:"special projections"`
-	Params       emer.Params      `view:"inline" desc:"all parameter management"`
-	Loops        *looper.Manager  `view:"no-inline" desc:"contains looper control loops for running sim"`
-	Stats        estats.Stats     `desc:"contains computed statistic values"`
-	Logs         elog.Logs        `desc:"Contains all the logs and information about the logs.'"`
-	Envs         env.Envs         `view:"no-inline" desc:"Environments"`
-	Context      axon.Context     `desc:"axon timing parameters and state"`
-	ViewUpdt     netview.ViewUpdt `view:"inline" desc:"netview update parameters"`
-	PCAInterval  int              `desc:"how frequently (in epochs) to compute PCA on hidden representations to measure variance?"`
-	MaxTrls      int              `desc:"maximum number of training trials per epoch"`
-	Decoder      decoder.SoftMax  `desc:"decoder for better output"`
-	NOutPer      int              `desc:"number of units per localist output unit"`
-	SubPools     bool             `desc:"if true, organize layers and connectivity with 2x2 sub-pools within each topological pool"`
-	RndOutPats   bool             `desc:"if true, use random output patterns -- else localist"`
-	ConfusionEpc int              `desc:"epoch to start recording confusion matrix"`
+	Net       *axon.Network    `view:"no-inline" desc:"the network -- click to view / edit parameters for layers, prjns, etc"`
+	Sim       SimParams        `view:"no-inline" desc:"sim params"`
+	StopOnSeq bool             `desc:"if true, stop running at end of a sequence (for NetView Di data parallel index)"`
+	StopOnErr bool             `desc:"if true, stop running when an error programmed into the code occurs"`
+	Prjns     Prjns            `desc:"special projections"`
+	Params    emer.Params      `view:"inline" desc:"all parameter management"`
+	Loops     *looper.Manager  `view:"no-inline" desc:"contains looper control loops for running sim"`
+	Stats     estats.Stats     `desc:"contains computed statistic values"`
+	Logs      elog.Logs        `desc:"Contains all the logs and information about the logs.'"`
+	Envs      env.Envs         `view:"no-inline" desc:"Environments"`
+	Context   axon.Context     `desc:"axon timing parameters and state"`
+	ViewUpdt  netview.ViewUpdt `view:"inline" desc:"netview update parameters"`
+	Decoder   decoder.SoftMax  `desc:"decoder for better output"`
 
 	GUI      egui.GUI    `view:"-" desc:"manages all the gui elements"`
 	Args     ecmd.Args   `view:"no-inline" desc:"command line args"`
@@ -107,6 +143,7 @@ var KiT_Sim = kit.Types.AddType(&Sim{}, SimProps)
 
 // New creates new blank elements and initializes defaults
 func (ss *Sim) New() {
+	ss.Sim.Defaults()
 	ss.Net = &axon.Network{}
 	ss.Prjns.New()
 	ss.Params.Params = ParamSets
@@ -115,13 +152,6 @@ func (ss *Sim) New() {
 	ss.Params.AddNetSize()
 	ss.Stats.Init()
 	ss.RndSeeds.Init(100) // max 100 runs
-	ss.PctCortexMax = 0.3
-	ss.NOutPer = 5
-	ss.SubPools = true
-	ss.RndOutPats = false
-	ss.PCAInterval = 10
-	ss.ConfusionEpc = 500
-	ss.MaxTrls = 100 // 1024
 	ss.RFTargs = []string{"Pos", "Act", "HdDir"}
 	ss.Context.Defaults()
 	ss.ConfigArgs() // do this first, has key defaults
@@ -140,43 +170,51 @@ func (ss *Sim) Config() {
 
 func (ss *Sim) ConfigEnv() {
 	// Can be called multiple times -- don't re-create
-	var trn, tst *FWorld
-	if len(ss.Envs) == 0 {
-		trn = &FWorld{}
-		tst = &FWorld{}
-	} else {
-		trn = ss.Envs.ByMode(etime.Train).(*FWorld)
-		tst = ss.Envs.ByMode(etime.Test).(*FWorld)
+	newEnv := (len(ss.Envs) == 0)
+
+	for di := 0; di < ss.Sim.NData; di++ {
+		var trn, tst *FWorld
+		if newEnv {
+			trn = &FWorld{}
+			tst = &FWorld{}
+		} else {
+			trn = ss.Envs.ByModeDi(etime.Train, di).(*FWorld)
+			tst = ss.Envs.ByModeDi(etime.Test, di).(*FWorld)
+		}
+
+		trn.Defaults()
+		trn.Nm = env.ModeDi(etime.Train, di)
+		trn.RndSeed = 73 + int64(di)*73
+		trn.Config(ss.Sim.NTrials)
+		trn.Init(0)
+		trn.Validate()
+
+		tst.Defaults()
+		tst.Nm = env.ModeDi(etime.Test, di)
+		tst.RndSeed = 181 + int64(di)*181
+		tst.Config(ss.Sim.NTrials)
+		tst.Init(0)
+		tst.Validate()
+
+		// todo!
+		// if ss.Args.Bool("mpi") {
+		// 	if Debug {
+		// 		mpi.Printf("Did Env MPIAlloc\n")
+		// 	}
+		// 	trn.MPIAlloc()
+		// 	tst.MPIAlloc()
+		// }
+
+		ss.Envs.Add(trn, tst)
+		if di == 0 {
+			ss.ConfigPVLV(trn)
+		}
 	}
-
-	trn.Config(ss.MaxTrls)
-	trn.Nm = etime.Train.String()
-	trn.Dsc = "training params and state"
-	trn.Init(0)
-	trn.Validate()
-
-	tst.Config(ss.MaxTrls)
-	tst.Nm = etime.Test.String()
-	tst.Dsc = "testing params and state"
-	tst.Init(0)
-	tst.Validate()
-
-	// todo!
-	// if ss.Args.Bool("mpi") {
-	// 	if Debug {
-	// 		mpi.Printf("Did Env MPIAlloc\n")
-	// 	}
-	// 	trn.MPIAlloc()
-	// 	tst.MPIAlloc()
-	// }
-
-	ss.Envs.Add(trn, tst)
-	ss.ConfigPVLV(trn)
 }
 
 func (ss *Sim) ConfigPVLV(trn *FWorld) {
 	pv := &ss.Context.PVLV
-	pv.Drive.NActive = int32(trn.NDrives) + 1
+	pv.Drive.NActive = uint32(trn.NDrives) + 1
 	pv.Drive.DriveMin = 0.5 // 0.5 -- should be
 	pv.Drive.Base.SetAll(1)
 	pv.Drive.Base.Set(0, 0.5) // curiosity
@@ -193,9 +231,12 @@ func (ss *Sim) ConfigPVLV(trn *FWorld) {
 }
 
 func (ss *Sim) ConfigNet(net *axon.Network) {
-	net.InitName(net, "Emery")
+	ctx := &ss.Context
+	ev := ss.Envs.ByModeDi(etime.Train, 0).(*FWorld)
 
-	ev := ss.Envs[etime.Train.String()].(*FWorld)
+	net.InitName(net, "Emery")
+	net.SetMaxData(ctx, ss.Sim.NData)
+	net.SetRndSeed(ss.RndSeeds[0]) // init new separate random seed, using run = 0
 
 	full := prjn.NewFull()
 	one2one := prjn.NewOneToOne()
@@ -441,24 +482,15 @@ func (ss *Sim) ConfigNet(net *axon.Network) {
 	alm.PlaceRightOf(accUtil, space)
 	notMaint.PlaceRightOf(alm, space)
 
-	err := net.Build()
+	err := net.Build(ctx)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	net.Defaults()
+	// net.SetNThreads(8)
 	ss.Params.SetObject("Network")
-
-	// if !ss.Args.Bool("nogui") {
-	// 	sr := net.SizeReport()
-	// 	mpi.Printf("%s", sr)
-	// }
-	net.InitWts()
-
-	thr := ss.Args.Int("threads")
-	runtime.GOMAXPROCS(thr)
-	net.SetNThreads(thr)
-	mpi.Printf("GOMAXPROCS: %d\tthreads: %d\n", runtime.GOMAXPROCS(0), net.NThreads)
+	net.InitWts(ctx)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -473,7 +505,7 @@ func (ss *Sim) Init() {
 	// selected or patterns have been modified etc
 	ss.GUI.StopNow = false
 	ss.Params.SetAll()
-	ss.Net.SlowInterval = 100 // 100 > 20
+	// ss.Net.GPU.SyncParamsToGPU()
 	ss.NewRun()
 	ss.ViewUpdt.Update()
 	ss.ViewUpdt.RecordSyns()
@@ -489,18 +521,14 @@ func (ss *Sim) InitRndSeed() {
 func (ss *Sim) ConfigLoops() {
 	man := looper.NewManager()
 
-	effTrls := ss.MaxTrls
-	if ss.Args.Bool("mpi") {
-		effTrls /= mpi.WorldSize() // todo: use more robust fun
-		if Debug {
-			mpi.Printf("MPI trials: %d\n", effTrls)
-		}
-	}
+	totND := ss.Sim.NData * mpi.WorldSize() // both sources of data parallel
+	totTrls := int(mat32.IntMultipleGE(float32(ss.Sim.NTrials), float32(totND)))
+	trls := totTrls / mpi.WorldSize()
 
-	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 150).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	man.AddStack(etime.Train).AddTime(etime.Run, 1).AddTime(etime.Epoch, 150).AddTimeIncr(etime.Trial, trls, ss.Sim.NData).AddTime(etime.Cycle, 200)
 
 	// note: needs a lot of data for good actrfs -- is relatively fast under mpi
-	man.AddStack(etime.Test).AddTime(etime.Epoch, 200).AddTime(etime.Trial, effTrls).AddTime(etime.Cycle, 200)
+	man.AddStack(etime.Test).AddTime(etime.Epoch, 200).AddTimeIncr(etime.Trial, trls, ss.Sim.NData).AddTime(etime.Cycle, 200)
 
 	axon.LooperStdPhases(man, &ss.Context, ss.Net, 150, 199)            // plus phase timing
 	axon.LooperSimCycleAndLearn(man, ss.Net, &ss.Context, &ss.ViewUpdt) // std algo code
@@ -514,20 +542,16 @@ func (ss *Sim) ConfigLoops() {
 	for m, _ := range man.Stacks {
 		mode := m // For closures
 		stack := man.Stacks[mode]
-		stack.Loops[etime.Trial].OnStart.Add("Env:Step", func() {
-			// note: OnStart for env.Env, others may happen OnEnd
-			ss.Envs[mode.String()].Step()
-		})
 		stack.Loops[etime.Trial].OnStart.Add("ApplyInputs", func() {
 			ss.ApplyInputs()
 		})
-		stack.Loops[etime.Trial].OnEnd.Add("StatCounters", ss.StatCounters)
-		stack.Loops[etime.Trial].OnEnd.Add("TrialStats", ss.TrialStats)
 	}
 
 	// note: plusPhase is shared between all stacks!
 	plusPhase, _ := man.Stacks[etime.Train].Loops[etime.Cycle].EventByName("PlusPhase")
-	plusPhase.OnEvent.Add("TakeAction", func() {
+	plusPhase.OnEvent.InsertBefore("PlusPhase:Start", "TakeAction", func() {
+		// note: critical to have this happen *after* MinusPhase:End and *before* PlusPhase:Start
+		// because minus phase end has gated info, and plus phase start applies action input
 		ss.TakeAction(ss.Net)
 	})
 
@@ -547,7 +571,7 @@ func (ss *Sim) ConfigLoops() {
 	})
 	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PCAStats", func() {
 		trnEpc := man.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
-		if (ss.PCAInterval > 0) && (trnEpc%ss.PCAInterval == 0) {
+		if (ss.Sim.PCAInterval > 0) && (trnEpc%ss.Sim.PCAInterval == 0) {
 			if ss.Args.Bool("mpi") {
 				ss.Logs.MPIGatherTableRows(etime.Analyze, etime.Trial, ss.Comm)
 			}
@@ -561,7 +585,7 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Trial).OnEnd.Add("LogAnalyze", func() {
 		trnEpc := man.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
-		if (ss.PCAInterval > 0) && (trnEpc%ss.PCAInterval == 0) {
+		if (ss.Sim.PCAInterval > 0) && (trnEpc%ss.Sim.PCAInterval == 0) {
 			ss.Log(etime.Analyze, etime.Trial)
 		}
 	})
@@ -573,7 +597,6 @@ func (ss *Sim) ConfigLoops() {
 	// this is actually fairly expensive
 	man.GetLoop(etime.Test, etime.Trial).OnEnd.Add("ActRFs", func() {
 		ss.UpdateActRFs()
-		ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01)
 	})
 	// man.GetLoop(etime.Test, etime.Epoch).OnEnd.Add("CheckEpc", func() {
 	// 	if ss.Args.Bool("actrfs") {
@@ -592,18 +615,12 @@ func (ss *Sim) ConfigLoops() {
 
 	man.GetLoop(etime.Train, etime.Epoch).OnEnd.Add("PctCortex", func() {
 		trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
-		if trnEpc > 50 && trnEpc%5 == 0 {
-			ss.PctCortex = float64(trnEpc-50) / 50
-			if ss.PctCortex > ss.PctCortexMax {
-				ss.PctCortex = ss.PctCortexMax
-			} else {
-				mpi.Printf("PctCortex updated to: %g at epoch: %d\n", ss.PctCortex, trnEpc)
-			}
-		}
+		ss.Sim.CurPctCortex(trnEpc)
 	})
 
 	////////////////////////////////////////////
 	// GUI
+
 	if ss.Args.Bool("nogui") {
 		man.GetLoop(etime.Test, etime.Trial).Main.Add("NetDataRecord", func() {
 			ss.GUI.NetDataRecord(ss.ViewUpdt.Text)
@@ -611,9 +628,16 @@ func (ss *Sim) ConfigLoops() {
 	} else {
 		axon.LooperUpdtNetView(man, &ss.ViewUpdt, ss.Net)
 		axon.LooperUpdtPlots(man, &ss.GUI)
-
+		for _, m := range man.Stacks {
+			m.Loops[etime.Cycle].OnEnd.Prepend("GUI:CounterUpdt", func() {
+				ss.NetViewCounters()
+			})
+			m.Loops[etime.Trial].OnEnd.Prepend("GUI:CounterUpdt", func() {
+				ss.NetViewCounters()
+			})
+		}
 		man.GetLoop(etime.Train, etime.Trial).OnEnd.Add("UpdateWorldGui", func() {
-			ev := ss.Envs[etime.Train.String()].(*FWorld)
+			ev := ss.Envs.ByModeDi(etime.Train, 0).(*FWorld)
 			ev.UpdateWorldGui()
 		})
 	}
@@ -637,62 +661,78 @@ func (ss *Sim) SaveWeights() {
 // or reflexive subcortical action from env.
 func (ss *Sim) TakeAction(net *axon.Network) {
 	ctx := &ss.Context
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
 	mtxLy := ss.Net.AxonLayerByName("VsMtxGo")
-	justGated := mtxLy.AnyGated() // not updated until plus phase: ss.Context.PVLV.VSMatrix.JustGated.IsTrue()
-	hasGated := ctx.PVLV.VSMatrix.HasGated.IsTrue()
-	ss.Stats.SetString("PrevAction", ss.Stats.String("ActAction"))
-	gact, urgency := ev.InstinctAct(justGated, hasGated)
-	csGated := (justGated && !ctx.PVLV.HasPosUS())
+	vlly := ss.Net.AxonLayerByName("VL")
 	threshold := float32(0.1)
-	deciding := !csGated && !hasGated && (ctx.NeuroMod.ACh > threshold && mtxLy.Pools[0].AvgMax.SpkMax.Cycle.Max > threshold) // give it time
-	ss.Stats.SetFloat32("Deciding", bools.ToFloat32(deciding))
-	if csGated || deciding {
-		act := "CSGated"
-		if !csGated {
-			act = "Deciding"
+
+	for di := 0; di < ss.Sim.NData; di++ {
+		diu := uint32(di)
+		ev := ss.Envs.ByModeDi(ctx.Mode, di).(*FWorld)
+		justGated := mtxLy.AnyGated(diu) // not updated until plus phase: ss.Context.PVLV.VSMatrix.JustGated.IsTrue()
+		hasGated := axon.GlbV(ctx, diu, axon.GvVSMatrixHasGated) > 0
+		ss.Stats.SetStringDi("PrevAction", di, ss.Stats.StringDi("ActAction", di))
+		csGated := (justGated && !axon.PVLVHasPosUS(ctx, diu))
+		deciding := !csGated && !hasGated && (axon.GlbV(ctx, diu, axon.GvACh) > threshold && mtxLy.Pool(0, diu).AvgMax.SpkMax.Cycle.Max > threshold) // give it time
+		ss.Stats.SetFloat32Di("Deciding", di, bools.ToFloat32(deciding))
+		if csGated || deciding {
+			act := "CSGated"
+			if !csGated {
+				act = "Deciding"
+			}
+			ss.Stats.SetStringDi("Debug", di, act)
+			ev.Action("None", nil)
+			ss.ApplyAction(di)
+			ss.Stats.SetStringDi("ActAction", di, "None")
+			ss.Stats.SetStringDi("Instinct", di, "None")
+			ss.Stats.SetStringDi("NetAction", di, act)
+			ss.Stats.SetFloatDi("ActMatch", di, 1)                // whatever it is, it is ok
+			vlly.Pool(0, uint32(di)).Inhib.Clamped.SetBool(false) // not clamped this trial
+		} else {
+			ss.Stats.SetStringDi("Debug", di, "acting")
+			netAct, anm := ss.DecodeAct(ev, di)
+			genAct, urgency := ev.InstinctAct(justGated, hasGated)
+			_ = urgency
+			genActNm := ev.Acts[genAct]
+			ss.Stats.SetStringDi("NetAction", di, anm) // ev.Acts[nact]
+			ss.Stats.SetStringDi("Instinct", di, genActNm)
+			if netAct == genAct {
+				ss.Stats.SetFloatDi("ActMatch", di, 1)
+			} else {
+				ss.Stats.SetFloatDi("ActMatch", di, 0)
+			}
+
+			actAct := genAct
+			// if erand.BoolP32(urgency, -1) {
+			// 	actAct = ss.Stats.String("Instinct")
+			// } else if erand.BoolP(ss.PctCortex, -1) {
+			// 	actAct = ss.Stats.String("NetAction")
+			// }
+			if ss.Stats.FloatDi("CortexDriving", di) > 0 {
+				actAct = netAct
+			}
+			actActNm := ev.Acts[actAct]
+			ss.Stats.SetStringDi("ActAction", di, actActNm)
+
+			ev.Action(actActNm, nil)
 		}
-		ss.Stats.SetString("Debug", act)
-		ev.Action("None", nil)
-		ss.ApplyAction()
-		ss.Stats.SetString("ActAction", "None")
-		ss.Stats.SetString("Instinct", "None")
-		ss.Stats.SetString("NetAction", act)
-		ss.Stats.SetFloat("ActMatch", 1) // whatever it is, it is ok
-		ly := ss.Net.AxonLayerByName("VL")
-		ly.Pools[0].Inhib.Clamped.SetBool(false) // not clamped this trial
-		ss.Net.GPU.SyncPoolsToGPU()
-		return // no time to do action while also gating
 	}
-
-	nact := ss.DecodeAct(ev)
-	ss.Stats.SetString("NetAction", ev.Acts[nact])
-	ss.Stats.SetString("Instinct", ev.Acts[gact])
-	if nact == gact {
-		ss.Stats.SetFloat("ActMatch", 1)
-	} else {
-		ss.Stats.SetFloat("ActMatch", 0)
-	}
-	actAct := ss.Stats.String("Instinct")
-	if erand.BoolP32(urgency, -1) {
-		actAct = ss.Stats.String("Instinct")
-	} else if erand.BoolP(ss.PctCortex, -1) {
-		actAct = ss.Stats.String("NetAction")
-	}
-	ss.Stats.SetString("ActAction", actAct)
-
-	ev.Action(actAct, nil)
-	// ap, ok := ev.Pats[actAct]
-	// if ok {
-	// 	ss.Net.ApplyExts(&ss.Context)
-	// }
+	ss.Net.ApplyExts(ctx)
+	ss.Net.GPU.SyncPoolsToGPU()
 }
 
 // DecodeAct decodes the VL ActM state to find closest action pattern
-func (ss *Sim) DecodeAct(ev *FWorld) int {
-	vt := ss.Stats.SetLayerTensor(ss.Net, "VL", "ActM")
-	act := ev.DecodeAct(vt)
-	return act
+func (ss *Sim) DecodeAct(ev *FWorld, di int) (int, string) {
+	vt := ss.Stats.SetLayerTensor(ss.Net, "VL", "CaSpkP", di)
+	return ev.DecodeAct(vt)
+}
+
+func (ss *Sim) ApplyAction(di int) {
+	ctx := &ss.Context
+	net := ss.Net
+	ev := ss.Envs.ByModeDi(ss.Context.Mode, di).(*FWorld)
+	ap := ev.State("Action")
+	ly := net.AxonLayerByName("Act")
+	ly.ApplyExt(ctx, uint32(di), ap)
 }
 
 // ApplyInputs applies input patterns from given envirbonment.
@@ -700,78 +740,72 @@ func (ss *Sim) DecodeAct(ev *FWorld) int {
 // args so that it can be used for various different contexts
 // (training, testing, etc).
 func (ss *Sim) ApplyInputs() {
+	ctx := &ss.Context
 	net := ss.Net
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
-
-	net.InitExt() // clear any existing inputs -- not strictly necessary if always
-	// going to the same layers, but good practice and cheap anyway
-
 	states := []string{"Depth", "FovDepth", "Fovea", "ProxSoma", "HeadDir", "Action"}
 	lays := []string{"V2Wd", "V2Fd", "V1F", "S1S", "HeadDir", "Act"}
-	for i, lnm := range lays {
-		ly := ss.Net.AxonLayerByName(lnm)
-		if ly == nil {
-			continue
+	net.InitExt(ctx)
+
+	for di := uint32(0); di < uint32(ss.Sim.NData); di++ {
+		ev := ss.Envs.ByModeDi(ctx.Mode, int(di)).(*FWorld)
+		ev.Step()
+		// todo:
+		// if ev.Time == 0 {
+		// 	ss.Stats.SetFloat32Di("CortexDriving", int(di), bools.ToFloat32(erand.BoolP32(ss.Sim.PctCortex, -1)))
+		// }
+		for i, lnm := range lays {
+			ly := ss.Net.AxonLayerByName(lnm)
+			if ly == nil {
+				continue
+			}
+			pats := ev.State(states[i])
+			if pats != nil {
+				ly.ApplyExt(ctx, di, pats)
+			}
 		}
-		pats := ev.State(states[i])
-		if pats != nil {
-			ly.ApplyExt(pats)
-		}
+		ss.ApplyPVLV(ctx, ev, di)
 	}
-	ss.ApplyPVLV(&ss.Context, ev)
-	net.ApplyExts(&ss.Context)
+	net.ApplyExts(ctx)
 }
 
 // ApplyPVLV applies current PVLV values to Context.PVLV,
 // from given trial data.
-func (ss *Sim) ApplyPVLV(ctx *axon.Context, ev *FWorld) {
-	ctx.PVLV.EffortUrgencyUpdt(&ss.Net.Rand, ev.LastEffort)
-	ctx.PVLVInitUS()
+func (ss *Sim) ApplyPVLV(ctx *axon.Context, ev *FWorld, di uint32) {
+	ctx.PVLV.EffortUrgencyUpdt(ctx, di, &ss.Net.Rand, ev.LastEffort)
+	ctx.PVLVInitUS(di)
 	posUSs := ev.State("PosUSs").(*etensor.Float32)
 	for i, us := range posUSs.Values {
 		if us > 0 {
-			ctx.PVLVSetUS(axon.Positive, i, us)
+			ctx.PVLVSetUS(di, axon.Positive, i, us)
 		}
 	}
 	negUSs := ev.State("NegUSs").(*etensor.Float32)
 	for i, us := range negUSs.Values {
 		if us > 0 {
-			ctx.PVLVSetUS(axon.Negative, i, us)
-			ctx.NeuroMod.HasRew.SetBool(true) // todo: counting as full US for now
+			ctx.PVLVSetUS(di, axon.Negative, i, us)
+			// ctx.NeuroMod.HasRew.SetBool(true) // todo: counting as full US for now
 		}
 	}
-	ctx.PVLV.DriveUpdt()
-	ctx.PVLVStepStart(&ss.Net.Rand)
-}
-
-func (ss *Sim) ApplyAction() {
-	net := ss.Net
-	ev := ss.Envs[ss.Context.Mode.String()]
-	ap := ev.State("Action")
-	ly := net.AxonLayerByName("Act")
-	ly.ApplyExt(ap)
-	ss.Net.ApplyExts(&ss.Context)
+	axon.PVLVDriveUpdt(ctx, di)
+	ctx.PVLVStepStart(di, &ss.Net.Rand)
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
 // for the new run value
 func (ss *Sim) NewRun() {
+	ctx := &ss.Context
 	ss.InitRndSeed()
-	trnev := ss.Envs[etime.Train.String()].(*FWorld)
-	trnev.Init(0)
-	tstev := ss.Envs[etime.Test.String()].(*FWorld)
-	tstev.Init(0)
-	if ss.Args.Bool("mpi") {
-		trnev.InitPos(mpi.WorldRank()) // start in diff locations for mpi nodes
-		tstev.InitPos(mpi.WorldRank())
+	for di := 0; di < int(ctx.NetIdxs.NData); di++ {
+		ss.Envs.ByModeDi(etime.Train, di).Init(0)
+		ss.Envs.ByModeDi(etime.Test, di).Init(0)
+		axon.DrivesToBaseline(ctx, uint32(di))
+		// axon.Drive.Drives.SetAll(0.5) // start lower
 	}
-	ss.Context.Reset()
-	ss.Context.PVLV.Drive.ToBaseline()
-	ss.Context.PVLV.Drive.Drives.SetAll(0.5) // start lower
-	ss.Context.Mode = etime.Train
-	ss.Net.InitWts()
+	ctx.Reset()
+	ctx.Mode = etime.Train
+	ss.Net.InitWts(ctx)
 	ss.InitStats()
-	ss.StatCounters()
+	ss.StatCounters(0)
 	ss.Logs.ResetLog(etime.Train, etime.Epoch)
 	ss.Logs.ResetLog(etime.Test, etime.Epoch)
 }
@@ -805,11 +839,11 @@ func (ss *Sim) RunTestAll() {
 // InitStats initializes all the statistics.
 // called at start of new run
 func (ss *Sim) InitStats() {
+	ss.Stats.SetInt("Di", 0)
 	ss.Stats.SetString("PrevAction", "")
 	ss.Stats.SetString("ActAction", "")
 	ss.Stats.SetFloat("TrlUnitErr", 0.0)
 	ss.Stats.SetFloat("TrlCorSim", 0.0)
-	ss.Logs.InitErrStats() // inits TrlErr, FirstZero, LastZero, NZero
 	ss.Stats.SetFloat("PctCortex", 0)
 	ss.Stats.SetFloat("Dist", 0)
 	ss.Stats.SetFloat("Drive", 0)
@@ -851,55 +885,67 @@ func (ss *Sim) InitStats() {
 
 // StatCounters saves current counters to Stats, so they are available for logging etc
 // Also saves a string rep of them for ViewUpdt.Text
-func (ss *Sim) StatCounters() {
-	mode := ss.Context.Mode
+func (ss *Sim) StatCounters(di int) {
+	ctx := &ss.Context
+	mode := ctx.Mode
+	ss.ActionStatsDi(di)
+	ev := ss.Envs.ByModeDi(mode, di).(*FWorld)
 	ss.Loops.Stacks[mode].CtrsToStats(&ss.Stats)
 	// always use training epoch..
 	trnEpc := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur
 	ss.Stats.SetInt("Epoch", trnEpc)
-	ss.Stats.SetInt("Cycle", int(ss.Context.Cycle))
-	ss.Stats.SetFloat("PctCortex", ss.PctCortex)
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
+	ss.Stats.SetInt("Di", di)
+	ss.Stats.SetInt("Cycle", int(ctx.Cycle))
+	ss.Stats.SetFloat32("PctCortex", ss.Sim.PctCortex)
 	ss.Stats.SetString("TrialName", ev.String())
+}
+
+func (ss *Sim) NetViewCounters() {
+	if ss.GUI.ViewUpdt.View == nil {
+		return
+	}
+	di := ss.GUI.ViewUpdt.View.Di
+	ss.StatCounters(di)
 	ss.ViewUpdt.Text = ss.Stats.Print([]string{"Run", "Epoch", "Trial", "Cycle", "PrevAction", "NetAction", "Instinct", "ActAction", "ActMatch"})
 }
 
 // TrialStats computes the trial-level statistics.
 // Aggregation is done directly from log data.
-func (ss *Sim) TrialStats() {
-	ss.GatedStats()
-	ss.MaintStats()
+func (ss *Sim) TrialStats(di int) {
+	diu := uint32(di)
+	ctx := &ss.Context
+	ss.GatedStats(di)
+	ss.MaintStats(di)
 
 	out := ss.Net.AxonLayerByName("VL")
 	v2wdP := ss.Net.AxonLayerByName("V2WdP")
 
-	ss.Stats.SetFloat("TrlCorSim", float64(v2wdP.Vals.CorSim.Cor))
-	ss.Stats.SetFloat("TrlUnitErr", out.PctUnitErr())
+	ss.Stats.SetFloat("TrlCorSim", float64(v2wdP.Vals[di].CorSim.Cor))
+	ss.Stats.SetFloat("TrlUnitErr", out.PctUnitErr(ctx)[di])
 
 	// note: most stats computed in TakeAction
 	ss.Stats.SetFloat("TrlErr", 1-ss.Stats.Float("ActMatch"))
 
-	ctx := &ss.Context
 	nan := math.NaN()
-	if ss.Context.PVLV.HasPosUS() {
-		ss.Stats.SetFloat32("DA", ctx.NeuroMod.DA)
-		ss.Stats.SetFloat32("RewPred", ctx.NeuroMod.RewPred) // gets from VSPatch or RWPred etc
+	if axon.PVLVHasPosUS(ctx, diu) {
+		ss.Stats.SetFloat32("DA", axon.GlbV(ctx, diu, axon.GvDA))
+		ss.Stats.SetFloat32("RewPred", axon.GlbV(ctx, diu, axon.GvRewPred)) // gets from VSPatch or RWPred etc
 		ss.Stats.SetFloat("DA_NR", nan)
 		ss.Stats.SetFloat("RewPred_NR", nan)
-		ss.Stats.SetFloat32("Rew", ctx.NeuroMod.Rew)
+		ss.Stats.SetFloat32("Rew", axon.GlbV(ctx, diu, axon.GvRew))
 	} else {
-		ss.Stats.SetFloat32("DA_NR", ctx.NeuroMod.DA)
-		ss.Stats.SetFloat32("RewPred_NR", ctx.NeuroMod.RewPred)
+		ss.Stats.SetFloat32("DA_NR", axon.GlbV(ctx, diu, axon.GvDA))
+		ss.Stats.SetFloat32("RewPred_NR", axon.GlbV(ctx, diu, axon.GvRewPred))
 		ss.Stats.SetFloat("DA", nan)
 		ss.Stats.SetFloat("RewPred", nan)
 		ss.Stats.SetFloat("Rew", nan)
 	}
 
-	ss.Stats.SetFloat32("DipSum", ctx.PVLV.LHb.DipSum)
-	ss.Stats.SetFloat32("GiveUp", float32(ctx.PVLV.LHb.GiveUp))
-	ss.Stats.SetFloat32("Urge", float32(ctx.PVLV.Urgency.Urge))
-	ss.Stats.SetFloat32("ACh", ctx.NeuroMod.ACh)
-	ss.Stats.SetFloat32("AChRaw", ctx.NeuroMod.AChRaw)
+	ss.Stats.SetFloat32("DipSum", axon.GlbV(ctx, diu, axon.GvLHbDipSum))
+	ss.Stats.SetFloat32("GiveUp", axon.GlbV(ctx, diu, axon.GvLHbGiveUp))
+	ss.Stats.SetFloat32("Urge", axon.GlbV(ctx, diu, axon.GvUrgency))
+	ss.Stats.SetFloat32("ACh", axon.GlbV(ctx, diu, axon.GvACh))
+	ss.Stats.SetFloat32("AChRaw", axon.GlbV(ctx, diu, axon.GvAChRaw))
 
 	// epc := env.Epoch.Cur
 	// if epc > ss.ConfusionEpc {
@@ -907,12 +953,29 @@ func (ss *Sim) TrialStats() {
 	// }
 }
 
+// ActionStatsDi copies the action info from given data parallel index
+// into the global action stats
+func (ss *Sim) ActionStatsDi(di int) {
+	if _, has := ss.Stats.Strings[estats.DiName("NetAction", di)]; !has {
+		return
+	}
+	ss.Stats.SetString("NetAction", ss.Stats.StringDi("NetAction", di))
+	ss.Stats.SetString("Instinct", ss.Stats.StringDi("Instinct", di))
+	ss.Stats.SetFloat("ActMatch", ss.Stats.FloatDi("ActMatch", di))
+	ss.Stats.SetString("ActAction", ss.Stats.StringDi("ActAction", di))
+}
+
 // GatedStats updates the gated states
-func (ss *Sim) GatedStats() {
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
-	justGated := ss.Context.PVLV.VSMatrix.JustGated.IsTrue()
-	hasGated := ss.Context.PVLV.VSMatrix.HasGated.IsTrue()
+func (ss *Sim) GatedStats(di int) {
+	ctx := &ss.Context
+	diu := uint32(di)
+	ev := ss.Envs.ByModeDi(ctx.Mode, di).(*FWorld)
+	justGated := axon.GlbV(ctx, diu, axon.GvVSMatrixJustGated) > 0
+	hasGated := axon.GlbV(ctx, diu, axon.GvVSMatrixHasGated) > 0
 	nan := mat32.NaN()
+	ss.Stats.SetString("Debug", ss.Stats.StringDi("Debug", di))
+	ss.ActionStatsDi(di)
+
 	ss.Stats.SetFloat32("JustGated", bools.ToFloat32(justGated))
 	ss.Stats.SetFloat32("Should", bools.ToFloat32(ev.ShouldGate))
 	ss.Stats.SetFloat32("HasGated", bools.ToFloat32(hasGated))
@@ -924,11 +987,12 @@ func (ss *Sim) GatedStats() {
 	ss.Stats.SetFloat32("WrongCSGate", nan)
 	ss.Stats.SetFloat32("AChShould", nan)
 	ss.Stats.SetFloat32("AChShouldnt", nan)
-	// if justGated { // todo
+	hasPos := axon.PVLVHasPosUS(ctx, diu)
+	// if justGated {
 	// 	ss.Stats.SetFloat32("WrongCSGate", bools.ToFloat32(!ev.PosHasDriveUS()))
 	// }
 	if ev.ShouldGate {
-		if ss.Context.PVLV.HasPosUS() {
+		if hasPos {
 			ss.Stats.SetFloat32("GateUS", bools.ToFloat32(justGated))
 		} else {
 			ss.Stats.SetFloat32("GateCS", bools.ToFloat32(justGated))
@@ -940,23 +1004,25 @@ func (ss *Sim) GatedStats() {
 			ss.Stats.SetFloat32("GatedEarly", bools.ToFloat32(justGated))
 		}
 	}
-	// We get get ACh when new CS or Rew
 	// todo
-	// if ss.Context.PVLV.HasPosUS() || ev.LastCS != ev.CS {
-	// 	ss.Stats.SetFloat32("AChShould", ss.Context.NeuroMod.ACh)
+	// We get get ACh when new CS or Rew
+	// if hasPos || ev.LastCS != ev.CS {
+	// 	ss.Stats.SetFloat32("AChShould", axon.GlbV(ctx, diu, axon.GvACh))
 	// } else {
-	// 	ss.Stats.SetFloat32("AChShouldnt", ss.Context.NeuroMod.ACh)
+	// 	ss.Stats.SetFloat32("AChShouldnt", axon.GlbV(ctx, diu, axon.GvACh))
 	// }
 }
 
 // MaintStats updates the PFC maint stats
-func (ss *Sim) MaintStats() {
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
+func (ss *Sim) MaintStats(di int) {
+	ctx := &ss.Context
+	ev := ss.Envs.ByModeDi(ctx.Mode, di).(*FWorld)
 	// should be maintaining while going forward
 	isFwd := ev.LastAct == ev.ActMap["Forward"]
 	isCons := ev.LastAct == ev.ActMap["Consume"]
 	actThr := float32(0.05) // 0.1 too high
 	net := ss.Net
+	// hasMaint := false
 	lays := net.LayersByType(axon.PTMaintLayer)
 	// hasMaint := false
 	for _, lnm := range lays {
@@ -966,14 +1032,14 @@ func (ss *Sim) MaintStats() {
 		ptly := net.AxonLayerByName(lnm)
 		var mact float32
 		if ptly.Is4D() {
-			for pi := 1; pi < len(ptly.Pools); pi++ {
-				avg := ptly.Pools[pi].AvgMax.Act.Plus.Avg
+			for pi := uint32(1); pi < ptly.NPools; pi++ {
+				avg := ptly.Pool(pi, uint32(di)).AvgMax.Act.Plus.Avg
 				if avg > mact {
 					mact = avg
 				}
 			}
 		} else {
-			mact = ptly.Pools[0].AvgMax.Act.Plus.Avg
+			mact = ptly.Pool(0, uint32(di)).AvgMax.Act.Plus.Avg
 		}
 		overThr := mact > actThr
 		// if overThr {
@@ -1001,6 +1067,7 @@ func (ss *Sim) ConfigLogs() {
 	ss.Stats.SetString("RunName", ss.Params.RunName(0)) // used for naming logs, stats, etc
 
 	ss.Logs.AddCounterItems(etime.Run, etime.Epoch, etime.Trial, etime.Cycle)
+	ss.Logs.AddStatIntNoAggItem(etime.AllModes, etime.Trial, "Di")
 	ss.Logs.AddStatStringItem(etime.AllModes, etime.AllTimes, "RunName")
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.AllTimes, "PctCortex")
 	ss.Logs.AddStatFloatNoAggItem(etime.AllModes, etime.Trial, "Drive", "CS", "Dist", "US", "HasRew")
@@ -1017,7 +1084,7 @@ func (ss *Sim) ConfigLogs() {
 
 	ss.ConfigActRFs()
 
-	layers := ss.Net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.TargetLayer)
+	layers := ss.Net.LayersByType(axon.SuperLayer, axon.CTLayer, axon.TargetLayer, axon.CeMLayer)
 	axon.LogAddDiagnosticItems(&ss.Logs, layers, etime.Train, etime.Epoch, etime.Trial)
 
 	axon.LogAddPCAItems(&ss.Logs, ss.Net, etime.Train, etime.Run, etime.Epoch, etime.Trial)
@@ -1026,7 +1093,7 @@ func (ss *Sim) ConfigLogs() {
 	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.Test, etime.Trial, "TargetLayer")
 	// ss.Logs.AddLayerTensorItems(ss.Net, "Act", etime.AllModes, etime.Cycle, "TargetLayer")
 
-	ss.Logs.PlotItems("PctCortex", "ActMatch", "V2WdP_CorSim")
+	ss.Logs.PlotItems("PctCortex", "ActMatch", "Rew", "GateUS", "GateCS", "V2WdP_CorSim")
 
 	ss.Logs.CreateTables()
 	ss.Logs.SetContext(&ss.Stats, ss.Net)
@@ -1040,22 +1107,22 @@ func (ss *Sim) ConfigLogs() {
 
 // ConfigLogItems specifies extra logging items
 func (ss *Sim) ConfigLogItems() {
-	ss.Logs.AddStatAggItem("AllGood", "AllGood", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("ActMatch", "ActMatch", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("JustGated", "JustGated", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("Should", "Should", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("GateUS", "GateUS", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("GateCS", "GateCS", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("Deciding", "Deciding", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("GatedEarly", "GatedEarly", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("MaintEarly", "MaintEarly", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("GatedAgain", "GatedAgain", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("WrongCSGate", "WrongCSGate", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("AChShould", "AChShould", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("AChShouldnt", "AChShouldnt", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("GiveUp", "GiveUp", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("DipSum", "DipSum", etime.Run, etime.Epoch, etime.Trial)
-	ss.Logs.AddStatAggItem("Urge", "Urge", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("AllGood", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("ActMatch", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("JustGated", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("Should", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("GateUS", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("GateCS", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("Deciding", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("GatedEarly", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("MaintEarly", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("GatedAgain", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("WrongCSGate", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("AChShould", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("AChShouldnt", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("GiveUp", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("DipSum", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("Urge", etime.Run, etime.Epoch, etime.Trial)
 
 	// Add a special debug message -- use of etime.Debug triggers
 	// inclusion
@@ -1064,28 +1131,28 @@ func (ss *Sim) ConfigLogItems() {
 	lays := ss.Net.LayersByType(axon.PTMaintLayer)
 	for _, lnm := range lays {
 		nm := "Maint" + lnm
-		ss.Logs.AddStatAggItem(nm, nm, etime.Run, etime.Epoch, etime.Trial)
+		ss.Logs.AddStatAggItem(nm, etime.Run, etime.Epoch, etime.Trial)
 		nm = "MaintFail" + lnm
-		ss.Logs.AddStatAggItem(nm, nm, etime.Run, etime.Epoch, etime.Trial)
+		ss.Logs.AddStatAggItem(nm, etime.Run, etime.Epoch, etime.Trial)
 		nm = "PreAct" + lnm
-		ss.Logs.AddStatAggItem(nm, nm, etime.Run, etime.Epoch, etime.Trial)
+		ss.Logs.AddStatAggItem(nm, etime.Run, etime.Epoch, etime.Trial)
 	}
-	li := ss.Logs.AddStatAggItem("Rew", "Rew", etime.Run, etime.Epoch, etime.Trial)
+	li := ss.Logs.AddStatAggItem("Rew", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("DA", "DA", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("DA", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("ACh", "ACh", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("ACh", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("AChRaw", "AChRaw", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("AChRaw", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("RewPred", "RewPred", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("RewPred", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("DA_NR", "DA_NR", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("DA_NR", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
-	li = ss.Logs.AddStatAggItem("RewPred_NR", "RewPred_NR", etime.Run, etime.Epoch, etime.Trial)
+	li = ss.Logs.AddStatAggItem("RewPred_NR", etime.Run, etime.Epoch, etime.Trial)
 	li.FixMin = false
 
-	ev := ss.Envs[etime.Train.String()].(*FWorld)
+	ev := ss.Envs.ByModeDi(etime.Train, 0).(*FWorld)
 	ss.Logs.AddItem(&elog.Item{
 		Name:      "ActCor",
 		Type:      etensor.FLOAT64,
@@ -1108,7 +1175,7 @@ func (ss *Sim) ConfigLogItems() {
 		ss.Logs.AddItem(&elog.Item{
 			Name:  anm + "Cor",
 			Type:  etensor.FLOAT64,
-			Plot:  true,
+			Plot:  false,
 			Range: minmax.F64{Min: 0},
 			Write: elog.WriteMap{
 				etime.Scope(etime.Train, etime.Epoch): func(ctx *elog.Context) {
@@ -1123,23 +1190,59 @@ func (ss *Sim) ConfigLogItems() {
 
 // Log is the main logging function, handles special things for different scopes
 func (ss *Sim) Log(mode etime.Modes, time etime.Times) {
+	ctx := &ss.Context
 	if mode != etime.Analyze {
-		ss.Context.Mode = mode // Also set specifically in a Loop callback.
+		ctx.Mode = mode // Also set specifically in a Loop callback.
 	}
-	ss.StatCounters()
 
 	if ss.Args.Bool("mpi") && time == etime.Epoch { // Must gather data for trial level if doing epoch level
 		ss.Logs.MPIGatherTableRows(mode, etime.Trial, ss.Comm)
 	}
 
 	dt := ss.Logs.Table(mode, time)
+	if dt == nil {
+		return
+	}
 	row := dt.Rows
 
 	switch {
 	case time == etime.Cycle:
-		row = ss.Stats.Int("Cycle")
+		return
 	case time == etime.Trial:
-		row = ss.Stats.Int("Trial")
+		if mode == etime.Train {
+			for di := 0; di < int(ctx.NetIdxs.NData); di++ {
+				diu := uint32(di)
+				ss.TrialStats(di)
+				ss.StatCounters(di)
+				ss.Logs.LogRowDi(mode, time, row, di)
+				if !axon.PVLVHasPosUS(ctx, diu) && axon.GlbV(ctx, diu, axon.GvVSMatrixHasGated) > 0 { // maint
+					axon.LayerActsLog(ss.Net, &ss.Logs, di, &ss.GUI)
+				}
+				if ss.GUI.ViewUpdt.View != nil && di == ss.GUI.ViewUpdt.View.Di {
+					drow := ss.Logs.Table(etime.Debug, time).Rows
+					ss.Logs.LogRow(etime.Debug, time, drow)
+					if ss.StopOnSeq {
+						hasRew := axon.GlbV(ctx, uint32(di), axon.GvHasRew) > 0
+						if hasRew {
+							ss.Loops.Stop(etime.Trial)
+						}
+					}
+					ss.GUI.UpdateTableView(etime.Debug, etime.Trial)
+				}
+				// if ss.Stats.Float("GatedEarly") > 0 {
+				// 	fmt.Printf("STOPPED due to gated early: %d  %g\n", ev.US, ev.Rew)
+				// 	ss.Loops.Stop(etime.Trial)
+				// }
+				// ev := ss.Envs.ByModeDi(etime.Train, di).(*Approach)
+				// if ss.StopOnErr && trnEpc > 5 && ss.Stats.Float("MaintEarly") > 0 {
+				// 	fmt.Printf("STOPPED due to early maint for US: %d\n", ev.US)
+				// 	ss.Loops.Stop(etime.Trial)
+				// }
+			}
+			return // don't do reg
+		}
+		// case mode == etime.Train && time == etime.Epoch:
+		// 	axon.LayerActsLogAvg(ss.Net, &ss.Logs, &ss.GUI, true) // reset recs
 	}
 
 	ss.Logs.LogRow(mode, time, row) // also logs to file, etc
@@ -1154,7 +1257,7 @@ func (ss *Sim) Log(mode etime.Modes, time etime.Times) {
 
 // ConfigActRFs
 func (ss *Sim) ConfigActRFs() {
-	ev := ss.Envs[etime.Train.String()].(*FWorld)
+	ev := ss.Envs.ByModeDi(etime.Train, 0).(*FWorld)
 	for _, trg := range ss.RFTargs {
 		mt := ss.Stats.F32Tensor(trg)
 		switch trg {
@@ -1179,20 +1282,24 @@ func (ss *Sim) ConfigActRFs() {
 
 // UpdateActRFs updates position activation rf's
 func (ss *Sim) UpdateActRFs() {
-	ev := ss.Envs[ss.Context.Mode.String()].(*FWorld)
-	for _, trg := range ss.RFTargs {
-		mt := ss.Stats.F32Tensor(trg)
-		mt.SetZeros()
-		switch trg {
-		case "Pos":
-			mt.Set([]int{ev.PosI.Y, ev.PosI.X}, 1)
-		case "Act":
-			mt.Set1D(ev.LastAct, 1)
-		case "HdDir":
-			mt.Set1D(ev.HeadDir/ev.MotAngInc, 1)
-			// case "Rot":
-			// 	mt.Set1D(1+ev.RotAng/ev.NMotAngles, 1)
+	ctx := &ss.Context
+	for di := 0; di < int(ctx.NetIdxs.NData); di++ {
+		ev := ss.Envs.ByModeDi(ctx.Mode, di).(*FWorld)
+		for _, trg := range ss.RFTargs {
+			mt := ss.Stats.F32TensorDi(trg, di)
+			mt.SetZeros()
+			switch trg {
+			case "Pos":
+				mt.Set([]int{ev.PosI.Y, ev.PosI.X}, 1)
+			case "Act":
+				mt.Set1D(ev.LastAct, 1)
+			case "HdDir":
+				mt.Set1D(ev.HeadDir/ev.MotAngInc, 1)
+				// case "Rot":
+				// 	mt.Set1D(1+ev.RotAng/ev.NMotAngles, 1)
+			}
 		}
+		ss.Stats.UpdateActRFs(ss.Net, "ActM", 0.01, di)
 	}
 }
 
@@ -1387,7 +1494,7 @@ func (ss *Sim) RunGUI() {
 	ss.Config()
 	ss.Init()
 	win := ss.ConfigGui()
-	ev := ss.Envs[etime.Train.String()].(*FWorld)
+	ev := ss.Envs.ByModeDi(etime.Train, 0).(*FWorld)
 	fwin := ev.ConfigWorldGui()
 	fwin.GoStartEventLoop()
 	win.StartEventLoop()
@@ -1396,13 +1503,18 @@ func (ss *Sim) RunGUI() {
 func (ss *Sim) ConfigArgs() {
 	ss.Args.Init()
 	ss.Args.AddStd()
-	ss.Args.AddInt("threads", 1, "number of threads per node")
-	ss.Args.AddInt("iticycles", 0, "number of cycles to run between trials (inter-trial-interval)")
-	ss.Args.SetInt("epochs", 2000)
+	ss.Args.AddInt("threads", 0, "number of threads per node")
+	ss.Args.SetInt("epochs", 500)
 	ss.Args.SetInt("runs", 1)
+	ss.Args.AddInt("ndata", 16, "number of data items to run in parallel")
 	ss.Args.AddBool("mpi", false, "if set, use MPI for distributed computation")
 	ss.Args.AddBool("actrfs", false, "if true, save final activation-based rf's after each run")
 	ss.Args.Parse() // always parse
+	if len(os.Args) > 1 {
+		ss.Args.SetBool("nogui", true) // by definition if here
+		ss.Sim.NData = ss.Args.Int("ndata")
+		mpi.Printf("Set NData to: %d\n", ss.Sim.NData)
+	}
 }
 
 // These props register methods so they can be called through gui with arg prompts
@@ -1456,11 +1568,12 @@ func (ss *Sim) RunNoGUI() {
 	rc.Set(run)
 	rc.Max = run + runs
 	ss.Loops.GetLoop(etime.Train, etime.Epoch).Counter.Max = ss.Args.Int("epochs")
-
 	gpu := ss.Args.Bool("gpu")
 	if gpu {
 		ss.Net.ConfigGPUnoGUI(&ss.Context)
 	}
+	ss.Net.SetNThreads(ss.Args.Int("threads"))
+	mpi.Printf("Set NThreads to: %d\n", ss.Net.NThreads)
 
 	ss.NewRun()
 	ss.Loops.Run(etime.Train)
@@ -1501,7 +1614,7 @@ func (ss *Sim) MPIFinalize() {
 // CollectDWts collects the weight changes from all synapses into AllDWts
 // includes all other long adapting factors too: DTrgAvg, ActAvg, etc
 func (ss *Sim) CollectDWts(net *axon.Network) {
-	net.CollectDWts(&ss.AllDWts)
+	net.CollectDWts(&ss.Context, &ss.AllDWts)
 }
 
 // MPIWtFmDWt updates weights from weight changes, using MPI to integrate
@@ -1515,7 +1628,7 @@ func (ss *Sim) MPIWtFmDWt() {
 			ss.SumDWts = make([]float32, ndw)
 		}
 		ss.Comm.AllReduceF32(mpi.OpSum, ss.SumDWts, ss.AllDWts)
-		ss.Net.SetDWts(ss.SumDWts, mpi.WorldSize())
+		ss.Net.SetDWts(&ss.Context, ss.SumDWts, mpi.WorldSize())
 	}
 	ss.Net.WtFmDWt(&ss.Context)
 }

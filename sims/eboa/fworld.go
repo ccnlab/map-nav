@@ -68,6 +68,8 @@ type FWorld struct {
 	DepthSize     int                         `inactive:"+" desc:"number of units in depth population codes"`
 	DepthCode     popcode.OneD                `desc:"population code for depth, in normalized units"`
 	AngCode       popcode.Ring                `desc:"angle population code values, in normalized units"`
+	Rand          erand.SysRand               `view:"-" desc:"random number generator for the env -- all random calls must use this"`
+	RndSeed       int64                       `inactive:"+" desc:"random seed"`
 
 	// current state below (params above)
 	PosF          mat32.Vec2                  `inactive:"+" desc:"current location of agent, floating point"`
@@ -115,37 +117,7 @@ var KiT_FWorld = kit.Types.AddType(&FWorld{}, FWorldProps)
 func (ev *FWorld) Name() string { return ev.Nm }
 func (ev *FWorld) Desc() string { return ev.Dsc }
 
-// Config configures the world
-func (ev *FWorld) Config(ntrls int) {
-	ev.Nm = "Demo"
-	ev.Dsc = "Example world with basic actions"
-	ev.Mats = []string{"Empty", "Wall"}
-	ev.BarrierIdx = 1
-	ev.Acts = []string{"Forward", "Left", "Right", "Consume", "None"} // "Stay", "Backward",
-	ev.PosUSs = []string{"Water", "Protein", "Sugar", "Salt"}
-	ev.NegUSs = []string{"Bump"}
-	ev.NDrives = len(ev.PosUSs)
-
-	ev.MatsUSStart = len(ev.Mats)
-	for _, us := range ev.PosUSs {
-		ev.Mats = append(ev.Mats, us)
-	}
-	for _, us := range ev.PosUSs {
-		ev.Mats = append(ev.Mats, us+"Was")
-	}
-	ev.MatColors = []string{"lightgrey", "black", "blue", "orange", "red", "white", "navy", "brown", "pink", "gray"}
-
-	ev.Params = make(map[string]float32)
-
-	ev.Params["MoveEffort"] = 1
-	ev.Params["RotEffort"] = 1
-	ev.Params["BumpPain"] = 0.5
-	ev.Params["EnvRefresh"] = 100 // time steps before consumed items are refreshed
-	ev.Params["WallUrgency"] = 0.9
-	ev.Params["ConsumeUrgency"] = 0.8
-	ev.Params["CloseUrgency"] = 0.5
-	ev.Params["FwdMargin"] = 2 // forward action must be this factor larger than 2nd best option to be selected
-
+func (ev *FWorld) Defaults() {
 	ev.Disp = true
 	ev.Size.Set(50, 50)
 	ev.PatSize.Set(5, 5)
@@ -172,6 +144,37 @@ func (ev *FWorld) Config(ntrls int) {
 	ev.ShowRays = false
 	ev.ShowFovRays = false
 	ev.TraceInstinct = false
+}
+
+// Config configures the world
+func (ev *FWorld) Config(ntrls int) {
+	ev.Rand.NewRand(ev.RndSeed)
+	ev.Mats = []string{"Empty", "Wall"}
+	ev.BarrierIdx = 1
+	ev.Acts = []string{"Forward", "Left", "Right", "Consume", "None"} // "Stay", "Backward",
+	ev.PosUSs = []string{"Water", "Protein", "Sugar", "Salt"}
+	ev.NegUSs = []string{"Bump"}
+	ev.NDrives = len(ev.PosUSs)
+
+	ev.MatsUSStart = len(ev.Mats)
+	for _, us := range ev.PosUSs {
+		ev.Mats = append(ev.Mats, us)
+	}
+	for _, us := range ev.PosUSs {
+		ev.Mats = append(ev.Mats, us+"Was")
+	}
+	ev.MatColors = []string{"lightgrey", "black", "blue", "orange", "red", "white", "navy", "brown", "pink", "gray"}
+
+	ev.Params = make(map[string]float32)
+
+	ev.Params["MoveEffort"] = 1
+	ev.Params["RotEffort"] = 1
+	ev.Params["BumpPain"] = 0.5
+	ev.Params["EnvRefresh"] = 100 // time steps before consumed items are refreshed
+	ev.Params["WallUrgency"] = 0.9
+	ev.Params["ConsumeUrgency"] = 0.8
+	ev.Params["CloseUrgency"] = 0.5
+	ev.Params["FwdMargin"] = 2 // forward action must be this factor larger than 2nd best option to be selected
 
 	ev.Trial.Max = ntrls
 
@@ -627,7 +630,7 @@ func (ev *FWorld) RefreshWorld() {
 
 // DecodeAct decodes action from given tensor of activation states
 // Forward is only selected if it is 2x larger than other options
-func (ev *FWorld) DecodeAct(vt *etensor.Float32) int {
+func (ev *FWorld) DecodeAct(vt *etensor.Float32) (int, string) {
 	cnm := ""
 	var dst, fdst float32
 	for nm, pat := range ev.ActPats {
@@ -648,7 +651,7 @@ func (ev *FWorld) DecodeAct(vt *etensor.Float32) int {
 	if !ok {
 		act = rand.Intn(len(ev.Acts))
 	}
-	return act
+	return act, ev.Acts[act]
 }
 
 // RenderView renders the current view state to NextStates tensor input states
@@ -1127,7 +1130,7 @@ func (ev *FWorld) TakeAct(act int) {
 				ev.ConsumeCtr = 0
 				ev.AddNewEventRefresh(ev.NewEvent(act, proxMat, ev.ProxPos[0]))
 				ev.SetWorld(ev.ProxPos[0], proxMat+ev.NDrives) // "Was" version
-				ev.Event.Set(0)
+				// ev.Event.Set(0)
 				ev.Scene.Incr()
 			}
 		}

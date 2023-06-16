@@ -16,7 +16,7 @@ var ParamSets = params.Sets{
 		"Network": &params.Sheet{
 			{Sel: "Layer", Desc: "using default 1 inhib for hidden layers",
 				Params: params.Params{
-					"Layer.Act.Clamp.Ge": "1.5", // .6 was
+					"Layer.Acts.Clamp.Ge": "1.5", // .6 was
 				}},
 			{Sel: ".SuperLayer", Desc: "",
 				Params: params.Params{
@@ -32,9 +32,9 @@ var ParamSets = params.Sets{
 					"Layer.CT.DecayTau":          "0",
 					"Layer.Inhib.Layer.Gi":       "2.4",
 					"Layer.Inhib.Pool.Gi":        "2.4",
-					"Layer.Act.Decay.Act":        "0.0",
-					"Layer.Act.Decay.Glong":      "0.0",
-					//					"Layer.Act.Sahp.Gbar":     "0.1",
+					"Layer.Acts.Decay.Act":       "0.0",
+					"Layer.Acts.Decay.Glong":     "0.0",
+					//					"Layer.Acts.Sahp.Gbar":     "0.1",
 				}},
 			{Sel: ".CTCopy", Desc: "single-step copy params",
 				Params: params.Params{
@@ -42,8 +42,8 @@ var ParamSets = params.Sets{
 					"Layer.CT.GeGain":            "1.0",
 					"Layer.CT.DecayTau":          "0",
 					"Layer.Inhib.Layer.Gi":       "2.0",
-					"Layer.Act.NMDA.Gbar":        "0.006", // std
-					"Layer.Act.NMDA.Tau":         "100",   // std
+					"Layer.Acts.NMDA.Gbar":       "0.006", // std
+					"Layer.Acts.NMDA.Tau":        "100",   // std
 				}},
 			{Sel: ".CTInteg", Desc: "time integration params",
 				Params: params.Params{
@@ -51,18 +51,18 @@ var ParamSets = params.Sets{
 					"Layer.CT.GeGain":            "1.0",
 					"Layer.CT.DecayTau":          "50",
 					"Layer.Inhib.Layer.Gi":       "2.8",
-					"Layer.Act.MaintNMDA.Gbar":   "0.007", // 0.007 best, but 0.01 > lower if reg nmda weak
-					"Layer.Act.MaintNMDA.Tau":    "200",   // 200 > 100 > 300
-					"Layer.Act.NMDA.Gbar":        "0.007", // 0.007 matching maint best
-					"Layer.Act.NMDA.Tau":         "200",   // 200 > 100
+					"Layer.Acts.MaintNMDA.Gbar":  "0.007", // 0.007 best, but 0.01 > lower if reg nmda weak
+					"Layer.Acts.MaintNMDA.Tau":   "200",   // 200 > 100 > 300
+					"Layer.Acts.NMDA.Gbar":       "0.007", // 0.007 matching maint best
+					"Layer.Acts.NMDA.Tau":        "200",   // 200 > 100
 				}},
 			{Sel: ".PulvinarLayer", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.Layer.Gi":          "0.8",  // was 0.9 > 1.0
 					"Layer.Pulv.DriveScale":         "0.1",  // 0.1 basically same as 0.15
-					"Layer.Act.Decay.Act":           "0.0",  // clear
-					"Layer.Act.Decay.Glong":         "0.0",  //
-					"Layer.Act.Decay.AHP":           "0.0",  //
+					"Layer.Acts.Decay.Act":          "0.0",  // clear
+					"Layer.Acts.Decay.Glong":        "0.0",  //
+					"Layer.Acts.Decay.AHP":          "0.0",  //
 					"Layer.Learn.RLRate.On":         "true", // beneficial for trace
 					"Layer.Learn.RLRate.SigmoidMin": "1",
 				}},
@@ -134,17 +134,17 @@ var ParamSets = params.Sets{
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Nominal": "0.08",
 					"Layer.Inhib.Layer.Gi":       "0.9",   // was 1.0
-					"Layer.Act.Noise.On":         "false", // turn on for more explore
-					"Layer.Act.Noise.Ge":         "0.001", // actually .001 best
-					"Layer.Act.Noise.Gi":         "0.001",
+					"Layer.Acts.Noise.On":        "false", // turn on for more explore
+					"Layer.Acts.Noise.Ge":        "0.001", // actually .001 best
+					"Layer.Acts.Noise.Gi":        "0.001",
 				}},
 			{Sel: "#SMACT", Desc: "",
 				Params: params.Params{
 					"Layer.Inhib.ActAvg.Nominal": "0.1",
 					"Layer.Inhib.Layer.Gi":       "2.0", // 2.0 matches prior act
-					"Layer.Act.Noise.On":         "false",
-					"Layer.Act.Noise.Ge":         "0.001",
-					"Layer.Act.Noise.Gi":         "0.001",
+					"Layer.Acts.Noise.On":        "false",
+					"Layer.Acts.Noise.Ge":        "0.001",
+					"Layer.Acts.Noise.Gi":        "0.001",
 				}},
 			{Sel: ".M1", Desc: "",
 				Params: params.Params{
@@ -169,11 +169,10 @@ var ParamSets = params.Sets{
 
 			{Sel: "Prjn", Desc: "norm and momentum on is critical, wt bal not as much but fine",
 				Params: params.Params{
-					"Prjn.Learn.LRate.Base":   "0.005",  // 0.005 ok
-					"Prjn.SWt.Adapt.LRate":    "0.0001", // 0.001 > 0.01 > 0.0001
-					"Prjn.SWt.Adapt.DreamVar": "0.0",    // 0.01 is just tolerable
-					"Prjn.SWt.Init.SPct":      "1.0",    // .5 ok here, 1 best for larger nets: objrec, lvis
-					"Prjn.Learn.Trace.Tau":    "2",      // 2 > 1 for many Pulv CorSims
+					"Prjn.Learn.LRate.Base": "0.005",  // 0.005 ok
+					"Prjn.SWts.Adapt.LRate": "0.0001", // 0.001 > 0.01 > 0.0001
+					"Prjn.SWts.Init.SPct":   "1.0",    // .5 ok here, 1 best for larger nets: objrec, lvis
+					"Prjn.Learn.Trace.Tau":  "2",      // 2 > 1 for many Pulv CorSims
 				}},
 			{Sel: ".BackPrjn", Desc: "top-down back-projections MUST have lower relative weight scale, otherwise network hallucinates",
 				Params: params.Params{
@@ -190,19 +189,19 @@ var ParamSets = params.Sets{
 				}},
 			{Sel: ".CTFmSuper", Desc: "CT from main super",
 				Params: params.Params{
-					"Prjn.PrjnScale.Rel": "1",
-					"Prjn.Learn.Learn":   "false",
-					"Prjn.SWt.Init.SPct": "0",
-					"Prjn.SWt.Init.Mean": "0.8",
-					"Prjn.SWt.Init.Var":  "0.0",
+					"Prjn.PrjnScale.Rel":  "1",
+					"Prjn.Learn.Learn":    "false",
+					"Prjn.SWts.Init.SPct": "0",
+					"Prjn.SWts.Init.Mean": "0.8",
+					"Prjn.SWts.Init.Var":  "0.0",
 				}},
 			{Sel: ".FixedCTFmSuper", Desc: "non-learning CT from main super -- for CT time integ",
 				Params: params.Params{
-					"Prjn.PrjnScale.Rel": "1",
-					"Prjn.Learn.Learn":   "false",
-					"Prjn.SWt.Init.SPct": "0",
-					"Prjn.SWt.Init.Mean": "0.8",
-					"Prjn.SWt.Init.Var":  "0.0",
+					"Prjn.PrjnScale.Rel":  "1",
+					"Prjn.Learn.Learn":    "false",
+					"Prjn.SWts.Init.SPct": "0",
+					"Prjn.SWts.Init.Mean": "0.8",
+					"Prjn.SWts.Init.Var":  "0.0",
 				}},
 			{Sel: ".StrongFF", Desc: "extra strong feedforward activation",
 				Params: params.Params{
@@ -233,7 +232,7 @@ var ParamSets = params.Sets{
 			// 	Params: params.Params{
 			// 		"Prjn.Learn.LRate.Base": "0.001", //
 			// 		"Prjn.PrjnScale.Rel":    "0.5",   // .5 lvis
-			// 		"Prjn.SWt.Adapt.On":     "false", // seems better
+			// 		"Prjn.SWts.Adapt.On":     "false", // seems better
 			// 	}},
 			// {Sel: "#S1VToS2V", Desc: "needs more",
 			// 	Params: params.Params{

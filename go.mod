@@ -3,13 +3,13 @@ module github.com/ccnlab/map-nav
 go 1.18
 
 require (
-	github.com/emer/axon v1.7.25-0.20230517191159-24d7e29f1b25
-	github.com/emer/emergent v1.3.52
-	github.com/emer/empi v1.0.19
-	github.com/emer/etable v1.1.21
+	github.com/emer/axon v1.8.5
+	github.com/emer/emergent v1.4.20
+	github.com/emer/empi v1.0.22
+	github.com/emer/etable v1.1.23
 	github.com/emer/leabra v1.2.8
-	github.com/goki/gi v1.3.18
-	github.com/goki/ki v1.1.11
+	github.com/goki/gi v1.3.21
+	github.com/goki/ki v1.1.15
 	github.com/goki/mat32 v1.0.15
 )
 
@@ -17,6 +17,7 @@ require (
 	git.sr.ht/~sbinet/gg v0.3.1 // indirect
 	github.com/BurntSushi/freetype-go v0.0.0-20160129220410-b763ddbfe298 // indirect
 	github.com/BurntSushi/graphics-go v0.0.0-20160129215708-b43f31a4a966 // indirect
+	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc // indirect
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046 // indirect
 	github.com/Masterminds/vcs v1.13.3 // indirect
@@ -39,12 +40,12 @@ require (
 	github.com/go-pdf/fpdf v0.7.0 // indirect
 	github.com/goki/freetype v1.0.1 // indirect
 	github.com/goki/go-difflib v1.2.1 // indirect
-	github.com/goki/gosl v1.0.13 // indirect
+	github.com/goki/gosl v1.0.16 // indirect
 	github.com/goki/kigen v1.0.2 // indirect
 	github.com/goki/pi v1.0.27 // indirect
 	github.com/goki/prof v1.0.0 // indirect
 	github.com/goki/vci v1.0.1 // indirect
-	github.com/goki/vgpu v1.0.22 // indirect
+	github.com/goki/vgpu v1.0.33 // indirect
 	github.com/goki/vulkan v1.0.6 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/gorilla/css v1.0.0 // indirect
@@ -54,7 +55,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef // indirect
 	github.com/srwiley/scanx v0.0.0-20190309010443-e94503791388 // indirect
-	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
+	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1 // indirect
 	golang.org/x/image v0.6.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/net v0.8.0 // indirect

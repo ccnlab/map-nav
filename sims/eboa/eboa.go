@@ -174,7 +174,7 @@ func (ss *Sim) ConfigPVLV(trn *FWorld) {
 	pv.Drive.Base.SetAll(1)
 	pv.Drive.Base.Set(0, 0.5) // curiosity
 	pv.Drive.Tau.SetAll(100)
-	pv.Drive.Tau.Set(0, 0)
+	pv.Drive.Tau.Set(0, 1)
 	pv.Drive.USDec.SetAll(0.5)
 	pv.Drive.USDec.Set(0, 0)
 	pv.Drive.Update()
@@ -736,7 +736,9 @@ func (ss *Sim) ApplyInputs() {
 // ApplyPVLV applies current PVLV values to Context.PVLV,
 // from given trial data.
 func (ss *Sim) ApplyPVLV(ctx *axon.Context, ev *FWorld, di uint32) {
-	ctx.PVLV.EffortUrgencyUpdt(ctx, di, &ss.Net.Rand, ev.LastEffort)
+	pv := &ctx.PVLV
+	pv.Drive.Base.Set(0, 0.5) // curiosity
+	pv.EffortUrgencyUpdt(ctx, di, &ss.Net.Rand, ev.LastEffort)
 	ctx.PVLVInitUS(di)
 	posUSs := ev.State("PosUSs").(*etensor.Float32)
 	for i, us := range posUSs.Values {
@@ -1158,7 +1160,7 @@ func (ss *Sim) ConfigLogItems() {
 // Log is the main logging function, handles special things for different scopes
 func (ss *Sim) Log(mode etime.Modes, time etime.Times) {
 	ctx := &ss.Context
-	if mode != etime.Analyze {
+	if mode != etime.Analyze && mode != etime.Debug {
 		ctx.Mode = mode // Also set specifically in a Loop callback.
 	}
 
@@ -1349,6 +1351,8 @@ func (ss *Sim) ConfigGui() *gi.Window {
 	ss.ConfigNetView(nv)
 
 	ss.GUI.AddPlots(title, &ss.Logs)
+
+	ss.GUI.AddTableView(&ss.Logs, etime.Debug, etime.Trial)
 
 	ss.GUI.AddActRFGridTabs(&ss.Stats.ActRFs)
 

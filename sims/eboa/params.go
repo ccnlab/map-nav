@@ -227,6 +227,10 @@ var ParamSets = netparams.Sets{
 			Params: params.Params{
 				"Prjn.PrjnScale.Abs": "4.0",
 			}},
+		{Sel: "#UrgencyToVsMtxGo", Desc: "",
+			Params: params.Params{
+				"Prjn.PrjnScale.Abs": "0", // todo: not working -- no ach by time this happens!  need to drive ach too.
+			}},
 		// {Sel: ".V1SC", Desc: "v1 shortcut",
 		// 	Params: params.Params{
 		// 		"Prjn.Learn.LRate.Base": "0.001", //
